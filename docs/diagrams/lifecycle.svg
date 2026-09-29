@@ -64,11 +64,11 @@
   <!-- bottom semantics -->
   <g font-size="11" fill="#4B5563">
     <text x="20" y="300">状态分级（不混淆）：</text>
-    <text x="120" y="300" fill="#111827" font-weight="700">归档成功</text>
-    <text x="178" y="300">≠</text>
-    <text x="196" y="300" fill="#111827" font-weight="700">抽取完成</text>
-    <text x="258" y="300">≠</text>
-    <text x="276" y="300" fill="#111827" font-weight="700">可检索</text>
+    <text x="146" y="300" fill="#111827" font-weight="700">归档成功</text>
+    <text x="194" y="300">≠</text>
+    <text x="212" y="300" fill="#111827" font-weight="700">抽取完成</text>
+    <text x="268" y="300">≠</text>
+    <text x="286" y="300" fill="#111827" font-weight="700">可检索</text>
     <text x="330" y="300">— memory-status / /admin/status 分别呈现</text>
     <text x="20" y="320">召回纪律：召回内容是参考证据；当前请求与实际执行结果优先；无相关记忆时如实说明，不编造。</text>
   </g>
