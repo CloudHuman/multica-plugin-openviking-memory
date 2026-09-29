@@ -505,6 +505,27 @@ export async function main() {
     console.error('missing configuration:\n  - ' + problems.join('\n  - '));
     process.exit(2);
   }
+  // Single-writer guard: two service instances sharing one state dir corrupt
+  // each other's journal (a restart snapshot rewrites away the other's
+  // appends). Refuse to start when the lock names a live process.
+  {
+    const { writeFileSync, readFileSync, existsSync, mkdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    mkdirSync(cfg.stateDir, { recursive: true });
+    const lockPath = join(cfg.stateDir, 'service.lock');
+    if (existsSync(lockPath)) {
+      const held = Number(readFileSync(lockPath, 'utf8').trim());
+      let alive = false;
+      if (Number.isFinite(held) && held > 0) {
+        try { process.kill(held, 0); alive = true; } catch { alive = false; }
+      }
+      if (alive && held !== process.pid) {
+        console.error(`state dir ${cfg.stateDir} is locked by live process ${held}; refusing to start a second writer`);
+        process.exit(3);
+      }
+    }
+    writeFileSync(lockPath, String(process.pid));
+  }
   const ov = new OvClient({ baseUrl: cfg.ovBaseUrl, timeoutMs: cfg.ovTimeoutMs });
   const registry = new ScopeRegistry({ ov, rootKey: cfg.ovRootKey, stateDir: cfg.stateDir, log });
   const ledger = new Ledger({ stateDir: cfg.stateDir });
