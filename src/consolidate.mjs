@@ -83,11 +83,25 @@ async function walkKinds(ov, key, userId) {
   return walkDirs(ov, key, userId, PROMOTABLE_KINDS);
 }
 
+// OV nests memory files under date subdirectories (memories/<kind>/<date>/…),
+// so descend until files are found (bounded).
 async function walkDirs(ov, key, userId, dirs) {
   const out = [];
+  const walk = async (uri, depth) => {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = await ov.listDir(key, uri);
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isDir) await walk(e.uri, depth + 1);
+      else out.push(e);
+    }
+  };
   for (const kind of dirs) {
-    const entries = await ov.listDir(key, `viking://user/${userId}/memories/${kind}`);
-    out.push(...entries.filter((e) => !e.isDir));
+    await walk(`viking://user/${userId}/memories/${kind}`, 0);
   }
   return out;
 }
