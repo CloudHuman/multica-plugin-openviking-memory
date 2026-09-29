@@ -202,6 +202,15 @@ export async function startFakeOv({ taskBehavior = 'succeed' } = {}) {
         space.files.set(body.uri, body.content);
         return ok({ uri: body.uri, written: true });
       }
+      if (path === '/api/v1/fs/ls') {
+        const uri = url.searchParams.get('uri') ?? '';
+        if (!uri.startsWith('viking://')) return err(400, 'INVALID_URI', 'URI must start with viking://');
+        const prefix = uri.endsWith('/') ? uri : uri + '/';
+        const entries = [...space.files.entries()]
+          .filter(([u]) => u.startsWith(prefix))
+          .map(([u, c]) => ({ uri: u, size: c.length, isDir: false, modTime: '2026-09-29T12:00:00Z' }));
+        return ok(entries);
+      }
       if (path === '/api/v1/content/reindex' && req.method === 'POST') {
         return ok({ reindexed: body.uri });
       }

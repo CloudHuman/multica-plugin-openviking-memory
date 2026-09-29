@@ -16,6 +16,9 @@ export const DEFAULTS = {
   ovRootKey: '',
   // Multica hook signature secret (whsec_…, from the plugin token rotation response)
   signingSecret: '',
+  // Additional per-installation signing secrets (one per workspace
+  // installation): OVMEM_SIGNING_SECRETS='{"<installation_id>":"whsec_…"}'
+  signingSecrets: {},
   // Bearer token guarding /internal/* and /admin/* endpoints
   pluginToken: '',
   tlsCert: '',
@@ -49,6 +52,7 @@ const ENV_MAP = {
   ovBaseUrl: ['OVMEM_OV_BASE_URL'],
   ovRootKey: ['OVMEM_OV_ROOT_KEY'],
   signingSecret: ['OVMEM_SIGNING_SECRET'],
+  signingSecrets: ['OVMEM_SIGNING_SECRETS', (v) => JSON.parse(v)],
   pluginToken: ['OVMEM_PLUGIN_TOKEN'],
   tlsCert: ['OVMEM_TLS_CERT'],
   tlsKey: ['OVMEM_TLS_KEY'],

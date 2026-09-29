@@ -40,15 +40,22 @@
 
 ### 智能体可用的工具
 
-插件通过 `agent` 触发钩子向智能体提供 3 个辅助工具（Multica 会把它们合成为 MCP 工具，调用时由 Multica 后端签名转发，插件从签名的请求体中**可信地**获知执行智能体身份）：
+插件通过 `agent` 触发钩子向智能体提供工具（Multica 把每个钩子合成为 MCP 工具，调用经后端签名转发，插件从签名请求体的 `actor.id` **可信地**获知执行智能体身份，注入其自己的空间 key）：
 
-| 工具 | 作用 |
-| --- | --- |
-| `memory-recall` | 在获准范围内语义检索记忆，返回 top-N 带来源（uri + scope + 内容） |
-| `memory-remember` | 把可复用结论写入**本智能体公共记忆**（frontmatter 含作者与来源标记） |
-| `memory-status` | 服务健康、归档队列进度、最近归档的抽取状态（归档成功 ≠ 抽取完成 ≠ 产生可用记忆，分别可见） |
+| 工具 | 作用 | 范围 |
+| --- | --- | --- |
+| `memory-recall` | 语义检索，返回 top-N 带来源（uri + scope + 内容） | 跨范围：任务协作 + 本智能体公共 + 工作区共享 |
+| `memory-remember` | 快速直写可复用结论（frontmatter 含 author_agent） | 本智能体公共记忆 |
+| `memory-status` | 服务健康、归档队列进度、最近抽取状态 | — |
+| `ov-search` / `ov-read` / `ov-write` / `ov-remember` / `ov-edit` / `ov-forget` / `ov-find` / `ov-list` / `ov-tree` / `ov-grep` / `ov-glob` / `ov-add-resource` / `ov-list-watches` / `ov-cancel-watch` / `ov-health`（**v0.2.0 门面**，按部署实例实际工具数生成） | OpenViking 原生工具的完整语义——参数 schema 从实例 `tools/list` 实时镜像，调用原样转发 | **本智能体公共空间**（key=身份，结构性隔离） |
 
-OpenViking 原生的 16 个 MCP 工具（`find/search/read/remember/write/…/add_skill`）由 OV 自身提供：在工作区 MCP 配置中为每个智能体登记指向 OV `/mcp` 的条目并嵌入该智能体公共空间的 key 即可，插件仓库的 `docs/` 提供操作说明。配套 skill（`skills/openviking-memory/SKILL.md`）随插件包安装进工作区，教智能体何时召回、何时记录、如何诚实对待"没有记忆"。
+门面由 `scripts/gen-ov-hooks.mjs` 从 OV 实例生成；OV 原生 `remember` 走真实的"会话+提交+抽取"管道（异步生效），与 `memory-remember` 的直写通道互通（同一空间，检索都可见）。
+
+**运行时差异（实测）**：OpenCode 系（oc-worker）开箱即获得全部工具；kimi/pi 等 ACP 系运行时需要额外给每个智能体登记一条指向其新空间 key 的 workspace MCP 直连条目后，合成工具才可用（详见 `docs/setup-ov-mcp.md`——该文档现在同时是 ACP 运行时的 workaround 手册）。
+
+**共享记忆晋升（v0.2.0）**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences/cases/preferences/entities）的记忆晋升进工作区共享空间（frontmatter 保留 promoted_from 出处，幂等）。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每日 03:30 的 launchd 定时。
+
+配套 skill（`skills/openviking-memory/SKILL.md`）随插件包安装进工作区，教智能体何时召回、何时记录、如何诚实对待"没有记忆"。
 
 ## 安装
 
@@ -121,6 +128,7 @@ POST /internal/recall                        // 领取/注入时取召回块
 | `OVMEM_PLUGIN_TOKEN` | — | `/internal`+`/admin` Bearer（必填） |
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
 | `OVMEM_RECALL_ENTRIES` | `5` | 每次召回条数上限（1-10） |
+| `OVMEM_SIGNING_SECRETS` | — | 多工作区安装时的额外签名密钥映射 `{"<installation_id>":"whsec_…"}`（服务可同时服务多个工作区，每个安装各自的密钥） |
 
 Multica 侧 UI 配置（随钩子请求下发，优先生效）：`recall_entries`（召回条数）、`include_thinking`（是否归档 thinking 作为蒸馏养料，默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀，如 `multica issue list`）。
 
@@ -182,3 +190,8 @@ scripts/                package.sh（打包）+ validate-manifest.mjs（离线�
 ## License
 
 MIT（见 [LICENSE](LICENSE)）。本插件是 OpenViking REST API 的独立客户端，不修改、不分发 OpenViking 本体（OpenViking 为 AGPLv3，按需自行部署）。
+
+## 变更记录
+
+- **0.2.0**（2026-09-29）：`ov-*` 原生工具门面（15 钩子，schema 从实例镜像，actor.id 注入 key）；共享记忆晋升（`/admin/consolidate` + 夜间 launchd）；多工作区安装签名密钥（`OVMEM_SIGNING_SECRETS`）；commit 元数据带 `agent=` 归属标签；队列快照重放重建扫描序（重启恢复修复）；partial 归档在更好内容重投时自动升级重跑
+- **0.1.0**（2026-09-29）：初始实现——7 类范围引擎、事件归档管道、持久化队列、3 个编排工具、companion API、skill、E2E

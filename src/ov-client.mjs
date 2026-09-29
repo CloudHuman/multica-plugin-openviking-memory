@@ -178,6 +178,12 @@ export class OvClient {
   async reindex(key, uri) {
     return this.call('/api/v1/content/reindex', { method: 'POST', key, body: { uri } });
   }
+
+  /** List a directory (absolute viking:// URIs only; returns entries array). */
+  async listDir(key, uri) {
+    const result = await this.call(`/api/v1/fs/ls?uri=${encodeURIComponent(uri)}`, { key });
+    return Array.isArray(result) ? result : (result?.entries ?? []);
+  }
 }
 
 function isAlreadyExists(err) {

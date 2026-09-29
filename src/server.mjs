@@ -29,6 +29,7 @@ import { makeArchiveHandler } from './pipeline.mjs';
 import { Ledger, ArchiveStatusLog } from './ledger.mjs';
 import { buildRememberFile } from './archive.mjs';
 import { makeOvToolHandler } from './ov-facade.mjs';
+import { consolidateShared } from './consolidate.mjs';
 import { safeEqual } from './util.mjs';
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
@@ -50,6 +51,7 @@ export function createApp({ cfg, ov, registry, queue, ledger, statusLog } = {}) 
     handleInternalEvent: makeInternalEventHandler(deps),
     handleAdminStatus: makeAdminStatusHandler(deps),
     handleAdminTestRecall: makeAdminTestRecallHandler(deps),
+    handleAdminConsolidate: makeAdminConsolidateHandler(deps),
   };
 }
 
@@ -361,6 +363,17 @@ export function makeAdminTestRecallHandler({ cfg, ov, registry }) {
   };
 }
 
+export function makeAdminConsolidateHandler({ ov, registry, log }) {
+  return async function adminConsolidate(body) {
+    if (!body.workspace_id) throw httpError(400, 'invalid_request', 'workspace_id is required');
+    return consolidateShared({
+      ov, registry, workspaceId: body.workspace_id,
+      perScopeLimit: Math.min(20, Math.max(1, Number(body.per_scope_limit) || 8)),
+      log,
+    });
+  };
+}
+
 // ---------------------------------------------------------------------------
 // HTTP wiring
 // ---------------------------------------------------------------------------
@@ -389,13 +402,26 @@ async function route({ req, rawBody, cfg, app }) {
 
   if (path.startsWith('/hooks/')) {
     if (req.method !== 'POST') throw httpError(405, 'method_not_allowed', 'hooks accept POST only');
-    const v = verifyHookDelivery({
-      secret: cfg.signingSecret,
-      timestamp: req.headers['x-multica-timestamp'],
-      signature: req.headers['x-multica-signature'],
-      rawBody,
-      installation: req.headers['x-multica-plugin-installation'],
-    });
+    // One service may serve several workspace installations; each signs with
+    // its own per-installation secret. Try the primary, then the extras —
+    // prefer the secret pinned to this installation when present.
+    const installation = req.headers['x-multica-plugin-installation'];
+    const candidates = [
+      cfg.signingSecrets?.[installation],
+      cfg.signingSecret,
+      ...Object.values(cfg.signingSecrets ?? {}),
+    ].filter(Boolean);
+    let v = { ok: false, reason: 'no signing secret configured' };
+    for (const secret of candidates) {
+      v = verifyHookDelivery({
+        secret,
+        timestamp: req.headers['x-multica-timestamp'],
+        signature: req.headers['x-multica-signature'],
+        rawBody,
+        installation,
+      });
+      if (v.ok) break;
+    }
     if (!v.ok) throw httpError(401, 'invalid_signature', `hook signature verification failed: ${v.reason}`);
     const body = parseJsonBody(rawBody);
     const hookKey = path.slice('/hooks/'.length);
@@ -427,6 +453,7 @@ async function route({ req, rawBody, cfg, app }) {
     if (path === '/internal/events') return { status: 200, headers: { body: await app.handleInternalEvent(body) } };
     if (path === '/admin/status') return { status: 200, headers: { body: await app.handleAdminStatus() } };
     if (path === '/admin/test-recall') return { status: 200, headers: { body: await app.handleAdminTestRecall(body) } };
+    if (path === '/admin/consolidate') return { status: 200, headers: { body: await app.handleAdminConsolidate(body) } };
     throw httpError(404, 'not_found', `unknown endpoint ${path}`);
   }
 
