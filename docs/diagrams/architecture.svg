@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" font-family="-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="36" font-size="17" font-weight="700" fill="#111827">架构总览 — Multica ⇄ 插件服务 ⇄ OpenViking</text>
+  <text x="20" y="56" font-size="12" fill="#6B7280">工作前召回 · 工作中查写 · 工作后沉淀：三层各管一半，隔离由 key=身份 结构性保证</text>
+
+  <!-- Multica column -->
+  <rect x="20" y="74" width="252" height="356" rx="14" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+  <text x="146" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#3730A3">Multica 工作区</text>
+  <rect x="35" y="114" width="222" height="46" rx="8" fill="#FFFFFF" stroke="#C7D2FE"/>
+  <text x="45" y="133" font-size="12" font-weight="700" fill="#111827">事件</text>
+  <text x="45" y="150" font-size="11" fill="#4B5563">task.completed / failed · comment.created</text>
+  <rect x="35" y="168" width="222" height="62" rx="8" fill="#FFFFFF" stroke="#C7D2FE"/>
+  <text x="45" y="187" font-size="12" font-weight="700" fill="#111827">智能体 MCP 工具（自动注入）</text>
+  <text x="45" y="204" font-size="11" fill="#4B5563">memory-recall / remember / status</text>
+  <text x="45" y="220" font-size="11" fill="#4B5563">ov-* 原生工具门面 ×15</text>
+  <rect x="35" y="238" width="222" height="40" rx="8" fill="#FFFFFF" stroke="#C7D2FE"/>
+  <text x="45" y="256" font-size="12" font-weight="700" fill="#111827">skill · openviking-memory</text>
+  <text x="45" y="271" font-size="11" fill="#4B5563">教智能体何时召回 / 记录 / 诚实</text>
+  <rect x="35" y="286" width="222" height="58" rx="8" fill="#FFFFFF" stroke="#C7D2FE" stroke-dasharray="4 3"/>
+  <text x="45" y="305" font-size="12" font-weight="700" fill="#111827">配套能力（可选）</text>
+  <text x="45" y="321" font-size="11" fill="#4B5563">私聊 / 追加 / 自动化 / 委派</text>
+  <text x="45" y="336" font-size="11" fill="#4B5563">→ POST /internal/events</text>
+  <text x="146" y="415" text-anchor="middle" font-size="11" fill="#6B7280">Settings → Plugins 安装 zip 并授权</text>
+
+  <!-- Plugin column -->
+  <rect x="330" y="74" width="310" height="356" rx="14" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="485" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#92400E">插件服务 openviking-agent-memory</text>
+  <rect x="345" y="112" width="280" height="32" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="485" y="133" text-anchor="middle" font-size="11.5" fill="#111827">① HMAC 验签 → 取材（callback · 5min token）</text>
+  <rect x="345" y="150" width="280" height="32" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="485" y="171" text-anchor="middle" font-size="11.5" fill="#111827">② 持久化队列（journal 重放 · 断点续传）</text>
+  <rect x="345" y="188" width="280" height="32" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="485" y="209" text-anchor="middle" font-size="11.5" fill="#111827">③ 归档器（parts 消息 · 探针/简报卫生规则）</text>
+  <rect x="345" y="226" width="280" height="32" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="485" y="247" text-anchor="middle" font-size="11.5" fill="#111827">④ 抽取监视 → 429 / 失败自动重提取</text>
+  <rect x="345" y="272" width="134" height="34" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="412" y="294" text-anchor="middle" font-size="11.5" font-weight="700" fill="#111827">范围引擎</text>
+  <rect x="491" y="272" width="134" height="34" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="558" y="288" text-anchor="middle" font-size="11.5" font-weight="700" fill="#111827">召回服务</text>
+  <text x="558" y="301" text-anchor="middle" font-size="10" fill="#6B7280">多空间合并 top-5</text>
+  <rect x="345" y="314" width="280" height="32" rx="8" fill="#FFFFFF" stroke="#FDE68A"/>
+  <text x="485" y="335" text-anchor="middle" font-size="11.5" fill="#111827">companion API · /internal/recall</text>
+  <text x="485" y="372" text-anchor="middle" font-size="11" fill="#6B7280">状态分级可见：memory-status · /admin/status · /admin/redrive</text>
+  <text x="485" y="390" text-anchor="middle" font-size="11" fill="#6B7280">共享晋升 /admin/consolidate（每夜 03:30）</text>
+  <text x="485" y="415" text-anchor="middle" font-size="11" fill="#92400E">Node ≥ 20 · 零 npm 依赖 · 单容器 · 状态目录单写者锁</text>
+
+  <!-- OV column -->
+  <rect x="698" y="74" width="242" height="356" rx="14" fill="#F0FDFA" stroke="#0D9488" stroke-width="1.5"/>
+  <text x="819" y="100" text-anchor="middle" font-size="14" font-weight="700" fill="#115E59">OpenViking</text>
+  <rect x="712" y="112" width="214" height="34" rx="8" fill="#FFFFFF" stroke="#99F6E4"/>
+  <text x="819" y="133" text-anchor="middle" font-size="11.5" fill="#111827">账号 = 1 个 multica 工作区</text>
+  <g font-size="11" fill="#134E4A">
+    <rect x="712" y="154" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="763" y="171" text-anchor="middle">任务协作</text>
+    <rect x="824" y="154" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="875" y="171" text-anchor="middle">智能体公共</text>
+    <rect x="712" y="186" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="763" y="203" text-anchor="middle">工作区共享</text>
+    <rect x="824" y="186" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="875" y="203" text-anchor="middle">私聊配对</text>
+    <rect x="712" y="218" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="763" y="235" text-anchor="middle">运行</text>
+    <rect x="824" y="218" width="102" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="875" y="235" text-anchor="middle">自动化</text>
+    <rect x="712" y="250" width="214" height="26" rx="13" fill="#CCFBF1" stroke="#5EEAD4"/><text x="819" y="267" text-anchor="middle">委派通道（每对智能体）</text>
+  </g>
+  <rect x="712" y="288" width="214" height="46" rx="8" fill="#FFFFFF" stroke="#99F6E4"/>
+  <text x="819" y="307" text-anchor="middle" font-size="11.5" font-weight="700" fill="#111827">每空间一把 key = 身份</text>
+  <text x="819" y="323" text-anchor="middle" font-size="11" fill="#DC2626">跨空间读写 → 403 结构性隔离</text>
+  <rect x="712" y="342" width="214" height="40" rx="8" fill="#FFFFFF" stroke="#99F6E4"/>
+  <text x="819" y="360" text-anchor="middle" font-size="11.5" font-weight="700" fill="#111827">LLM 抽取蒸馏</text>
+  <text x="819" y="375" text-anchor="middle" font-size="11" fill="#4B5563">长期记忆 + L0/L1/L2 分层索引</text>
+  <text x="819" y="415" text-anchor="middle" font-size="11" fill="#6B7280">另有 16 个原生 MCP 工具（/mcp）</text>
+
+  <!-- Arrows -->
+  <g stroke="#475569" stroke-width="1.6" fill="none" marker-end="url(#arr)">
+    <line x1="272" y1="132" x2="330" y2="132"/>
+    <line x1="272" y1="196" x2="330" y2="196"/>
+    <line x1="640" y1="205" x2="698" y2="205"/>
+    <line x1="698" y1="368" x2="640" y2="368"/>
+  </g>
+  <g font-size="11" fill="#334155">
+    <text x="301" y="120" text-anchor="middle" font-weight="700">签名投递</text>
+    <text x="301" y="250" text-anchor="middle">actor.id 可信</text>
+    <text x="301" y="264" text-anchor="middle">签名调用</text>
+    <text x="669" y="193" text-anchor="middle">sessions · commit</text>
+    <text x="669" y="207" text-anchor="middle">search</text>
+    <text x="669" y="356" text-anchor="middle">命中 + 来源</text>
+  </g>
+</svg>

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 330" font-family="-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#F59E0B"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="34" font-size="17" font-weight="700" fill="#111827">一次任务的记忆生命周期</text>
+  <text x="20" y="54" font-size="12" fill="#6B7280">五步闭环：召回 → 查写 → 归档 → 蒸馏 → 复用；失败可观测、可自愈、可手动兜底</text>
+
+  <!-- Stage cards -->
+  <g>
+    <rect x="20"  y="86" width="164" height="118" rx="12" fill="#EEF2FF" stroke="#6366F1"/>
+    <text x="102" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#3730A3">1 · 任务开始</text>
+    <text x="102" y="132" text-anchor="middle" font-size="11" fill="#374151">范围矩阵解析获准空间</text>
+    <text x="102" y="150" text-anchor="middle" font-size="11" fill="#374151">多空间检索合并 top-5</text>
+    <text x="102" y="168" text-anchor="middle" font-size="11" fill="#374151">带 uri + scope 来源</text>
+    <text x="102" y="190" text-anchor="middle" font-size="10.5" fill="#6B7280">skill 引导先召回再动手</text>
+
+    <rect x="204" y="86" width="164" height="118" rx="12" fill="#FFF7ED" stroke="#EA580C"/>
+    <text x="286" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#9A3412">2 · 执行中查写</text>
+    <text x="286" y="132" text-anchor="middle" font-size="11" fill="#374151">memory-recall 按需再召回</text>
+    <text x="286" y="150" text-anchor="middle" font-size="11" fill="#374151">memory-remember 沉淀结论</text>
+    <text x="286" y="168" text-anchor="middle" font-size="11" fill="#374151">ov-* 门面 = 原生工具全set</text>
+    <text x="286" y="190" text-anchor="middle" font-size="10.5" fill="#6B7280">身份取自签名体 actor.id</text>
+
+    <rect x="388" y="86" width="164" height="118" rx="12" fill="#FFFBEB" stroke="#F59E0B"/>
+    <text x="470" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#92400E">3 · 结束归档</text>
+    <text x="470" y="132" text-anchor="middle" font-size="11" fill="#374151">事件验签 → 取材(transcript)</text>
+    <text x="470" y="150" text-anchor="middle" font-size="11" fill="#374151">parts 消息入对应空间会话</text>
+    <text x="470" y="168" text-anchor="middle" font-size="11" fill="#374151">幂等队列 · 断点续传</text>
+    <text x="470" y="190" text-anchor="middle" font-size="10.5" fill="#6B7280">评论带作者 · 归属随档</text>
+
+    <rect x="572" y="86" width="164" height="118" rx="12" fill="#F0FDFA" stroke="#0D9488"/>
+    <text x="654" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#115E59">4 · 抽取蒸馏</text>
+    <text x="654" y="132" text-anchor="middle" font-size="11" fill="#374151">OpenViking LLM 抽取</text>
+    <text x="654" y="150" text-anchor="middle" font-size="11" fill="#374151">长期记忆 + 分层索引</text>
+    <text x="654" y="168" text-anchor="middle" font-size="11" fill="#374151">失败监视 → 自动重提取</text>
+    <text x="654" y="190" text-anchor="middle" font-size="10.5" fill="#6B7280">429 / 网络抖动可自愈</text>
+
+    <rect x="756" y="86" width="184" height="118" rx="12" fill="#F5F3FF" stroke="#7C3AED"/>
+    <text x="848" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#5B21B6">5 · 沉淀复用</text>
+    <text x="848" y="132" text-anchor="middle" font-size="11" fill="#374151">下一个任务按范围召回</text>
+    <text x="848" y="150" text-anchor="middle" font-size="11" fill="#374151">跨智能体交接 · 小队汇总</text>
+    <text x="848" y="168" text-anchor="middle" font-size="11" fill="#374151">夜间晋升进共享空间</text>
+    <text x="848" y="190" text-anchor="middle" font-size="10.5" fill="#6B7280">admin 可 redrive / consolidate</text>
+  </g>
+
+  <!-- forward arrows -->
+  <g stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#a2)">
+    <line x1="184" y1="145" x2="204" y2="145"/>
+    <line x1="368" y1="145" x2="388" y2="145"/>
+    <line x1="552" y1="145" x2="572" y2="145"/>
+    <line x1="736" y1="145" x2="756" y2="145"/>
+  </g>
+
+  <!-- loop arrow 5 -> 1 -->
+  <path d="M 848 204 C 848 258, 102 258, 102 204" stroke="#F59E0B" stroke-width="2" fill="none" stroke-dasharray="7 4" marker-end="url(#a3)"/>
+  <text x="475" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#B45309">记忆在下一次会话中按权限复用 —— 闭环</text>
+
+  <!-- bottom semantics -->
+  <g font-size="11" fill="#4B5563">
+    <text x="20" y="300">状态分级（不混淆）：</text>
+    <text x="120" y="300" fill="#111827" font-weight="700">归档成功</text>
+    <text x="178" y="300">≠</text>
+    <text x="196" y="300" fill="#111827" font-weight="700">抽取完成</text>
+    <text x="258" y="300">≠</text>
+    <text x="276" y="300" fill="#111827" font-weight="700">可检索</text>
+    <text x="330" y="300">— memory-status / /admin/status 分别呈现</text>
+    <text x="20" y="320">召回纪律：召回内容是参考证据；当前请求与实际执行结果优先；无相关记忆时如实说明，不编造。</text>
+  </g>
+</svg>
