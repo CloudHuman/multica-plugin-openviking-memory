@@ -63,7 +63,7 @@ export function makeArchiveHandler({ ov, registry, statusLog, cfg, log = () => {
 
     if (!job.cp.commitTaskId) {
       const commit = await ov.commitSession(rec.apiKey, built.sessionId, {
-        tags: commitTags({ workspaceId: p.workspaceId, scopeKey, kind: job.type, refId: p.refId }),
+        tags: commitTags({ workspaceId: p.workspaceId, scopeKey, kind: job.type, refId: p.refId, agentId: p.scope?.agentId }),
       });
       job.cp.commitTaskId = commit?.task_id ?? null;
       job.cp.archiveUri = commit?.archive_uri ?? null;

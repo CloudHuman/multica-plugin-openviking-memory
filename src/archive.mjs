@@ -220,7 +220,7 @@ export function buildRememberFile({ title, content, kind = 'experiences', agentI
   };
 }
 
-export function commitTags({ workspaceId, scopeKey, kind, refId }) {
+export function commitTags({ workspaceId, scopeKey, kind, refId, agentId }) {
   const tags = [
     `source=multica-plugin`,
     `workspace=${workspaceId}`,
@@ -228,6 +228,10 @@ export function commitTags({ workspaceId, scopeKey, kind, refId }) {
   ];
   if (kind) tags.push(`record=${kind}`);
   if (refId) tags.push(`ref=${String(refId).slice(0, 64)}`);
+  // Machine-readable attribution: which agent executed this run — the
+  // distiller reads it as input, and it travels with the archive metadata
+  // so attribution never depends on narrative extraction alone.
+  if (agentId) tags.push(`agent=${String(agentId).slice(0, 64)}`);
   return tags;
 }
 

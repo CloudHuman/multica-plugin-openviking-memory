@@ -138,8 +138,10 @@ test('drop matcher, chunking and commit tags', () => {
   const chunks = chunkMessages(Array.from({ length: 250 }, (_, i) => ({ i })), 100);
   assert.deepEqual(chunks.map((c) => c.length), [100, 100, 50]);
 
-  const tags = commitTags({ workspaceId: FIXTURE_WS, scopeKey: `task:${FIXTURE_WS}:${FIXTURE_ISSUE_ID}`, kind: 'archive-run', refId: 'task-1' });
+  const tags = commitTags({ workspaceId: FIXTURE_WS, scopeKey: `task:${FIXTURE_WS}:${FIXTURE_ISSUE_ID}`, kind: 'archive-run', refId: 'task-1', agentId: FIXTURE_AGENT_A });
   assert.ok(tags.includes('source=multica-plugin'));
   assert.ok(tags.includes('scope=task'));
   assert.ok(tags.includes('workspace=' + FIXTURE_WS));
+  assert.ok(tags.includes('agent=' + FIXTURE_AGENT_A));
+  assert.equal(commitTags({ workspaceId: FIXTURE_WS, scopeKey: `task:${FIXTURE_WS}:x` }).includes('agent='), false);
 });
