@@ -156,12 +156,17 @@ export class OvClient {
   async search(key, { query, limit = 10, readContent = false }) {
     const body = { query, mode: 'list', limit };
     if (readContent) body.read_content = true;
-    return this.call('/api/v1/search/search', { method: 'POST', key, body });
+    // Retrieval sits right after extraction bursts — transient provider errors
+    // (embedding rate limits) are common enough to warrant one quiet retry.
+    return withRetry(() => this.call('/api/v1/search/search', { method: 'POST', key, body }), { attempts: 2 });
   }
 
   async readContent(key, uri, { offset = 1, limit = 400 } = {}) {
     const qs = `?uri=${encodeURIComponent(uri)}&offset=${offset}&limit=${limit}`;
-    return this.call(`/api/v1/content/read${qs}`, { key });
+    const result = await this.call(`/api/v1/content/read${qs}`, { key });
+    // v0.4.x returns the body as a bare string in result (with uri echoed on some versions)
+    const content = typeof result === 'string' ? result : result?.content;
+    return { uri, content: typeof content === 'string' ? content : undefined };
   }
 
   // ---- active writes (agent-curated memories) ----

@@ -196,7 +196,7 @@ export async function startFakeOv({ taskBehavior = 'succeed' } = {}) {
         const uri = url.searchParams.get('uri');
         const file = space.files.get(uri);
         if (!file) return err(404, 'NOT_FOUND', 'no file');
-        return ok({ uri, content: file });
+        return ok(file); // real OV returns the body as a bare string in result
       }
       if (path === '/api/v1/content/write' && req.method === 'POST') {
         space.files.set(body.uri, body.content);

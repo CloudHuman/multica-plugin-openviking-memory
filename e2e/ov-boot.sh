@@ -14,6 +14,9 @@ IMAGE="${OV_E2E_IMAGE:-openviking-cn-beijing.cr.volces.com/volcengine/openviking
 
 if docker ps --format '{{.Names}}' | grep -qx "$NAME"; then
   echo "container $NAME already running"
+  # Remember the root key so e2e reruns reuse the instance consistently.
+  KEYFILE="${TMPDIR:-/tmp}/ovmem-e2e-root-key"
+  [[ -f "$KEYFILE" ]] || printf '%s' "$OV_ROOT_KEY" > "$KEYFILE" && chmod 600 "$KEYFILE"
   exit 0
 fi
 docker rm -f "$NAME" >/dev/null 2>&1 || true
@@ -53,5 +56,8 @@ docker run -d --name "$NAME" \
   -e OV_ROOT_KEY -e OV_VLM_KEY -e OV_EMBED_KEY \
   -v "${NAME}-data:/app/.openviking" \
   "$IMAGE" >/dev/null
+
+KEYFILE="${TMPDIR:-/tmp}/ovmem-e2e-root-key"
+printf '%s' "$OV_ROOT_KEY" > "$KEYFILE" && chmod 600 "$KEYFILE"
 
 echo "started $NAME on 127.0.0.1:${PORT} (image $IMAGE)"

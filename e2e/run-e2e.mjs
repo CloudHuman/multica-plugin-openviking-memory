@@ -21,16 +21,30 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OV_PORT = process.env.OV_E2E_PORT ?? '1936';
 const PLUGIN_PORT = Number(process.env.OVMEM_E2E_PLUGIN_PORT ?? 18790);
 const MC_PORT = Number(process.env.OVMEM_E2E_MC_PORT ?? 18081);
-const OV_ROOT_KEY = process.env.OV_ROOT_KEY ?? randomBytes(32).toString('hex');
+// Root key: explicit env wins; else reuse the key recorded by ov-boot.sh for
+// the running instance (reruns MUST NOT mint a fresh key against an existing
+// container, or provisioning 401s); else random for a fresh boot.
+function resolveRootKey() {
+  if (process.env.OV_ROOT_KEY) return process.env.OV_ROOT_KEY;
+  try {
+    return readFileSync(join(tmpdir(), 'ovmem-e2e-root-key'), 'utf8').trim();
+  } catch {
+    return randomBytes(32).toString('hex');
+  }
+}
+const OV_ROOT_KEY = resolveRootKey();
 const SIGNING_SECRET = 'whsec_' + randomBytes(32).toString('hex');
 const ADMIN_TOKEN = 'e2e-admin-' + randomBytes(8).toString('hex');
 
-const WS = 'e2e00000-0000-0000-0000-000000000001';
-const ISSUE_ID = 'e2e00000-0000-0000-0000-000000000002';
-const AGENT_A = 'e2e00000-0000-0000-0000-000000000003';
-const AGENT_B = 'e2e00000-0000-0000-0000-000000000004';
-const USER_1 = 'e2e00000-0000-0000-0000-000000000005';
-const TASK_ID = 'e2e00000-0000-0000-0000-000000000006';
+// Re-runs get their own identifier universe (scopes, sessions, ledger), so a
+// rerun never collides with a previous run's archived memories.
+const RUN = process.env.E2E_RUN_ID ?? Date.now().toString(36);
+const WS = `e2ews-${RUN}`;
+const ISSUE_ID = `e2eissue-${RUN}`;
+const AGENT_A = `e2eagenta-${RUN}`;
+const AGENT_B = `e2eagentb-${RUN}`;
+const USER_1 = `e2euser-${RUN}`;
+const TASK_ID = `e2etask-${RUN}`;
 
 const results = [];
 function step(name, ok, detail = '') {
@@ -46,6 +60,7 @@ async function waitFor(label, fn, { timeoutMs = 240_000, intervalMs = 4_000 } = 
       const v = await fn();
       if (v) return v;
     } catch (err) {
+      if (err?.fatal) throw err;
       lastErr = err;
     }
     await sleep(intervalMs);
@@ -222,6 +237,16 @@ async function main() {
     if (r1.status !== 200 || r1.json?.result?.status !== 'queued') throw new Error(`S1 delivery failed: ${r1.status} ${r1.text}`);
     const taskScope = `task:${WS}:${ISSUE_ID}`;
     const hit = await waitFor('extraction produces searchable memory', async () => {
+      // Fail fast if the archive job itself died (e.g. provisioning auth).
+      const adm = await jfetch(`http://127.0.0.1:${PLUGIN_PORT}/admin/status`, {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      }).catch(() => null);
+      const dead = adm?.json?.result?.queue_recent?.find((j) => j.status === 'failed');
+      if (dead) {
+        const e = new Error(`archive job failed permanently: ${dead.last_error}`);
+        e.fatal = true;
+        throw e;
+      }
       const key = keyOf(taskScope);
       if (!key) return null;
       const hits = await ovSearch(key, '消息推送服务选型 RocketMQ 结论');
@@ -235,20 +260,29 @@ async function main() {
     const contentR = await jfetch(`${ovBase}/api/v1/content/read?uri=${encodeURIComponent(hit[0].uri)}&offset=1&limit=500`, {
       headers: { Authorization: `Bearer ${keyOf(taskScope)}` },
     });
-    const body = contentR.json?.result?.content ?? '';
+    const rawResult = contentR.json?.result;
+    const body = typeof rawResult === 'string' ? rawResult : rawResult?.content ?? '';
     const cleanBody = /RocketMQ|顺序|事务/.test(body) && !body.includes('Multica Agent Runtime') && !body.includes('issue list');
     step('S2 distilled memory carries the business conclusion (no brief/probe)', cleanBody, body.slice(0, 120).replace(/\n/g, ' '));
 
-    // ---- S3: agent recall tool (signed agent trigger)
+    // ---- S3: agent recall tool (signed agent trigger), retried across transient retrieval noise
     const agentScopeA = `agent:${WS}:${AGENT_A}`;
-    const rr = await signAndPost('/hooks/memory-recall', {
-      version: 1, invocation_id: 'e2e-recall-1', attempt: 1, occurred_at: new Date().toISOString(),
-      hook_key: 'memory-recall', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
-      actor: { type: 'agent', id: AGENT_A }, input: { query: '消息推送服务怎么选型的?', issue_id: ISSUE_ID }, config: {},
-    });
-    const entries = rr.json?.result?.entries ?? [];
-    step('S3 agent memory-recall returns scoped entries with sources', rr.status === 200 && entries.length > 0,
-      `entries=${entries.length} scopes=${[...new Set(entries.map((e) => e.scope.split(':')[0]))].join(',')}`);
+    let entries = [];
+    let s3detail = '';
+    for (let attempt = 1; attempt <= 3 && !entries.length; attempt++) {
+      const rr = await signAndPost('/hooks/memory-recall', {
+        version: 1, invocation_id: `e2e-recall-${attempt}`, attempt: 1, occurred_at: new Date().toISOString(),
+        hook_key: 'memory-recall', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
+        actor: { type: 'agent', id: AGENT_A }, input: { query: '消息推送服务怎么选型的?', issue_id: ISSUE_ID }, config: {},
+      });
+      entries = rr.json?.result?.entries ?? [];
+      s3detail = `status=${rr.status} entries=${entries.length} scopesSearched=${JSON.stringify(rr.json?.result?.scopesSearched ?? null)}`;
+      if (!entries.length) await sleep(5_000);
+    }
+    step('S3 agent memory-recall returns scoped entries with sources', entries.length > 0,
+      entries.length
+        ? `entries=${entries.length} scopes=${[...new Set(entries.map((e) => e.scope.split(':')[0]))].join(',')}`
+        : s3detail);
 
     // ---- S4: agent remember tool → own public space, searchable
     const rem = await signAndPost('/hooks/memory-remember', {

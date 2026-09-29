@@ -199,13 +199,15 @@ export function makeMemoryRememberHandler({ cfg, ov, registry }) {
     const file = buildRememberFile({
       title: input.title, content, kind: input.kind, agentId: actor.id,
     });
-    await ov.writeContent(rec.apiKey, { uri: file.uri, content: file.content, mode: 'create' });
+    // Content-plane URIs must be absolute viking:// paths rooted in this user space.
+    const fullUri = `viking://user/${rec.userId}/${file.uri}`;
+    await ov.writeContent(rec.apiKey, { uri: fullUri, content: file.content, mode: 'create' });
     try {
-      await ov.reindex(rec.apiKey, file.uri);
+      await ov.reindex(rec.apiKey, fullUri);
     } catch { /* reindex is enrichment; extraction-free write still readable */ }
     return {
       status: 'remembered',
-      uri: `viking://user/${rec.userId}/${file.uri}`,
+      uri: fullUri,
       scope: key,
       note: '已写入该智能体公共记忆；请保持内容简洁、可复用、无敏感信息。',
     };

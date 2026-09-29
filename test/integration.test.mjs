@@ -156,8 +156,9 @@ test('integration: task.completed → archive → extract → recall → isolati
     const files = ov.filesOf(agentRec.apiKey);
     assert.equal(files.size, 1);
     const [[uri, content]] = [...files];
-    assert.match(uri, /^memories\/cases\//);
+    assert.match(uri, /^viking:\/\/user\/[^/]+\/memories\/cases\//);
     assert.match(content, /RocketMQ/);
+    assert.match(rem.json.result.uri, /^viking:\/\/user\/[^/]+\/memories\/cases\//);
     // agent B's space stays empty
     const scopeB = scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B);
     assert.equal(registry.get(scopeB), null);
