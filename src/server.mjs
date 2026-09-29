@@ -399,7 +399,18 @@ async function route({ req, rawBody, cfg, app }) {
     if (!v.ok) throw httpError(401, 'invalid_signature', `hook signature verification failed: ${v.reason}`);
     const body = parseJsonBody(rawBody);
     const hookKey = path.slice('/hooks/'.length);
-    const handler = hookKey.startsWith('ov-') ? app.handlers.ov : app.handlers[hookKey];
+    if (hookKey.startsWith('ov-')) {
+      // Native MCP tool errors (bad uri, invalid args) are TOOL errors, not
+      // transport failures — return them as payload so the agent reads the
+      // original OV message, exactly as a direct MCP client would.
+      try {
+        const result = await app.handlers.ov(body);
+        return { status: 200, headers: { body: result } };
+      } catch (err) {
+        return { status: 200, headers: { body: { tool: String(hookKey).replace(/^ov-/, ''), error: String(err.message ?? err) } } };
+      }
+    }
+    const handler = app.handlers[hookKey];
     if (!handler) throw httpError(404, 'not_found', `unknown hook ${hookKey}`);
     const result = await handler(body);
     return { status: 200, headers: { body: result } };
