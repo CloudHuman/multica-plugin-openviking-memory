@@ -33,7 +33,7 @@ export const DEFAULTS = {
   toolOutputMaxChars: 8000,
   dropToolPrefixes: [],
   // Extraction watch
-  extractWatchTimeoutMs: 300_000,
+  extractWatchTimeoutMs: 120_000,
   extractWatchIntervalMs: 5_000,
   reextractAttempts: 3,
   reextractBaseDelayMs: 20_000,
