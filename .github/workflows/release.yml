@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run tests
+        run: node --test test/*.test.mjs
+      - name: Build plugin package
+        run: |
+          sudo apt-get update && sudo apt-get install -y zip
+          bash scripts/package.sh --version "${GITHUB_REF_NAME#v}"
+      - name: Create GitHub release with the plugin zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true

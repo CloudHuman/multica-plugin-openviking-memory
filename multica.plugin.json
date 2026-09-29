@@ -1,0 +1,143 @@
+{
+  "manifest_version": 1,
+  "key": "io.github.cloudhuman.openviking-memory",
+  "name": "OpenViking Agent Memory",
+  "description": "Agent memory for Multica backed by OpenViking: archives completed runs and comments into scoped memory spaces (task collaboration, agent public, workspace shared, direct-message), distills long-term memories via extraction, and offers agents scoped recall / remember / status tools.",
+  "version": "0.1.0",
+  "author": {
+    "name": "cloud",
+    "url": "https://github.com/CloudHuman"
+  },
+  "scopes": [
+    "issues:read",
+    "comments:read",
+    "tasks:read",
+    "net:host.docker.internal"
+  ],
+  "config": {
+    "recall_entries": {
+      "type": "number",
+      "label": "Recall entries",
+      "description": "Maximum memory entries returned per recall (1-10).",
+      "required": false
+    },
+    "include_thinking": {
+      "type": "bool",
+      "label": "Archive thinking",
+      "description": "Also archive raw thinking messages as distillation nourishment (off = only user input, tool calls/results and visible replies).",
+      "required": false
+    },
+    "drop_tool_prefixes": {
+      "type": "string",
+      "label": "Dropped tool prefixes",
+      "description": "One tool invocation prefix per line; matching tool_use/tool_result pairs are skipped during archiving (e.g. high-frequency probe calls).",
+      "placeholder": "multica issue list",
+      "multiline": true,
+      "required": false
+    }
+  },
+  "contributes": {
+    "hooks": [
+      {
+        "key": "memory-archive",
+        "name": "Memory Archive",
+        "description": "Background archiver: on task.completed / task.failed it archives the run transcript (issue text, agent replies, tool calls and results) into the task collaboration memory scope; on comment.created it archives the comment with author attribution. Extraction into long-term memory runs afterwards in OpenViking.",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "triggers": ["event"],
+        "events": ["task.completed", "task.failed", "comment.created"],
+        "transport": {
+          "type": "http",
+          "url": "https://host.docker.internal:8790/hooks/memory-archive"
+        },
+        "timeout_ms": 10000
+      },
+      {
+        "key": "memory-recall",
+        "name": "Memory Recall",
+        "description": "Search the memory scopes this agent is allowed to read (current task collaboration memory, this agent's public memory, workspace shared memory) and return the most relevant entries with their sources. Call it at the start of a task, and again whenever new requirements arrive.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "What to look for in memories; use the task goal or the new requirement text."
+            },
+            "issue_id": {
+              "type": "string",
+              "description": "UUID or key (e.g. MUL-123) of the issue being worked on; adds its task collaboration memory to the search scopes."
+            },
+            "top_k": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "description": "Maximum entries to return; default 5."
+            }
+          },
+          "required": ["query"]
+        },
+        "triggers": ["agent"],
+        "transport": {
+          "type": "http",
+          "url": "https://host.docker.internal:8790/hooks/memory-recall"
+        },
+        "timeout_ms": 20000
+      },
+      {
+        "key": "memory-remember",
+        "name": "Memory Remember",
+        "description": "Actively record a durable conclusion, convention or lesson into this agent's public memory (visible to this agent across tasks). Write facts worth reusing, not transcripts; keep it concise and self-contained.",
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "The memory content in markdown; state the fact/decision/lesson and its context."
+            },
+            "title": {
+              "type": "string",
+              "description": "Short title for the memory file."
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["experiences", "cases", "entities", "preferences", "events"],
+              "description": "Memory category; default experiences."
+            }
+          },
+          "required": ["content"]
+        },
+        "triggers": ["agent"],
+        "transport": {
+          "type": "http",
+          "url": "https://host.docker.internal:8790/hooks/memory-remember"
+        },
+        "timeout_ms": 20000
+      },
+      {
+        "key": "memory-status",
+        "name": "Memory Status",
+        "description": "Check memory service health, archiving queue depth and the processing state of recent archives. Use it to verify whether a finished run has been distilled into long-term memory.",
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "triggers": ["agent"],
+        "transport": {
+          "type": "http",
+          "url": "https://host.docker.internal:8790/hooks/memory-status"
+        },
+        "timeout_ms": 15000
+      }
+    ],
+    "resources": [
+      {
+        "type": "skill",
+        "key": "openviking-memory",
+        "entry": "skills/openviking-memory/SKILL.md"
+      }
+    ]
+  }
+}

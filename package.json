@@ -1,0 +1,27 @@
+{
+  "name": "multica-plugin-openviking-memory",
+  "version": "0.1.0",
+  "description": "Multica plugin backend integrating OpenViking agent memory: scoped recall, run archiving, extraction and agent-facing memory tools.",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/server.mjs",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/",
+    "package": "bash scripts/package.sh",
+    "e2e": "node e2e/run-e2e.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CloudHuman/multica-plugin-openviking-memory.git"
+  },
+  "keywords": [
+    "multica",
+    "openviking",
+    "agent-memory"
+  ]
+}

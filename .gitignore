@@ -1,0 +1,10 @@
+node_modules/
+dist/
+state/
+*.local.env
+.env
+*.pem
+*.key
+!deploy/.gitkeep
+coverage/
+.DS_Store
