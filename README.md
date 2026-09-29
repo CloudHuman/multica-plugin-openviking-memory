@@ -195,3 +195,19 @@ MIT（见 [LICENSE](LICENSE)）。本插件是 OpenViking REST API 的独立客�
 
 - **0.2.0**（2026-09-29）：`ov-*` 原生工具门面（15 钩子，schema 从实例镜像，actor.id 注入 key）；共享记忆晋升（`/admin/consolidate` + 夜间 launchd）；多工作区安装签名密钥（`OVMEM_SIGNING_SECRETS`）；commit 元数据带 `agent=` 归属标签；队列快照重放重建扫描序（重启恢复修复）；partial 归档在更好内容重投时自动升级重跑
 - **0.1.0**（2026-09-29）：初始实现——7 类范围引擎、事件归档管道、持久化队列、3 个编排工具、companion API、skill、E2E
+
+## 运维：抽取失败与恢复
+
+抽取依赖 LLM 配额，限流（429）或网络抖动会让抽取任务失败。链路自带三层自愈：
+
+1. **作业重试**：归档作业指数退避重试（默认 8 次）
+2. **自动重提取**：commit 后监视抽取任务，失败自动调 `POST /sessions/{id}/extract`
+3. **手动兜底**：`POST /admin/redrive {"scope":"…","session_id":"…"}`；共享晋升被限流打断时 `rm state/consolidated.json` 后重跑 `POST /admin/consolidate`
+
+状态判别：`memory-status` / `GET /admin/status` 中 `extraction` 字段——`done`（完成）/ `reextracted`（已触发重提取）/ `timeout`（超时标记，抽取可能仍在后台完成）/ `failed`。归档成功 ≠ 抽取完成 ≠ 产生可用记忆，分别查看。
+
+## 部署形态（当前生产）
+
+- 插件服务：Docker 容器 `openviking-memory-plugin`（`deploy/docker-compose.yml`，restart: unless-stopped，密钥仅存容器 env 的 `deploy/.env`，0600）
+- OV：生产实例 v0.4.21（升级 0.4.22 的 runbook 见 `docs/`）
+- 备份：`/Users/cloud/ov-backups/ov-backup.sh`（pg_dump + MinIO 镜像 + conf，保留 14 份）

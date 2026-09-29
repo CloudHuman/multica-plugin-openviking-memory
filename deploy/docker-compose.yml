@@ -1,27 +1,22 @@
-# Plugin backend service for dockerized multica deployments.
-# The multica backend reaches this service at https://host.docker.internal:8790
-# (dev origins) or at your real HTTPS origin in production.
+# Plugin backend in a container: secrets live only in container env (agents
+# running as the host user can no longer read them), restart:unless-stopped
+# replaces the launchd supervisor, state persists via bind mount.
 services:
   openviking-memory:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
     image: openviking-memory-plugin:latest
+    container_name: openviking-memory-plugin
     restart: unless-stopped
+    env_file: .env
     environment:
-      OVMEM_OV_BASE_URL: ${OVMEM_OV_BASE_URL:?set in .env}
-      OVMEM_OV_ROOT_KEY: ${OVMEM_OV_ROOT_KEY:?set in .env}
-      OVMEM_SIGNING_SECRET: ${OVMEM_SIGNING_SECRET:?whsec_… from the multica plugin token rotation}
-      OVMEM_PLUGIN_TOKEN: ${OVMEM_PLUGIN_TOKEN:?bearer token for /internal + /admin}
-      OVMEM_TLS_CERT: ${OVMEM_TLS_CERT:-}
-      OVMEM_TLS_KEY: ${OVMEM_TLS_KEY:-}
+      OVMEM_BIND: 0.0.0.0
+      OVMEM_STATE_DIR: /app/state
     ports:
       - "8790:8790"
     volumes:
-      - plugin-state:/app/state
-      # Mount a cert signed by a CA the multica backend trusts, e.g. the dev CA:
-      #   ./certs:/certs:ro     with OVMEM_TLS_CERT=/certs/hook-server.pem
+      - ../state:/app/state
       - ./certs:/certs:ro
-
-volumes:
-  plugin-state:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
