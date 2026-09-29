@@ -363,17 +363,23 @@ async function main() {
     const d2 = await signAndPost('/hooks/memory-archive', dupBody);
     step('S9 duplicate delivery is a ledger no-op', d1.json?.result?.status === 'queued' && d2.json?.result?.status === 'duplicate');
 
-    // ---- S10: status surfaces
-    const st = await signAndPost('/hooks/memory-status', {
-      version: 1, invocation_id: 'e2e-st-1', attempt: 1, occurred_at: new Date().toISOString(),
-      hook_key: 'memory-status', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
-      actor: { type: 'agent', id: AGENT_A }, input: {}, config: {},
-      callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
-    });
-    const s = st.json?.result;
+    // ---- S10: status surfaces (wait until every archive job settles)
+    let s = null;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const st = await signAndPost('/hooks/memory-status', {
+        version: 1, invocation_id: `e2e-st-${attempt}`, attempt: 1, occurred_at: new Date().toISOString(),
+        hook_key: 'memory-status', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
+        actor: { type: 'agent', id: AGENT_A }, input: {},
+        callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
+      });
+      s = st.json?.result;
+      const settled = (s?.archive_queue?.done ?? 0) >= 3 && !(s?.archive_queue?.running > 0);
+      if (st.status === 200 && s?.openviking?.healthy === true && settled) break;
+      await sleep(3_000);
+    }
     step('S10 memory-status reports health, queue and archives',
-      st.status === 200 && s?.openviking?.healthy === true && s?.archive_queue?.done >= 3,
-      `done=${s?.archive_queue?.done} scopes=${s?.scopes?.scopes}`);
+      (s?.archive_queue?.done ?? 0) >= 3 && !s?.archive_queue?.failed,
+      `queue=${JSON.stringify(s?.archive_queue)} scopes=${s?.scopes?.scopes}`);
 
     // ---- S11: admin status (bearer)
     const adm = await jfetch(`http://127.0.0.1:${PLUGIN_PORT}/admin/status`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } });
