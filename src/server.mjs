@@ -28,12 +28,14 @@ import { JobQueue } from './queue.mjs';
 import { makeArchiveHandler } from './pipeline.mjs';
 import { Ledger, ArchiveStatusLog } from './ledger.mjs';
 import { buildRememberFile } from './archive.mjs';
+import { makeOvToolHandler } from './ov-facade.mjs';
 import { safeEqual } from './util.mjs';
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
 
 export function createApp({ cfg, ov, registry, queue, ledger, statusLog } = {}) {
   const deps = { cfg, ov, registry, queue, ledger, statusLog };
+  const ovTool = makeOvToolHandler(deps);
   return {
     cfg, ov, registry, queue, ledger, statusLog,
     handlers: {
@@ -41,6 +43,8 @@ export function createApp({ cfg, ov, registry, queue, ledger, statusLog } = {}) 
       'memory-recall': makeMemoryRecallHandler(deps),
       'memory-remember': makeMemoryRememberHandler(deps),
       'memory-status': makeMemoryStatusHandler(deps),
+      // ov-<native-tool> facade hooks all share one handler
+      ov: ovTool,
     },
     handleInternalRecall: makeInternalRecallHandler(deps),
     handleInternalEvent: makeInternalEventHandler(deps),
@@ -395,7 +399,7 @@ async function route({ req, rawBody, cfg, app }) {
     if (!v.ok) throw httpError(401, 'invalid_signature', `hook signature verification failed: ${v.reason}`);
     const body = parseJsonBody(rawBody);
     const hookKey = path.slice('/hooks/'.length);
-    const handler = app.handlers[hookKey];
+    const handler = hookKey.startsWith('ov-') ? app.handlers.ov : app.handlers[hookKey];
     if (!handler) throw httpError(404, 'not_found', `unknown hook ${hookKey}`);
     const result = await handler(body);
     return { status: 200, headers: { body: result } };
