@@ -100,7 +100,7 @@ async function watchExtraction({ ov, key, job, cfg, log, sessionId }) {
     try {
       const task = await ov.getTask(key, job.cp.commitTaskId);
       const status = task?.status ?? task?.state;
-      if (status === 'succeeded' || status === 'success' || status === 'done') {
+      if (status === 'succeeded' || status === 'success' || status === 'done' || status === 'completed') {
         return { state: 'done' };
       }
       if (status === 'failed' || status === 'error') {

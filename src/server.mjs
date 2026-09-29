@@ -166,8 +166,8 @@ export function makeMemoryRecallHandler({ cfg, ov, registry }) {
         });
         await mc.getIssue(input.issue_id);
         scopeCtx.issueId = input.issue_id;
-      } catch {
-        /* unverified issue → recall without the task scope */
+      } catch (err) {
+        log(`memory-recall: issue ${input.issue_id} could not be verified (${err.message}); recalling without the task scope`);
       }
     }
     const scopeKeys = resolveReadScopes(scopeCtx);

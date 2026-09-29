@@ -274,6 +274,7 @@ async function main() {
         version: 1, invocation_id: `e2e-recall-${attempt}`, attempt: 1, occurred_at: new Date().toISOString(),
         hook_key: 'memory-recall', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
         actor: { type: 'agent', id: AGENT_A }, input: { query: '消息推送服务怎么选型的?', issue_id: ISSUE_ID }, config: {},
+        callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
       });
       entries = rr.json?.result?.entries ?? [];
       s3detail = `status=${rr.status} entries=${entries.length} scopesSearched=${JSON.stringify(rr.json?.result?.scopesSearched ?? null)}`;
@@ -289,6 +290,7 @@ async function main() {
       version: 1, invocation_id: 'e2e-rem-1', attempt: 1, occurred_at: new Date().toISOString(),
       hook_key: 'memory-remember', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
       actor: { type: 'agent', id: AGENT_A },
+      callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
       input: { title: '选型对比模板', content: '做中间件选型时,按 顺序性/事务/死信/生态/成本 五维对比,并给出灰度与回滚方案。', kind: 'experiences' },
       config: {},
     });
@@ -349,6 +351,7 @@ async function main() {
       version: 1, invocation_id: 'e2e-recall-b', attempt: 1, occurred_at: new Date().toISOString(),
       hook_key: 'memory-recall', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
       actor: { type: 'agent', id: AGENT_B }, input: { query: '中间件选型 对比 模板' }, config: {},
+      callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
     });
     const bEntries = rb.json?.result?.entries ?? [];
     step('S8 agent B recall does not surface agent A memories', !bEntries.some((e) => e.scope === agentScopeA),
@@ -365,6 +368,7 @@ async function main() {
       version: 1, invocation_id: 'e2e-st-1', attempt: 1, occurred_at: new Date().toISOString(),
       hook_key: 'memory-status', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
       actor: { type: 'agent', id: AGENT_A }, input: {}, config: {},
+      callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
     });
     const s = st.json?.result;
     step('S10 memory-status reports health, queue and archives',
