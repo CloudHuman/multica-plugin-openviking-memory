@@ -51,7 +51,7 @@ export function createApp({ cfg, ov, registry, queue, ledger, statusLog } = {}) 
     handleInternalEvent: makeInternalEventHandler(deps),
     handleAdminStatus: makeAdminStatusHandler(deps),
     handleAdminTestRecall: makeAdminTestRecallHandler(deps),
-    handleAdminConsolidate: makeAdminConsolidateHandler(deps),
+    handleAdminConsolidate: makeAdminConsolidateHandler({ ...deps, cfg, log }),
   };
 }
 
@@ -363,11 +363,11 @@ export function makeAdminTestRecallHandler({ cfg, ov, registry }) {
   };
 }
 
-export function makeAdminConsolidateHandler({ ov, registry, log }) {
+export function makeAdminConsolidateHandler({ ov, registry, cfg, log }) {
   return async function adminConsolidate(body) {
     if (!body.workspace_id) throw httpError(400, 'invalid_request', 'workspace_id is required');
     return consolidateShared({
-      ov, registry, workspaceId: body.workspace_id,
+      ov, registry, workspaceId: body.workspace_id, stateDir: cfg.stateDir,
       perScopeLimit: Math.min(20, Math.max(1, Number(body.per_scope_limit) || 8)),
       log,
     });

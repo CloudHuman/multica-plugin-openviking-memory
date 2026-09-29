@@ -1,34 +1,34 @@
-import { cap, nowIso } from './util.mjs';
+import { cap, nowIso, readJsonIfExists, atomicWriteJson } from './util.mjs';
 import { scopeKey } from './scopes.mjs';
+import { join } from 'node:path';
 
 /**
  * Shared-memory promotion: distil durable knowledge from the workspace's
- * agent-public and task-collaboration spaces into the workspace shared space,
- * so the shared scope agents read on every recall actually carries content.
+ * agent-public and task-collaboration spaces into the workspace shared space.
  *
- * Selection: the reusable kinds (experiences / cases / preferences /
- * entities) — events are run noise by design. Idempotent per file basename;
- * provenance is preserved in frontmatter (promoted_from carries the source
- * scope, so attribution survives promotion).
+ * Writes go through OpenViking's NATIVE session→commit→extraction pipeline
+ * (one session per run) — the same mechanism that makes agent-public memories
+ * searchable — so promoted entries get real L0/L1 layers and semantic index
+ * entries. Idempotency is tracked in {stateDir}/consolidated.json (file
+ * basenames already promoted).
  */
 const PROMOTABLE_KINDS = ['experiences', 'cases', 'preferences', 'entities'];
 
 export async function consolidateShared({
-  ov, registry, workspaceId,
-  perScopeLimit = 8, maxPerRun = 30, contentMinChars = 30, log = () => {},
+  ov, registry, workspaceId, stateDir,
+  perScopeLimit = 8, maxPerRun = 12, contentMinChars = 30, log = () => {},
 }) {
   const sharedScope = scopeKey('shared', workspaceId);
   const shared = await registry.ensureScope(sharedScope, { workspaceId });
-
-  const existing = new Set();
-  for (const entry of await walkDirs(ov, shared.apiKey, shared.userId, [...PROMOTABLE_KINDS, 'shared'])) {
-    existing.add(basename(entry.uri));
-  }
+  const donePath = join(stateDir, 'consolidated.json');
+  const done = readJsonIfExists(donePath, { files: {} });
+  done.files ??= {};
 
   const sourceScopes = Object.keys(registry.data.scopes).filter(
     (k) => k.startsWith(`agent:${workspaceId}:`) || k.startsWith(`task:${workspaceId}:`),
   );
-  const promoted = [];
+
+  const selected = [];
   outer: for (const scopeKeyStr of sourceScopes) {
     const rec = registry.get(scopeKeyStr);
     if (!rec) continue;
@@ -42,41 +42,50 @@ export async function consolidateShared({
     files.sort((a, b) => String(b.modTime ?? '').localeCompare(String(a.modTime ?? '')));
     let taken = 0;
     for (const f of files) {
-      if (taken >= perScopeLimit || promoted.length >= maxPerRun) break outer;
+      if (taken >= perScopeLimit || selected.length >= maxPerRun) break outer;
       const base = basename(f.uri);
-      if (existing.has(base)) continue;
+      if (done.files[base] || existingIn(selected, base)) continue;
       let content;
       try {
         const r = await ov.readContent(rec.apiKey, f.uri, { limit: 400 });
         content = r?.content;
       } catch { continue; }
       if (!content || content.length < contentMinChars) continue;
-      const targetUri = `viking://user/${shared.userId}/memories/shared/${base}`;
-      const body = [
-        '---',
-        `title: ${base.replace(/\.md$/, '')}`,
-        `promoted_at: ${nowIso()}`,
-        `promoted_from: ${scopeKeyStr}`,
-        'origin: multica-shared-consolidate',
-        '---',
-        '',
-        cap(content, 4000),
-        '',
-      ].join('\n');
-      try {
-        await ov.writeContent(shared.apiKey, { uri: targetUri, content: body, mode: 'create' });
-        await ov.reindex(shared.apiKey, targetUri).catch(() => {});
-      } catch (err) {
-        log(`consolidate: write ${base} failed (${err.message})`);
-        continue;
-      }
-      existing.add(base);
-      promoted.push({ from: scopeKeyStr, file: base });
+      selected.push({ from: scopeKeyStr, file: base, content });
       taken++;
     }
   }
-  log(`consolidate: ${promoted.length} memories promoted from ${sourceScopes.length} scopes into ${sharedScope}`);
-  return { shared_scope: sharedScope, sources: sourceScopes.length, promoted };
+
+  if (!selected.length) {
+    return { shared_scope: sharedScope, sources: sourceScopes.length, promoted: [], note: 'nothing new to promote' };
+  }
+
+  // One session, one message per promoted memory — extraction distils them
+  // into properly-indexed shared memories.
+  const sessionId = `mc-consolidate-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const messages = selected.map((s, i) => ({
+    role: 'user',
+    message_kind: 'user_query',
+    turn_id: `promote-${i}`,
+    content: `【共享记忆晋升 #${i + 1}】来源范围: ${s.from}\n原文件: ${s.file}\n内容:\n${cap(s.content, 3500)}`,
+  }));
+  await ov.createSession(shared.apiKey, { sessionId, autoCommitPolicy: null });
+  for (const chunk of chunkList(messages, 100)) {
+    await ov.addMessages(shared.apiKey, sessionId, chunk);
+  }
+  const commit = await ov.commitSession(shared.apiKey, sessionId, {
+    tags: ['source=multica-plugin', `workspace=${workspaceId}`, 'scope=shared', 'record=consolidate'],
+  });
+  for (const s of selected) done.files[s.file] = nowIso();
+  atomicWriteJson(donePath, done);
+  log(`consolidate: ${selected.length} memories queued for shared-space extraction (${sessionId})`);
+  return {
+    shared_scope: sharedScope,
+    sources: sourceScopes.length,
+    promoted: selected.map(({ file, from }) => ({ file, from })),
+    session_id: sessionId,
+    extraction_task: commit?.task_id ?? null,
+  };
 }
 
 async function walkKinds(ov, key, userId) {
@@ -106,7 +115,17 @@ async function walkDirs(ov, key, userId, dirs) {
   return out;
 }
 
+function existingIn(list, base) {
+  return list.some((s) => s.file === base);
+}
+
 function basename(uri) {
   const parts = String(uri).split('/');
   return parts[parts.length - 1] || uri;
+}
+
+function chunkList(list, size) {
+  const chunks = [];
+  for (let i = 0; i < list.length; i += size) chunks.push(list.slice(i, i + size));
+  return chunks;
 }
