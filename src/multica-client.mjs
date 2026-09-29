@@ -47,12 +47,15 @@ export class MulticaClient {
    * Run transcript (requires the multica task-messages companion endpoint,
    * GET /v1/tasks/{task_id}/messages; present in multica builds carrying the
    * transcript patch — the plugin degrades gracefully without it).
+   * Response shape varies by build: a bare array, or {"messages": [...]}.
    */
-  getTaskMessages(taskId, { since = 0, includeThinking = false } = {}) {
+  async getTaskMessages(taskId, { since = 0, includeThinking = false } = {}) {
     const qs = new URLSearchParams();
     if (since) qs.set('since', String(since));
     if (!includeThinking) qs.set('include', 'thinking=false');
     const suffix = qs.toString() ? `?${qs}` : '';
-    return this.call(`/tasks/${encodeURIComponent(taskId)}/messages${suffix}`);
+    const resp = await this.call(`/tasks/${encodeURIComponent(taskId)}/messages${suffix}`);
+    if (Array.isArray(resp)) return { messages: resp };
+    return resp;
   }
 }

@@ -70,6 +70,24 @@ test('crash recovery: jobs recorded as running are re-queued on boot', async () 
   assert.equal(q2.stats().done, 1);
 });
 
+test('regression: queued jobs in a compacted journal are picked up after restart', async () => {
+  const stateDir = tempStateDir();
+  // q1 shuts down with a queued job → stop() writes a compact-base snapshot.
+  const q1 = new JobQueue({ stateDir, handler: async () => {}, pollMs: 10, log: () => {} });
+  q1.enqueue('waiting', { x: 1 });
+  await sleep(30);
+  await q1.stop();
+
+  let ran = 0;
+  const q2 = new JobQueue({ stateDir, handler: async (job) => { ran += job.payload.x; }, pollMs: 10, log: () => {} });
+  assert.ok(q2.order.length >= 1, 'order rebuilt from compacted journal');
+  q2.start();
+  await sleep(120);
+  await q2.stop();
+  assert.equal(ran, 1);
+  assert.equal(q2.stats().done, 1);
+});
+
 test('dedupeKey blocks duplicate in-flight jobs', async () => {
   const stateDir = tempStateDir();
   let ran = 0;

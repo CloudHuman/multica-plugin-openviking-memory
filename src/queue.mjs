@@ -59,6 +59,9 @@ export class JobQueue {
         recovered++;
       }
     }
+    // The runner only scans `order`; compact-base records restore job state
+    // without it, so rebuild it from the map or replayed jobs are invisible.
+    this.order = [...this.jobs.keys()];
     if (recovered) this.#persistSnapshot();
     this.log(`queue replayed: ${this.jobs.size} jobs (${recovered} recovered as queued)`);
   }
@@ -90,9 +93,23 @@ export class JobQueue {
   enqueue(type, payload, { dedupeKey } = {}) {
     if (dedupeKey) {
       // A settled (done/running/queued) job for the same key means this record
-      // is already archived or in flight — only a FAILED one may be re-driven.
+      // is already archived or in flight — only a FAILED one may be re-driven…
       for (const job of this.jobs.values()) {
         if (job.dedupeKey === dedupeKey && job.status !== 'failed') {
+          // …except a settled PARTIAL archive upgraded by a richer redelivery
+          // (e.g. transcript initially unavailable, later re-sent complete).
+          const wasPartial = String(job.payload?.completeness ?? '').startsWith('partial');
+          if (job.status === 'done' && wasPartial && payload?.completeness === 'complete') {
+            job.payload = payload;
+            job.cp = {};
+            job.attempts = 0;
+            job.status = 'queued';
+            job.next_run_at = 0;
+            job.updated_at = nowIso();
+            this.#append({ t: 'update', job });
+            this.#kick();
+            return { id: job.id, reused: false, upgraded: true };
+          }
           return { id: job.id, reused: true };
         }
       }

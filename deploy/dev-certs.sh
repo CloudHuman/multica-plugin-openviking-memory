@@ -26,7 +26,7 @@ CN = host.docker.internal
 subjectAltName = DNS:host.docker.internal,DNS:localhost,IP:127.0.0.1
 EOF
 
-openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+openssl req -new -newkey rsa:2048 -sha256 -nodes \
   -keyout hook-server.key -out hook-server.csr \
   -config server.cnf 2>/dev/null
 
