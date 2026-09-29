@@ -52,6 +52,7 @@ export function createApp({ cfg, ov, registry, queue, ledger, statusLog } = {}) 
     handleAdminStatus: makeAdminStatusHandler(deps),
     handleAdminTestRecall: makeAdminTestRecallHandler(deps),
     handleAdminConsolidate: makeAdminConsolidateHandler({ ...deps, cfg, log }),
+    handleAdminRedrive: makeAdminRedriveHandler(deps),
   };
 }
 
@@ -363,6 +364,16 @@ export function makeAdminTestRecallHandler({ cfg, ov, registry }) {
   };
 }
 
+export function makeAdminRedriveHandler({ ov, registry }) {
+  return async function adminRedrive(body) {
+    if (!body.scope || !body.session_id) throw httpError(400, 'invalid_request', 'scope and session_id are required');
+    const rec = registry.get(body.scope);
+    if (!rec) throw httpError(404, 'not_found', `scope ${body.scope} is not provisioned`);
+    const r = await ov.extractSession(rec.apiKey, body.session_id);
+    return { redriven: body.session_id, scope: body.scope, ov_response: r ?? null };
+  };
+}
+
 export function makeAdminConsolidateHandler({ ov, registry, cfg, log }) {
   return async function adminConsolidate(body) {
     if (!body.workspace_id) throw httpError(400, 'invalid_request', 'workspace_id is required');
@@ -454,6 +465,7 @@ async function route({ req, rawBody, cfg, app }) {
     if (path === '/admin/status') return { status: 200, headers: { body: await app.handleAdminStatus() } };
     if (path === '/admin/test-recall') return { status: 200, headers: { body: await app.handleAdminTestRecall(body) } };
     if (path === '/admin/consolidate') return { status: 200, headers: { body: await app.handleAdminConsolidate(body) } };
+    if (path === '/admin/redrive') return { status: 200, headers: { body: await app.handleAdminRedrive(body) } };
     throw httpError(404, 'not_found', `unknown endpoint ${path}`);
   }
 
