@@ -86,3 +86,18 @@ test('dedupeKey blocks duplicate in-flight jobs', async () => {
   await q.stop();
   assert.equal(ran, 1);
 });
+
+test('dedupeKey also blocks re-enqueue after the job is done (redelivery under a new invocation)', async () => {
+  const stateDir = tempStateDir();
+  let ran = 0;
+  const q = new JobQueue({ stateDir, handler: async () => { ran++; }, pollMs: 10, log: () => {} });
+  q.start();
+  q.enqueue('t', { a: 1 }, { dedupeKey: 'k1' });
+  await sleep(120);
+  const second = q.enqueue('t', { a: 2 }, { dedupeKey: 'k1' });
+  assert.equal(second.reused, true);
+  await sleep(60);
+  await q.stop();
+  assert.equal(ran, 1);
+  assert.equal(q.stats().done, 1);
+});

@@ -89,8 +89,10 @@ export class JobQueue {
 
   enqueue(type, payload, { dedupeKey } = {}) {
     if (dedupeKey) {
+      // A settled (done/running/queued) job for the same key means this record
+      // is already archived or in flight — only a FAILED one may be re-driven.
       for (const job of this.jobs.values()) {
-        if (job.status !== 'done' && job.dedupeKey === dedupeKey) {
+        if (job.dedupeKey === dedupeKey && job.status !== 'failed') {
           return { id: job.id, reused: true };
         }
       }
