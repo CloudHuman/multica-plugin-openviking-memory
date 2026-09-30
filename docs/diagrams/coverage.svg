@@ -1,50 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" font-family="-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
   <text x="20" y="36" font-size="17" font-weight="700" fill="#111827">Multica 覆盖面 — 七类使用场景全接入</text>
-  <text x="20" y="56" font-size="12" fill="#6B7280">三类开箱（公开事件自动归档）· 四类配套（/internal 接口）· 记忆工具自动注入工作区全部智能体</text>
+  <text x="20" y="56" font-size="12" fill="#6B7280">评论开箱即用 · 运行按类型归档（需任务读取 API 补丁）· 记忆工具自动注入工作区全部智能体</text>
 
   <!-- band 1: out-of-the-box -->
   <rect x="20" y="76" width="190" height="24" rx="12" fill="#F0FDFA" stroke="#0D9488" stroke-width="1.2"/>
-  <text x="115" y="92" text-anchor="middle" font-size="11" font-weight="700" fill="#115E59">开箱可用 · 公开事件</text>
-  <text x="224" y="92" font-size="10.5" fill="#6B7280">multica 插件系统 v1 事件目录内 · 装完即工作</text>
+  <text x="115" y="92" text-anchor="middle" font-size="11" font-weight="700" fill="#115E59">公开事件 · 自动归档</text>
+  <text x="224" y="92" font-size="10.5" fill="#6B7280">multica 插件系统 v1 事件目录内 · 运行转写需补丁</text>
 
   <rect x="20" y="108" width="292" height="88" rx="10" fill="#FFFFFF" stroke="#99F6E4"/>
-  <text x="32" y="132" font-size="12" font-weight="700" fill="#111827">任务执行归档</text>
-  <text x="32" y="152" font-size="9.5" fill="#0F766E">task.completed · task.failed</text>
-  <text x="32" y="172" font-size="10.5" fill="#4B5563">→ 任务协作空间 · 全程消息与结论蒸馏</text>
+  <text x="32" y="132" font-size="12" font-weight="700" fill="#111827">运行归档</text>
+  <text x="32" y="152" font-size="9.5" fill="#0F766E">task.completed · task.failed + GET /v1/tasks</text>
+  <text x="32" y="172" font-size="10.5" fill="#4B5563">→ 按运行类型进对应空间 · stock 版见收尾评论</text>
 
   <rect x="334" y="108" width="292" height="88" rx="10" fill="#FFFFFF" stroke="#99F6E4"/>
   <text x="346" y="132" font-size="12" font-weight="700" fill="#111827">评论 / 人类反馈</text>
   <text x="346" y="152" font-size="9.5" fill="#0F766E">comment.created</text>
-  <text x="346" y="172" font-size="10.5" fill="#4B5563">→ 任务协作空间 · peer_id 归属作者</text>
+  <text x="346" y="172" font-size="10.5" fill="#4B5563">→ 任务协作空间 · 成员/智能体分别归属</text>
 
   <rect x="648" y="108" width="292" height="88" rx="10" fill="#FFFFFF" stroke="#99F6E4"/>
   <text x="660" y="132" font-size="12" font-weight="700" fill="#111827">智能体工具（全部自动注入）</text>
   <text x="660" y="152" font-size="9.5" fill="#0F766E">memory-recall / remember / status / ov-*×15</text>
-  <text x="660" y="172" font-size="10.5" fill="#4B5563">→ 跨范围召回 · 直写本智能体公共空间</text>
+  <text x="660" y="172" font-size="10.5" fill="#4B5563">→ 召回绑定当前运行 · ov-* 限本人空间</text>
 
   <!-- band 2: companion -->
   <rect x="20" y="216" width="196" height="24" rx="12" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.2"/>
-  <text x="118" y="232" text-anchor="middle" font-size="11" font-weight="700" fill="#92400E">配套能力 · /internal 接口</text>
-  <text x="230" y="232" font-size="10.5" fill="#6B7280">multica 侧具备配套能力时调用 · 版本化契约</text>
+  <text x="118" y="232" text-anchor="middle" font-size="11" font-weight="700" fill="#92400E">按运行类型 · 或配套接口</text>
+  <text x="230" y="232" font-size="10.5" fill="#6B7280">补丁版由 task.completed 驱动 · 也可经 /internal 推送</text>
 
   <rect x="20" y="248" width="172" height="88" rx="10" fill="#FFFFFF" stroke="#FDE68A"/>
   <text x="32" y="272" font-size="12" font-weight="700" fill="#111827">私聊</text>
-  <text x="32" y="292" font-size="9" fill="#B45309">chat.completed</text>
+  <text x="32" y="292" font-size="9" fill="#B45309">kind=chat · chat.completed</text>
   <text x="32" y="312" font-size="10" fill="#4B5563">→ 配对空间</text>
 
   <rect x="207" y="248" width="172" height="88" rx="10" fill="#FFFFFF" stroke="#FDE68A"/>
   <text x="219" y="272" font-size="12" font-weight="700" fill="#111827">快速运行</text>
-  <text x="219" y="292" font-size="9" fill="#B45309">recall · kind=run</text>
+  <text x="219" y="292" font-size="9" fill="#B45309">kind=quick_create</text>
   <text x="219" y="312" font-size="10" fill="#4B5563">→ 运行空间</text>
 
   <rect x="394" y="248" width="172" height="88" rx="10" fill="#FFFFFF" stroke="#FDE68A"/>
   <text x="406" y="272" font-size="12" font-weight="700" fill="#111827">自动化</text>
-  <text x="406" y="292" font-size="9" fill="#B45309">automation.started</text>
+  <text x="406" y="292" font-size="9" fill="#B45309">kind=autopilot</text>
   <text x="406" y="312" font-size="10" fill="#4B5563">→ 自动化空间</text>
 
   <rect x="581" y="248" width="172" height="88" rx="10" fill="#FFFFFF" stroke="#FDE68A"/>
   <text x="593" y="272" font-size="12" font-weight="700" fill="#111827">委派交接</text>
-  <text x="593" y="292" font-size="9" fill="#B45309">delegation.handoff</text>
+  <text x="593" y="292" font-size="9" fill="#B45309">交接输入 · delegation.handoff</text>
   <text x="593" y="312" font-size="10" fill="#4B5563">→ 委派通道空间</text>
 
   <rect x="768" y="248" width="172" height="88" rx="10" fill="#FFFFFF" stroke="#FDE68A"/>
@@ -54,6 +54,6 @@
 
   <!-- footer -->
   <rect x="20" y="356" width="920" height="52" rx="10" fill="#F8FAFC" stroke="#E2E8F0"/>
-  <text x="480" y="378" text-anchor="middle" font-size="11" fill="#374151">覆盖口径：规格 v0.5.0 七类使用场景全接入 —— 三类公开事件开箱 · 四类配套接口 · 工具面向全部智能体</text>
+  <text x="480" y="378" text-anchor="middle" font-size="11" fill="#374151">覆盖口径：规格 v0.5.0 七类使用场景 —— 评论开箱 · 运行类场景需任务读取 API 补丁 · 运行中追加走配套接口</text>
   <text x="480" y="398" text-anchor="middle" font-size="10.5" fill="#6B7280">运行时差异：OpenCode 全工具 · kimi 需一条直连条目 · pi 暂无 MCP（上游 #8961）—— 详见下文</text>
 </svg>
