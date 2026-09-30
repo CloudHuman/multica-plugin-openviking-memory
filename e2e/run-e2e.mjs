@@ -238,7 +238,9 @@ async function main() {
       const r = await jfetch(`${ovBase}/api/v1/search/search`, {
         method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: { query, mode: 'list', limit: 10 },
       });
-      return r.json?.result?.memories ?? [];
+      // Directory summaries (.overview.md / .abstract.md) are searchable too; a
+      // step passes only on a real memory.
+      return (r.json?.result?.memories ?? []).filter((m) => m.context_type === 'memory' && !/\/\.(overview|abstract)\.md$/.test(m.uri));
     };
 
     // ---- S1: task.completed → real archive → real LLM extraction → searchable memory
@@ -287,8 +289,7 @@ async function main() {
       if (!key) return null;
       // Terms of the conclusion itself: a distilled memory may drop the lead-in.
       const hits = await ovSearch(key, '消息推送 选型 队列级顺序 事务消息 灰度');
-      const good = hits.filter((x) => x.context_type === 'memory' && !/\.overview\.md$/.test(x.uri));
-      return good.length ? good : null;
+      return hits.length ? hits : null;
     }, { timeoutMs: 300_000 });
     step(MULTICA === 'patched' ? 'S1 task run archived → distilled → semantic recall hit' : 'S1 agent reply archived → distilled → semantic recall hit', true,
       `${hit.length} memories, top=${hit[0]?.uri?.split('/').pop()} score=${hit[0]?.score} in ${Math.round((Date.now() - t0) / 1000)}s`);
@@ -352,11 +353,18 @@ async function main() {
       issue_title: '消息推送服务选型与灰度迁移方案', issue_assignee_type: 'agent', issue_assignee_id: AGENT_A, issue_status: 'todo',
     }));
     if (rc.status !== 200 || rc.json?.result?.status !== 'queued') throw new Error(`comment delivery failed: ${rc.text}`);
-    await waitFor('comment feedback distilled', async () => {
+    // The comment's own fact (the 10k threshold) must be in a distilled memory,
+    // not merely some memory that mentions dead-letter queues.
+    const s5 = await waitFor('comment feedback distilled', async () => {
       const hits = await ovSearch(keyOf(taskScope), '死信队列 监控 告警 阈值');
-      return hits.length ? hits : null;
-    }, { timeoutMs: 240_000 });
-    step('S5 human comment archived with attribution and distilled', true);
+      for (const h of hits) {
+        const r = await jfetch(`${ovBase}/api/v1/content/read?uri=${encodeURIComponent(h.uri)}&offset=0&limit=200`, { headers: { Authorization: `Bearer ${keyOf(taskScope)}` } });
+        const text = typeof r.json?.result === 'string' ? r.json.result : '';
+        if (/1\s*万|10,?000|一万/.test(text)) return h;
+      }
+      return null;
+    }, { timeoutMs: 240_000 }).catch(() => null);
+    step('S5 human comment archived with attribution and distilled', Boolean(s5), s5 ? s5.uri.split('/').slice(-3).join('/') : 'no memory carries the comment\'s threshold');
 
     // ---- S6: companion chat → DM pair space, hard isolation
     const chat = await jfetch(`http://127.0.0.1:${PLUGIN_PORT}/internal/events`, {

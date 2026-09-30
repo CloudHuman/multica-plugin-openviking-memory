@@ -80,6 +80,8 @@
 
 需要一个 OpenViking ≥ 0.4.22 实例（`create_account` / `create_user` 内联返回 key 的版本；0.4.21 亦可用，开通走 create→regenerate）。记下 `OV_BASE_URL` 和 root key（**仅用于**按工作区惰性开通账号与空间；业务读写全部走各空间自己的 key）。
 
+**模型（OpenRouter 实测推荐）**：抽取用 `z-ai/glm-5.3-flash`，向量用 `qwen/qwen3-embedding-8b`（4096 维），重排用 `qwen/qwen3-reranker-8b`。可直接用的配置：[`deploy/ov.openrouter.conf.example`](deploy/ov.openrouter.conf.example)（key 从 OpenViking 进程的 `OPENROUTER_API_KEY` 读取）。对比数据、质量样例和已知限制（重排只有一家上游、偶尔过载；向量接口有慢时段，召回届时只返回时限内完成的部分）见 [`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)。向量模型和维度选定后不要轻易换——换了要重建全部向量索引；抽取和重排模型随时可换。
+
 ### 2. 部署插件后端服务（推荐容器）
 
 ```bash
@@ -161,7 +163,7 @@ POST /internal/recall    // 供注入方拉取召回块
 
 multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）。
 
-调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（2000）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`。
+调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（2000）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
 
 ## 运维手册
 
@@ -197,7 +199,7 @@ src/                      config · hmac · installations 安装绑定 · multic
                           scopes 范围引擎 · recall · archive · pipeline · queue · ledger
                           extraction-watch 抽取监视 · state-lock 租约
                           ov-mcp 转发 · ov-facade · consolidate · server
-test/                     72 项单元/集成测试（测试替身按真实 multica / OV 契约行为）
+test/                     76 项单元/集成测试（测试替身按真实 multica / OV 契约行为）
 e2e/                      run-e2e.mjs：真实 OV + 模拟 multica（patched / stock 契约）
 e2e/real-stack/           真实 multica + 真实 OV 端到端（补丁版 / stock 版）
 upstream/multica/         multica 任务读取 API 补丁及说明
@@ -209,17 +211,17 @@ scripts/                  package.sh · gen-ov-hooks · validate-manifest
 ## 验证
 
 ```bash
-node --test test/*.test.mjs                       # 72/72
+node --test test/*.test.mjs                       # 76/76
 node scripts/validate-manifest.mjs multica.plugin.json
 OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica：patched 13/13，E2E_MULTICA=stock 14/14
 node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV：补丁版 12/12，stock 12/12
 ```
 
-最近一次完整记录：[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)。
+最近的记录：[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
 
 ## 变更记录
 
-- **0.3.0**（评审修复）：安装绑定唯一工作区，跨租户读取与状态泄露关闭；按运行类型归档（需任务读取 API，stock multica 以 200 跳过、不再触发熔断）；评论按作者类型如实归属；抽取监视移出队列，失败在新会话代际重驱（`POST /extract` 在提交后是空操作）；提交响应丢失可找回；`memory-recall` 绑定调用它的运行，issue 编号解析为 UUID；工具错误以可读的 200 返回；`memory-remember` 幂等；`ov-*` 门面限制在调用者自己的空间；状态目录心跳租约；清单描述与行为一致、校验器按 multica 的字节限制；真实栈端到端与 multica 补丁
+- **0.3.0**（评审修复）：安装绑定唯一工作区，跨租户读取与状态泄露关闭；按运行类型归档（需任务读取 API，stock multica 以 200 跳过、不再触发熔断）；评论按作者类型如实归属；抽取监视移出队列，失败在新会话代际重驱（`POST /extract` 在提交后是空操作）；提交响应丢失可找回；`memory-recall` 绑定调用它的运行，issue 编号解析为 UUID；工具错误以可读的 200 返回；`memory-remember` 幂等；`ov-*` 门面限制在调用者自己的空间；状态目录心跳租约；清单描述与行为一致、校验器按 multica 的字节限制；真实栈端到端与 multica 补丁；真实模型验证后：`memory-remember` 写入后在后台重建所在目录的语义记录（配了重排时才能被检索到），召回合并同一记忆的自有/peer 两份副本，运行归档只保留一个归属方（避免 OpenViking 因归属不唯一丢弃记忆），私聊运行不再发匿名上下文头；`memory-recall` 与 `ov-*` 门面在钩子超时之前作答（模型服务慢时返回已完成的部分并注明，而不是让 multica 报"hook endpoint did not answer"）
 - **0.2.x**：`ov-*` 原生工具门面（schema 实例镜像 + actor.id 注入 key）；共享记忆晋升（原生抽取管道 + 夜间定时）；多工作区签名密钥；`agent=` 归属标签；队列快照重放修复；partial→complete 自动升级；`/admin/redrive`；单写者锁；抽取监视 120s
 - **0.1.0**：初始实现——七类范围引擎、归档管道、持久化队列、3 个编排工具、companion API、skill、E2E 12/12
 
