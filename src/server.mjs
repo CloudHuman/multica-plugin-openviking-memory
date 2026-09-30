@@ -334,6 +334,7 @@ async function canonicalIssueId(mc, ref) {
 export function makeMemoryRecallHandler(deps) {
   const { cfg, ov, registry } = deps;
   return async function memoryRecall(body, ctx) {
+    const deadline = Date.now() + cfg.recallBudgetMs;
     const input = body.input ?? {};
     const query = typeof input.query === 'string' ? input.query.trim() : '';
     if (!query) throw toolError('query is required');
@@ -363,7 +364,10 @@ export function makeMemoryRecallHandler(deps) {
       entries: Math.min(10, Math.max(1, Number(input.top_k) || merged.recallEntries)),
       perScopeLimit: merged.recallPerScopeLimit,
       contentMaxChars: merged.recallContentMaxChars,
+      deadline,
     });
+    const late = result.scopesSearched.filter((s) => s.timedOut).length;
+    if (late) notes.push(`${late} 个记忆空间没有在时限内返回(OpenViking 检索慢),结果可能不完整;需要时可以稍后再查`);
     return {
       note: '参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。',
       run: { kind: run.kind, bound: run.bound },
@@ -396,14 +400,17 @@ export function makeMemoryRememberHandler({ ov, registry }) {
       if (isAlreadyExists(err)) return { status: 'already_remembered', uri: fullUri, scope: key };
       throw err;
     }
+    // With a reranker configured, OV's search reaches a file only through a
+    // directory that has a semantic record, and a directly written file's new
+    // folder has none: rebuild that folder's summary in the background.
     try {
-      await ov.reindex(rec.apiKey, fullUri);
-    } catch { /* reindex is enrichment; extraction-free write still readable */ }
+      await ov.reindex(rec.apiKey, fullUri.slice(0, fullUri.lastIndexOf('/')), { mode: 'semantic_and_vectors', recursive: false, wait: false });
+    } catch { /* enrichment: the file is written and readable either way */ }
     return {
       status: 'remembered',
       uri: fullUri,
       scope: key,
-      note: '已写入该智能体公共记忆；请保持内容简洁、可复用、无敏感信息。',
+      note: '已写入该智能体公共记忆，约半分钟后可被检索；请保持内容简洁、可复用、无敏感信息。',
     };
   };
 }
@@ -459,6 +466,7 @@ export function makeInternalRecallHandler({ cfg, ov, registry }) {
       entries: Math.min(10, Math.max(1, Number(body.entries) || cfg.recallEntries)),
       perScopeLimit: cfg.recallPerScopeLimit,
       contentMaxChars: cfg.recallContentMaxChars,
+      deadline: Date.now() + cfg.recallBudgetMs,
     });
     return { ...result, injected_block: renderRecallBlock(result) };
   };

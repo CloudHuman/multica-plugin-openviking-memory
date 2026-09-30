@@ -71,6 +71,7 @@ export function tempStateDir() {
 export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 } = {}) {
   const spaces = new Map(); // apiKey -> space
   const calls = [];
+  const searchDelayMs = new Map(); // apiKey -> ms a search in that space takes (a slow model provider)
   const accounts = new Map(); // accountId -> { adminUserId, adminKey, users: Map }
   let taskSeq = 0;
   const taskStates = new Map(); // taskId -> {status, polls, sid, space, archive}
@@ -234,6 +235,7 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
       }
       if (path === '/api/v1/search/search' && req.method === 'POST') {
         space.searches.push(body.query);
+        if (searchDelayMs.get(key)) await new Promise((r) => setTimeout(r, searchDelayMs.get(key)));
         const q = String(body.query ?? '');
         const hits = [];
         for (const [uri, file] of space.files) {
@@ -275,7 +277,8 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
         return ok(entries);
       }
       if (path === '/api/v1/content/reindex' && req.method === 'POST') {
-        return ok({ reindexed: body.uri });
+        space.reindexes = [...(space.reindexes ?? []), body];
+        return ok({ status: body.wait === false ? 'accepted' : 'completed', uri: body.uri, mode: body.mode ?? 'vectors_only' });
       }
       return err(404, 'NOT_FOUND', `fake OV has no ${path}`);
     } catch (e) {
@@ -287,7 +290,7 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
   const port = server.address().port;
   return {
     server, port, baseUrl: `http://127.0.0.1:${port}`,
-    spaces, accounts, calls, taskStates,
+    spaces, accounts, calls, taskStates, searchDelayMs,
     filesOf(key) { return spaceOf(key).files; },
     sessionsOf(key) { return spaceOf(key).sessions; },
     /** Every message a session ever archived, across commits. */

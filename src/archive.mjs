@@ -71,12 +71,13 @@ const HEADER = {
 };
 
 /** The human/agent input that started a run, as attributed user messages. */
-function inputMessages(inputs, turn, cfg) {
+function inputMessages(inputs, turn, cfg, { chatWith } = {}) {
   const out = [];
   for (const item of inputs ?? []) {
     const text = String(item?.content ?? '').trim();
     if (!text) continue;
-    const who = item.author_type === 'agent' ? `智能体 ${item.author_id}` : item.author_type === 'member' ? `成员 ${item.author_id}` : (item.author_type || '未知来源');
+    let who = item.author_type === 'agent' ? `智能体 ${item.author_id}` : item.author_type === 'member' ? `成员 ${item.author_id}` : (item.author_type || '未知来源');
+    if (chatWith && item.source === 'chat_message') who += `（与智能体 ${chatWith} 的私聊）`;
     const label = {
       chat_message: '[私聊消息]',
       comment: '[触发评论]',
@@ -89,7 +90,13 @@ function inputMessages(inputs, turn, cfg) {
       turn_id: turn,
       content: `${label} ${who}:\n${cap(text, cfg.textPartMaxChars)}`,
     };
-    if ((item.author_type === 'member' || item.author_type === 'agent') && item.author_id) msg.peer_id = String(item.author_id);
+    // peer_id only where that person is the one human voice (a chat). In other
+    // runs the label carries attribution: OV derives an event's owner from the
+    // messages it cites, and a second owner (the member beside the space's own
+    // user) makes ownership ambiguous, so the event is dropped or filed twice.
+    // The trigger comment and a handoff are archived with their peer_id on
+    // their own (comment.created, archive-delegation).
+    if (chatWith && item.author_type === 'member' && item.author_id) msg.peer_id = String(item.author_id);
     out.push(msg);
   }
   return out;
@@ -116,13 +123,21 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
   } else {
     context = `${header}${task?.trigger_summary ? ` ${task.trigger_summary}` : ''}`;
   }
-  messages.push({
-    role: 'user',
-    message_kind: 'user_query',
-    turn_id: turn,
-    content: `${context}\n\n执行智能体: ${agentId ?? 'unknown'} | 最终状态: ${status}`,
-  });
-  messages.push(...inputMessages(task?.input, turn, cfg));
+  // In a chat every user-role line must be the member's own words: OV attributes
+  // a user message without peer_id to an anonymous "user", which in a DM space
+  // produced a second, unattributed copy of the member's preferences. So a chat
+  // run carries its context inside the member's labelled messages instead.
+  const input = inputMessages(task?.input, turn, cfg, kind === 'chat' ? { chatWith: agentId ?? 'unknown' } : {});
+  const chatInputOnly = kind === 'chat' && input.some((m) => m.peer_id);
+  if (!chatInputOnly) {
+    messages.push({
+      role: 'user',
+      message_kind: 'user_query',
+      turn_id: turn,
+      content: `${context}\n\n执行智能体: ${agentId ?? 'unknown'} | 最终状态: ${status}`,
+    });
+  }
+  messages.push(...input);
 
   const drop = makeDropToolMatcher(cfg.dropToolPrefixes);
   const ordered = [...transcript].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));

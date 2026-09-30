@@ -72,6 +72,56 @@ test('the same memory seen through two scopes collapses to its best-scoring, hig
   assert.equal(result.entries[0].scope, scopeKey('task', FIXTURE_WS, 'i'), 'ties go to the higher-priority scope');
 });
 
+test('an event OV filed twice (own memories/ and a peer\'s memories/) is one recall entry', async () => {
+  const own = 'viking://user/u/memories/events/2026/09/30/选型结论.md';
+  const peer = 'viking://user/u/peers/member-1/memories/events/2026/09/30/选型结论.md';
+  const fakeOv = {
+    async search() {
+      return { memories: [
+        { context_type: 'memory', uri: peer, score: 0.969, level: 2 },
+        { context_type: 'memory', uri: own, score: 0.969, level: 2 },
+        { context_type: 'memory', uri: 'viking://user/u/peers/member-1/memories/events/2026/09/30/告警阈值.md', score: 0.8, level: 2 },
+      ] };
+    },
+    async readContent() { return { content: 'body' }; },
+  };
+  const scope = scopeKey('task', FIXTURE_WS, 'i');
+  const result = await recallFromScopes({ ov: fakeOv, registry: { get: () => ({ apiKey: 'k' }) }, scopeKeys: [scope], query: 'q' });
+  assert.deepEqual(result.entries.map((e) => e.uri), [own, 'viking://user/u/peers/member-1/memories/events/2026/09/30/告警阈值.md'],
+    'the own copy wins a tie; a memory only the peer folder holds stays');
+});
+
+test('recall returns what answered by its deadline and reports the rest as timed out', async () => {
+  const fast = 'viking://user/u1/memories/events/fast.md';
+  const taskScope = scopeKey('task', FIXTURE_WS, 'i');
+  const agentScope = scopeKey('agent', FIXTURE_WS, 'a');
+  const recs = { [taskScope]: { apiKey: 'kFast' }, [agentScope]: { apiKey: 'kSlow' } };
+  const hang = () => new Promise((r) => setTimeout(r, 5_000).unref());
+  const fakeOv = {
+    async search(key) {
+      if (key === 'kSlow') await hang(); // the model provider is having a slow minute
+      return { memories: key === 'kFast' ? [{ context_type: 'memory', uri: fast, score: 0.8, level: 2, abstract: 'fast abstract' }] : [] };
+    },
+    readContent: async () => ({ content: 'body' }),
+  };
+  const registry = { get: (k) => recs[k] ?? null };
+  let started = Date.now();
+  const result = await recallFromScopes({ ov: fakeOv, registry, scopeKeys: [taskScope, agentScope], query: 'q', deadline: started + 400, contentReserveMs: 100 });
+  assert.ok(Date.now() - started < 1_000, 'the slow scope is not waited for');
+  assert.deepEqual(result.entries.map((e) => [e.uri, e.content]), [[fast, 'body']]);
+  assert.equal(result.scopesSearched.find((s) => s.scope === agentScope).timedOut, true);
+  assert.equal(result.scopesSearched.find((s) => s.scope === taskScope).timedOut, undefined);
+
+  // A content read that does not come back in time leaves the abstract.
+  started = Date.now();
+  const slowRead = await recallFromScopes({
+    ov: { ...fakeOv, readContent: async () => { await hang(); return { content: 'late' }; } },
+    registry, scopeKeys: [taskScope], query: 'q', deadline: started + 300, contentReserveMs: 100,
+  });
+  assert.ok(Date.now() - started < 1_000);
+  assert.deepEqual(slowRead.entries.map((e) => [e.content, e.abstract]), [[null, 'fast abstract']]);
+});
+
 test('recall reports unprovisioned scopes as skipped, never fails', async () => {
   const ov = await startFakeOv();
   try {

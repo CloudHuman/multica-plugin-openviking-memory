@@ -1,3 +1,5 @@
+import { beforeDeadline } from './util.mjs';
+
 /**
  * Multi-scope recall: fan out one search per authorized space key, then merge,
  * filter, rank and cap — preserving provenance so agents can verify sources.
@@ -5,13 +7,26 @@
  * Quality rules (spec §2.2):
  *   - only distilled memories (context_type=memory) are candidates;
  *   - namespace stubs (.overview.md / .abstract.md) are dropped;
- *   - duplicates (same uri across scopes) collapse;
+ *   - duplicates collapse: the same uri, or the same memory stored twice in one
+ *     scope — OV files an event that involved a peer both under the user's
+ *     memories/ and under peers/<peer>/memories/;
  *   - ranking: semantic score, tie-broken by scope priority (task > dm >
  *     delegation > run > automation > agent > shared);
  *   - cap at `entries` (default 5); each entry carries its source uri+scope.
+ *
+ * Time budget: a search embeds the query and reranks through the model
+ * provider, and a slow provider can hold one past its hook's timeout. With a
+ * `deadline` (epoch ms), scopes that have not answered by then are reported
+ * as timed out and the rest are returned; entries whose content cannot be read
+ * in time keep their abstract.
  */
 
 const STUB_URI_RE = /\/\.(overview|abstract)\.md$/;
+const PEER_COPY_RE = /\/peers\/[^/]+\/memories\//;
+
+/** One key per memory, whichever copy (own or peer) a hit is: user-space URIs carry the user id. */
+const memoryKey = (uri) => uri.replace(PEER_COPY_RE, '/memories/');
+const isPeerCopy = (uri) => PEER_COPY_RE.test(uri);
 
 const SCOPE_PRIORITY = {
   task: 0,
@@ -27,16 +42,26 @@ export function recallPriority(scopeKeyStr) {
   return SCOPE_PRIORITY[String(scopeKeyStr).split(':')[0]] ?? 9;
 }
 
-export async function recallFromScopes({ ov, registry, scopeKeys, query, entries = 5, perScopeLimit = 10, contentMaxChars = 2400, onScopeError = () => {} }) {
+export async function recallFromScopes({
+  ov, registry, scopeKeys, query, entries = 5, perScopeLimit = 10, contentMaxChars = 2400,
+  deadline = Infinity, contentReserveMs = 1_500, onScopeError = () => {},
+}) {
+  // Reading the survivors is a plain file read; the searches get the rest.
+  const searchDeadline = deadline - contentReserveMs;
   const searches = await Promise.all(
     scopeKeys.map(async (scopeKeyStr) => {
       const rec = registry.get(scopeKeyStr);
       if (!rec) return { scopeKeyStr, hits: [], skipped: 'not-provisioned' };
       try {
-        const result = await ov.search(rec.apiKey, { query, limit: perScopeLimit, readContent: false });
+        const result = await beforeDeadline(
+          ov.search(rec.apiKey, { query, limit: perScopeLimit, readContent: false, deadline: searchDeadline }),
+          searchDeadline,
+        );
         const hits = Array.isArray(result?.memories) ? result.memories : [];
         return { scopeKeyStr, hits };
       } catch (err) {
+        // Past the deadline, whichever gave up first (the timer or the aborted request) means the same.
+        if (err.code === 'deadline' || Date.now() >= searchDeadline) return { scopeKeyStr, hits: [], timedOut: true };
         onScopeError(scopeKeyStr, err);
         return { scopeKeyStr, hits: [], error: String(err.message ?? err) };
       }
@@ -58,10 +83,11 @@ export async function recallFromScopes({ ov, registry, scopeKeys, query, entries
         scope: scopeKeyStr,
         priority: recallPriority(scopeKeyStr),
       };
-      const prev = merged.get(uri);
-      if (!prev || score > prev.score || (score === prev.score && cand.priority < prev.priority)) {
-        merged.set(uri, cand);
-      }
+      const key = memoryKey(uri);
+      const prev = merged.get(key);
+      const better = !prev || score > prev.score
+        || (score === prev.score && (cand.priority < prev.priority || (isPeerCopy(prev.uri) && !isPeerCopy(uri))));
+      if (better) merged.set(key, cand);
     }
   }
 
@@ -73,7 +99,7 @@ export async function recallFromScopes({ ov, registry, scopeKeys, query, entries
       const rec = registry.get(entry.scope);
       if (!rec) return;
       try {
-        const r = await ov.readContent(rec.apiKey, entry.uri, { limit: 400 });
+        const r = await beforeDeadline(ov.readContent(rec.apiKey, entry.uri, { limit: 400, deadline }), deadline);
         const content = typeof r?.content === 'string' ? r.content : undefined;
         if (content) entry.content = content.length > contentMaxChars ? content.slice(0, contentMaxChars) : content;
       } catch {
@@ -93,7 +119,7 @@ export async function recallFromScopes({ ov, registry, scopeKeys, query, entries
       scope,
       source: uri,
     })),
-    scopesSearched: searches.map((s) => ({ scope: s.scopeKeyStr, hits: s.hits.length, skipped: s.skipped, error: s.error })),
+    scopesSearched: searches.map((s) => ({ scope: s.scopeKeyStr, hits: s.hits.length, skipped: s.skipped, error: s.error, timedOut: s.timedOut })),
   };
 }
 

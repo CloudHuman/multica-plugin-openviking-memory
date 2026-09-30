@@ -13,14 +13,14 @@ const toolBody = (hookKey, input, cb, extra = {}) => hookBody({
   hookKey, trigger: 'agent', actor: { type: 'agent', id: FIXTURE_AGENT_A }, callbackUrl: cb, input, extra,
 });
 
-async function withStack({ taskApi = false, tasks = {} } = {}, fn) {
+async function withStack({ taskApi = false, tasks = {}, cfg } = {}, fn) {
   const ov = await startFakeOv();
   const multica = await startFakeMultica({
     issue: fixtureIssue(),
     issues: [fixtureIssue({ id: FIXTURE_ISSUE2_ID, identifier: 'MUL-8', title: '另一个任务' })],
     tasks, taskApi,
   });
-  const svc = await bootService({ ov });
+  const svc = await bootService({ ov, cfg });
   const cb = multica.baseUrl + '/v1';
   try {
     // Seed MUL-7's task collaboration memory with one archived member comment.
@@ -68,6 +68,20 @@ test('patched multica: recall is bound to the calling run, whatever issue the mo
   });
 });
 
+test('recall answers inside its budget when a space is slow, and says the result may be incomplete', async () => {
+  await withStack({ cfg: { recallBudgetMs: 2_000 } }, async ({ ov, svc, cb }) => {
+    const rec = svc.registry.get(scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID));
+    ov.searchDelayMs.set(rec.apiKey, 4_000);
+    const started = Date.now();
+    const r = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '死信队列 告警', issue_id: 'MUL-7' }, cb));
+    assert.ok(Date.now() - started < 3_000, `answered in ${Date.now() - started}ms`);
+    assert.equal(r.json.status, 'ok', r.text);
+    const result = r.json.result;
+    assert.equal(result.scopesSearched.find((s) => s.scope === scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID)).timedOut, true);
+    assert.ok(result.notes.some((n) => /没有在时限内返回/.test(n)), JSON.stringify(result.notes));
+  });
+});
+
 test('tool failures come back as a readable 200 payload, not a bare 500', async () => {
   await withStack({}, async ({ svc, cb }) => {
     const empty = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '' }, cb));
@@ -82,7 +96,7 @@ test('tool failures come back as a readable 200 payload, not a bare 500', async 
 });
 
 test('remembering the same thing twice is idempotent, not an error', async () => {
-  await withStack({}, async ({ svc, cb }) => {
+  await withStack({}, async ({ ov, svc, cb }) => {
     const input = { title: '发布窗口', content: '发布窗口只在周二和周四。', kind: 'preferences' };
     const first = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
     const second = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
@@ -91,6 +105,12 @@ test('remembering the same thing twice is idempotent, not an error', async () =>
     assert.equal(second.json.result.status, 'already_remembered');
     assert.equal(second.json.result.uri, first.json.result.uri);
     assert.match(first.json.result.uri, /^viking:\/\/user\/[^/]+\/memories\/preferences\//);
+
+    // The new memory's folder gets a semantic record, in the background, so a
+    // reranked OV search can reach it.
+    const rec = svc.registry.get(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A));
+    const folder = first.json.result.uri.slice(0, first.json.result.uri.lastIndexOf('/'));
+    assert.deepEqual(ov.spaces.get(rec.apiKey).reindexes, [{ uri: folder, mode: 'semantic_and_vectors', recursive: false, wait: false }]);
   });
 });
 

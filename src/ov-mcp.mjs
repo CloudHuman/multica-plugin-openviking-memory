@@ -1,4 +1,4 @@
-import { fetchJson } from './util.mjs';
+import { fetchJson, timeLeft } from './util.mjs';
 
 /**
  * Minimal stateless MCP client for OpenViking's /mcp endpoint (streamable
@@ -16,9 +16,11 @@ export class OvMcpClient {
     this.initialized = false;
   }
 
-  async rpc(method, params) {
+  /** One JSON-RPC exchange, abandoned at the client timeout or `deadline` (epoch ms), whichever is sooner. */
+  async rpc(method, params, { deadline = Infinity } = {}) {
+    const timeoutMs = timeLeft(deadline, this.timeoutMs);
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
       const res = await this.fetchImpl(this.url, {
         method: 'POST',
@@ -37,6 +39,12 @@ export class OvMcpClient {
         throw e;
       }
       return this.#parseFrame(text);
+    } catch (err) {
+      if (!ac.signal.aborted) throw err;
+      const e = new Error(`OpenViking did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`);
+      e.code = 'ov_timeout';
+      e.timeoutMs = timeoutMs;
+      throw e;
     } finally {
       clearTimeout(timer);
     }
@@ -64,13 +72,13 @@ export class OvMcpClient {
     return json?.result ?? {};
   }
 
-  async initializeOnce() {
+  async initializeOnce(opts) {
     if (this.initialized) return;
     await this.rpc('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
       clientInfo: { name: 'multica-openviking-facade', version: '1' },
-    });
+    }, opts);
     // notifications take no reply in stateless mode
     this.initialized = true;
   }
@@ -82,9 +90,9 @@ export class OvMcpClient {
   }
 
   /** Call a tool; returns the first text content (or stringified result). */
-  async callTool(name, args) {
-    await this.initializeOnce();
-    const result = await this.rpc('tools/call', { name, arguments: args ?? {} });
+  async callTool(name, args, { deadline = Infinity } = {}) {
+    await this.initializeOnce({ deadline });
+    const result = await this.rpc('tools/call', { name, arguments: args ?? {} }, { deadline });
     if (result?.isError) {
       const text = (result?.content ?? []).map((c) => c.text ?? '').join('\n');
       throw new Error(text || `OV tool ${name} failed`);

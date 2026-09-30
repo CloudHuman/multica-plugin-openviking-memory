@@ -119,11 +119,13 @@ test('run builder is kind-aware and archives the input that started the run', ()
     },
     transcript: [{ seq: 1, type: 'text', content: '好的,已改为要点。' }],
   });
-  assert.match(chat.messages[0].content, /^\[私聊\] 成员 55555555/);
-  assert.equal(chat.messages[1].role, 'user');
-  assert.equal(chat.messages[1].peer_id, FIXTURE_USER);
-  assert.match(chat.messages[1].content, /^\[私聊消息\] 成员 .*\n帮我把周报改成要点形式/);
+  // No anonymous context line: every user-role message is the member's own words.
+  assert.deepEqual(chat.messages.map((m) => m.role), ['user', 'assistant']);
+  assert.equal(chat.messages[0].peer_id, FIXTURE_USER);
+  assert.match(chat.messages[0].content, /^\[私聊消息\] 成员 55555555[^\n]*（与智能体 33333333[^\n]* 的私聊）:\n帮我把周报改成要点形式/);
   assert.equal(chat.evidence, 1);
+  const chatWithoutInput = buildRunMessages({ taskId, agentId: FIXTURE_AGENT_A, kind: 'chat', cfg, task: { id: taskId, kind: 'chat', chat_user_id: FIXTURE_USER, input: [] }, transcript: [] });
+  assert.match(chatWithoutInput.messages[0].content, /^\[私聊\] 成员 55555555/, 'without the member\'s words, the context line stays');
 
   const autopilot = buildRunMessages({
     taskId: 'ap-run', agentId: FIXTURE_AGENT_A, kind: 'autopilot', cfg,
@@ -139,7 +141,7 @@ test('run builder is kind-aware and archives the input that started the run', ()
     transcript: [],
   });
   assert.match(fromComment.messages[1].content, /^\[触发评论\] 智能体 44444444/);
-  assert.equal(fromComment.messages[1].peer_id, FIXTURE_AGENT_B);
+  assert.equal(fromComment.messages[1].peer_id, undefined, 'one owner per run archive; the label carries attribution');
 });
 
 test('tool inputs are always objects, and run errors are archived as evidence', () => {

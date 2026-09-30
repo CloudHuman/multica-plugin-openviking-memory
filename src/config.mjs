@@ -54,6 +54,12 @@ export const DEFAULTS = {
   // Network
   callbackTimeoutMs: 5_000,
   ovTimeoutMs: 30_000,
+  // Agent tools must answer inside their manifest timeout_ms (memory-recall 20s,
+  // ov-* 30s), or multica drops the call and the agent only sees "hook endpoint
+  // did not answer". OV searches and index waits call the model provider, which
+  // can be slower than that, so these hooks stop waiting at a budget instead.
+  recallBudgetMs: 15_000,
+  facadeBudgetMs: 25_000,
   // Status log
   statusLogMaxBytes: 4 * 1024 * 1024,
 };

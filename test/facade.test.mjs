@@ -26,8 +26,15 @@ async function startFakeOvMcp() {
       return reply({ tools: [{ name: 'search', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } }] });
     }
     if (rpc.method === 'tools/call') {
-      calls.push({ key: key.slice(0, 18), name: rpc.params.name, args: rpc.params.arguments });
+      const args = rpc.params.arguments ?? {};
+      calls.push({ key: key.slice(0, 18), name: rpc.params.name, args });
       if (rpc.params.name === 'boom') return reply({ isError: true, content: [{ type: 'text', text: 'OV tool failed' }] });
+      // A search slowed down by the model provider.
+      if (args.query === 'slow') await new Promise((r) => setTimeout(r, 1_500));
+      // OV writes first, then waits for indexing, and raises when the wait runs out.
+      if (rpc.params.name === 'write' && args.wait) {
+        return reply({ isError: true, content: [{ type: 'text', text: `Error executing tool write: Queue processing timed out after ${args.timeout}s` }] });
+      }
       return reply({ content: [{ type: 'text', text: `result of ${rpc.params.name} in space ${key.slice(0, 14)}` }] });
     }
     res.writeHead(404).end();
@@ -159,4 +166,36 @@ test('own-space confinement covers every URI-bearing argument of the OV tools', 
   inside('write', { uri: 'viking://~/memories/notes.md', content: 'x' });
   inside('cancel_watch', { to_uri: 'viking://~/resources/spec' });
   inside('health', {});
+});
+
+test('facade answers inside the hook timeout: OV\'s index wait is capped, and a slow OV is a clear error', async () => {
+  const mcp = await startFakeOvMcp();
+  const ovRest = await startFakeOv();
+  try {
+    const registry = new ScopeRegistry({ ov: new OvClient({ baseUrl: ovRest.baseUrl }), rootKey: 'root', stateDir: tempStateDir(), log: () => {} });
+    const ctx = { workspaceId: FIXTURE_WS };
+
+    // wait=true: OV is told to stop waiting well before the hook budget ends,
+    // and a wait that runs out reports the write as done.
+    const patient = makeOvToolHandler({ cfg: { ovBaseUrl: mcp.baseUrl, ovTimeoutMs: 30_000, facadeBudgetMs: 25_000 }, registry });
+    const r = await patient(facadeBody(FIXTURE_AGENT_A, 'write', { uri: 'viking://~/notes/a.md', content: 'x', wait: true, timeout: 600 }), ctx);
+    const sent = mcp.calls.at(-1).args;
+    assert.ok(sent.timeout <= 20 && sent.timeout >= 15, `capped wait: ${sent.timeout}`);
+    assert.match(r.output, /^已写入 viking:\/\/~\/notes\/a\.md;等待索引超过 \d+ 秒,索引仍在后台进行/);
+    // without wait nothing is added
+    await patient(facadeBody(FIXTURE_AGENT_A, 'write', { uri: 'viking://~/notes/b.md', content: 'x' }), ctx);
+    assert.equal(mcp.calls.at(-1).args.timeout, undefined);
+
+    // A search that outlives the budget ends as a tool error the agent can act on.
+    const hurried = makeOvToolHandler({ cfg: { ovBaseUrl: mcp.baseUrl, ovTimeoutMs: 30_000, facadeBudgetMs: 300 }, registry });
+    const started = Date.now();
+    await assert.rejects(
+      () => hurried(facadeBody(FIXTURE_AGENT_A, 'search', { query: 'slow' }), ctx),
+      (err) => err.code === 'ov_timeout' && /没有在 \d+ 秒内返回.*可以稍后重试/.test(err.message),
+    );
+    assert.ok(Date.now() - started < 1_200, 'the hook does not wait for OV past its budget');
+  } finally {
+    await new Promise((r) => mcp.server.close(r));
+    await ovRest.stop();
+  }
 });

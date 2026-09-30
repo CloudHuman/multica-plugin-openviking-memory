@@ -101,8 +101,11 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
   return json;
 }
 
-/** Retry with exponential backoff for transient failures (network / 5xx / 429). */
-export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor = 3, jitter = 0.3, shouldRetry } = {}) {
+/**
+ * Retry with exponential backoff for transient failures (network / 5xx / 429).
+ * `deadline` (epoch ms) is the caller's budget: no retry starts after it.
+ */
+export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor = 3, jitter = 0.3, shouldRetry, deadline = Infinity } = {}) {
   let lastErr;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -114,8 +117,30 @@ export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor 
       const wanted = shouldRetry ? shouldRetry(err) : true;
       if (attempt === attempts || !(transient && wanted)) throw err;
       const delay = baseDelayMs * Math.pow(factor, attempt - 1) * (1 + Math.random() * jitter);
+      if (Date.now() + delay >= deadline) throw err;
       await sleep(Math.min(delay, 60_000));
     }
   }
   throw lastErr;
+}
+
+/** A request's timeout: its usual `capMs`, but never past `deadline` (epoch ms). */
+export const timeLeft = (deadline, capMs) => (Number.isFinite(deadline) ? Math.max(1, Math.min(capMs, deadline - Date.now())) : capMs);
+
+/**
+ * Settles like `promise`, or rejects with code 'deadline' once `deadline`
+ * (epoch ms) has passed, whichever comes first. The work itself goes on;
+ * callers that can abort it also pass the deadline down.
+ */
+export function beforeDeadline(promise, deadline) {
+  if (!Number.isFinite(deadline)) return promise;
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const e = new Error('time budget exhausted');
+      e.code = 'deadline';
+      reject(e);
+    }, Math.max(0, deadline - Date.now()));
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
 }

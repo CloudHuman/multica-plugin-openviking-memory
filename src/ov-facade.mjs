@@ -23,6 +23,21 @@ import { scopeKey } from './scopes.mjs';
 const SINGLE_URI_KEYS = ['uri', 'target_uri', 'to_uri', 'to', 'parent'];
 const DEFAULT_ROOT = 'viking://~/';
 
+// write/edit can block until the change is indexed (wait=true), and indexing
+// embeds through the model provider. OV's own wait timeout is kept inside the
+// hook budget, and when it runs out the change itself has already been made.
+const WAIT_TOOLS = new Set(['write', 'edit']);
+const WAIT_MARGIN_MS = 5_000;
+const WAIT_TIMED_OUT_RE = /Queue processing timed out/i;
+const READ_ONLY_TOOLS = new Set(['find', 'search', 'read', 'list', 'tree', 'list_watches', 'grep', 'glob', 'health']);
+
+export function capIndexWait(toolName, args, deadline) {
+  if (!WAIT_TOOLS.has(toolName) || !args.wait || !Number.isFinite(deadline)) return args;
+  const capS = Math.max(1, Math.floor((deadline - Date.now() - WAIT_MARGIN_MS) / 1000));
+  const asked = Number(args.timeout);
+  return { ...args, timeout: Number.isFinite(asked) && asked > 0 ? Math.min(asked, capS) : capS };
+}
+
 export function confineToOwnSpace(toolName, input, ownUserId) {
   const args = {};
   for (const [k, v] of Object.entries(input ?? {})) {
@@ -105,6 +120,7 @@ export function makeOvToolHandler({ cfg, registry }) {
   };
 
   return async function ovTool(body, ctx) {
+    const deadline = Date.now() + cfg.facadeBudgetMs;
     const actor = body.actor ?? {};
     if (actor.type !== 'agent' || !actor.id) {
       throw new Error(`this tool is only callable by an agent (got actor type ${actor.type || 'none'})`);
@@ -122,12 +138,24 @@ export function makeOvToolHandler({ cfg, registry }) {
       e.code = 'outside_own_space';
       throw e;
     }
-    const text = await clientFor(rec.apiKey).callTool(toolName, confined.args);
-    return {
+    const args = capIndexWait(toolName, confined.args, deadline);
+    const result = (output) => ({
       tool: toolName,
       scope: key,
       note: '结果来自你自己的记忆空间(viking://~/,OpenViking 原生工具语义);跨任务协作/工作区共享记忆请用 memory-recall。',
-      output: text,
-    };
+      output,
+    });
+    try {
+      return result(await clientFor(rec.apiKey).callTool(toolName, args, { deadline }));
+    } catch (err) {
+      if (WAIT_TOOLS.has(toolName) && WAIT_TIMED_OUT_RE.test(err.message)) {
+        return result(`${toolName === 'edit' ? '已修改' : '已写入'} ${args.uri};等待索引超过 ${args.timeout} 秒,索引仍在后台进行,稍后即可检索到。(OpenViking: ${err.message})`);
+      }
+      if (err.code === 'ov_timeout') {
+        err.message = `OpenViking 没有在 ${Math.round(err.timeoutMs / 1000)} 秒内返回(检索和建索引要调用模型服务,服务慢时会超时)。`
+          + (READ_ONLY_TOOLS.has(toolName) ? '可以稍后重试。' : '这个操作可能已经生效,重试前先用 ov-read / ov-list 确认。');
+      }
+      throw err;
+    }
   };
 }
