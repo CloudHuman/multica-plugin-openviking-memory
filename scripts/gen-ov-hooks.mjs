@@ -15,7 +15,9 @@ if (!baseUrl || !key) {
   process.exit(2);
 }
 
-const SKIP = new Set(); // expose the full native surface; own-space confinement is enforced by the facade
+// add_skill writes to the account-shared viking://agent/skills by default; the
+// facade refuses it, so it is not offered as a tool either.
+const SKIP = new Set(['add_skill']);
 const PREFIX = '[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] ';
 
 function capBytes(text, max) {

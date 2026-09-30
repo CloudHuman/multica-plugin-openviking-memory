@@ -248,9 +248,20 @@ async function archiveCommentEvent({ queue, statusLog, taskApi, body, input, ws,
   if (comment.deleted_at) return skip('deleted comment', comment.id);
   if (!String(comment.content ?? '').trim()) return skip('empty comment', comment.id);
   // An agent's comment posted from a run is already in that run's transcript
-  // whenever multica can hand the transcript over.
-  if (authorType === 'agent' && comment.source_task_id && taskApi.get(ctx.installationId) === true) {
-    return skip('agent comment covered by its run archive', comment.id);
+  // whenever multica can hand the transcript over. A run's closing comment and
+  // its task.completed are emitted together, so the comment may be the first
+  // thing this installation delivers: then ask once. Only a 200 decides — a
+  // 404 may just mean the run is outside this token's scope.
+  if (authorType === 'agent' && comment.source_task_id) {
+    let covered = taskApi.get(ctx.installationId) === true;
+    if (!covered && !taskApi.has(ctx.installationId)) {
+      try {
+        await mc.getTask(comment.source_task_id);
+        taskApi.set(ctx.installationId, true);
+        covered = true;
+      } catch { /* unknown: archive the comment */ }
+    }
+    if (covered) return skip('agent comment covered by its run archive', comment.id);
   }
   const issueRef = comment.issue_id || body.issue_id;
   if (!issueRef) return skip('comment without an issue', comment.id);

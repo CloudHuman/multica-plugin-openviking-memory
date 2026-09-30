@@ -83,6 +83,21 @@ test('comments are archived with honest attribution: member = human feedback, ag
   });
 });
 
+test('patched multica: a run\'s closing comment that arrives before its task event is not archived twice', async () => {
+  const taskId = 'run-closing';
+  await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId }) }, transcript: fixtureTranscript({ taskId }) }, async ({ svc, cb, multica }) => {
+    // Fresh service: nothing has told it yet whether this multica has the task API.
+    const closing = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
+      commentEvent({ id: 'cm-closing', content: '最终结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
+    assert.equal(closing.json.result.status, 'skipped', closing.text);
+    assert.match(closing.json.result.reason, /covered by its run archive/);
+    assert.ok(multica.requests.some((r) => r.path === `/v1/tasks/${taskId}`), 'asked multica once');
+
+    const run = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId })));
+    assert.equal(run.json.result.status, 'queued', 'the run itself is archived');
+  });
+});
+
 test('patched multica: issue run archives the real transcript with the installation\'s own archive settings', async () => {
   const taskId = 'run-issue-1';
   await withStack({

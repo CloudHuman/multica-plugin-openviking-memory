@@ -71,6 +71,9 @@ export function confineToOwnSpace(toolName, input, ownUserId) {
       // OV's default target is the account-shared viking://resources.
       if (!args.to && !args.parent) args.parent = 'viking://~/resources';
       break;
+    case 'add_skill':
+      // Skills land in the account-shared viking://agent/skills.
+      return { error: 'add_skill is not available through this tool: skills are shared by every agent in the workspace' };
     default:
       break;
   }

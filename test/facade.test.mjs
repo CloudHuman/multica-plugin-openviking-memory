@@ -137,6 +137,7 @@ test('own-space confinement covers every URI-bearing argument of the OV tools', 
   outside('add_resource', { path: 'https://example.com', to: 'viking://resources/x' });
   outside('add_resource', { path: 'https://example.com', parent: 'viking://resources' });
   outside('add_resource', { path: 'viking://resources/other' });
+  outside('add_skill', { data: '---\nname: x\n---' });
   // traversal, encoded or not, and relative paths
   outside('read', { uris: `viking://user/${me}/../someone-else/x.md` });
   outside('read', { uris: `viking://user/${me}/%2e%2e/someone-else/x.md` });
