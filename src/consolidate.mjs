@@ -1,6 +1,7 @@
 import { cap, nowIso, readJsonIfExists, atomicWriteJson } from './util.mjs';
 import { scopeKey } from './scopes.mjs';
 import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 /**
  * Shared-memory promotion: distil durable knowledge from the workspace's
@@ -29,6 +30,8 @@ export async function consolidateShared({
   );
 
   const selected = [];
+  // Promotion copies agent-public and task memories into the space every agent
+  // in the workspace reads; the skill tells agents this can happen.
   outer: for (const scopeKeyStr of sourceScopes) {
     const rec = registry.get(scopeKeyStr);
     if (!rec) continue;
@@ -43,15 +46,19 @@ export async function consolidateShared({
     let taken = 0;
     for (const f of files) {
       if (taken >= perScopeLimit || selected.length >= maxPerRun) break outer;
+      // Keyed by source scope + full URI: memory files from different spaces
+      // routinely share a basename, and must not block each other. Older state
+      // files keyed by basename are still honoured.
       const base = basename(f.uri);
-      if (done.files[base] || existingIn(selected, base)) continue;
+      const doneKey = `${scopeKeyStr}|${f.uri}`;
+      if (done.files[doneKey] || done.files[base] || existingIn(selected, doneKey)) continue;
       let content;
       try {
         const r = await ov.readContent(rec.apiKey, f.uri, { limit: 400 });
         content = r?.content;
       } catch { continue; }
       if (!content || content.length < contentMinChars) continue;
-      selected.push({ from: scopeKeyStr, file: base, content });
+      selected.push({ from: scopeKeyStr, file: base, key: doneKey, content });
       taken++;
     }
   }
@@ -62,7 +69,7 @@ export async function consolidateShared({
 
   // One session, one message per promoted memory — extraction distils them
   // into properly-indexed shared memories.
-  const sessionId = `mc-consolidate-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const sessionId = `mc-consolidate-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomBytes(3).toString('hex')}`;
   const messages = selected.map((s, i) => ({
     role: 'user',
     message_kind: 'user_query',
@@ -76,7 +83,7 @@ export async function consolidateShared({
   const commit = await ov.commitSession(shared.apiKey, sessionId, {
     tags: ['source=multica-plugin', `workspace=${workspaceId}`, 'scope=shared', 'record=consolidate'],
   });
-  for (const s of selected) done.files[s.file] = nowIso();
+  for (const s of selected) done.files[s.key] = nowIso();
   atomicWriteJson(donePath, done);
   log(`consolidate: ${selected.length} memories queued for shared-space extraction (${sessionId})`);
   return {
@@ -115,8 +122,8 @@ async function walkDirs(ov, key, userId, dirs) {
   return out;
 }
 
-function existingIn(list, base) {
-  return list.some((s) => s.file === base);
+function existingIn(list, key) {
+  return list.some((s) => s.key === key);
 }
 
 function basename(uri) {

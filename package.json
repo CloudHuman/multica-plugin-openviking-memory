@@ -1,6 +1,6 @@
 {
   "name": "multica-plugin-openviking-memory",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Multica plugin backend integrating OpenViking agent memory: scoped recall, run archiving, extraction and agent-facing memory tools.",
   "type": "module",
   "private": false,

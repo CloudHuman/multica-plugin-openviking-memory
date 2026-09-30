@@ -119,17 +119,18 @@ export class OvClient {
     return this.call(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { key });
   }
 
-  /** Batch-add messages (≤100 per call, chunking handled by the caller). */
+  /**
+   * Batch-add messages (≤100 per call, chunking handled by the caller).
+   * Deliberately NOT retried here: a POST whose response was lost may still have
+   * landed, and a blind retry would duplicate the batch. The archive pipeline
+   * resumes from the session's live message_count instead.
+   */
   async addMessages(key, sessionId, messages) {
-    return withRetry(
-      () =>
-        this.call(`/api/v1/sessions/${encodeURIComponent(sessionId)}/messages/batch`, {
-          method: 'POST',
-          key,
-          body: { messages },
-        }),
-      { attempts: 3 },
-    );
+    return this.call(`/api/v1/sessions/${encodeURIComponent(sessionId)}/messages/batch`, {
+      method: 'POST',
+      key,
+      body: { messages },
+    });
   }
 
   async commitSession(key, sessionId, { tags = [] } = {}) {
@@ -144,6 +145,15 @@ export class OvClient {
 
   async getTask(key, taskId) {
     return this.call(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { key });
+  }
+
+  /** Background tasks for one resource (e.g. the commit tasks of a session). */
+  async listTasks(key, { resourceId, taskType } = {}) {
+    const qs = new URLSearchParams();
+    if (resourceId) qs.set('resource_id', resourceId);
+    if (taskType) qs.set('task_type', taskType);
+    const result = await this.call(`/api/v1/tasks?${qs}`, { key });
+    return Array.isArray(result) ? result : (result?.tasks ?? []);
   }
 
   // ---- retrieval ----
@@ -161,7 +171,8 @@ export class OvClient {
     return withRetry(() => this.call('/api/v1/search/search', { method: 'POST', key, body }), { attempts: 2 });
   }
 
-  async readContent(key, uri, { offset = 1, limit = 400 } = {}) {
+  /** Read a file; offset is a 0-indexed line number (OV's own convention). */
+  async readContent(key, uri, { offset = 0, limit = 400 } = {}) {
     const qs = `?uri=${encodeURIComponent(uri)}&offset=${offset}&limit=${limit}`;
     const result = await this.call(`/api/v1/content/read${qs}`, { key });
     // v0.4.x returns the body as a bare string in result (with uri echoed on some versions)
@@ -186,7 +197,7 @@ export class OvClient {
   }
 }
 
-function isAlreadyExists(err) {
+export function isAlreadyExists(err) {
   const c = String(err.code ?? '');
   const msg = String(err.message ?? '');
   return c === 'ALREADY_EXISTS' || /exist/i.test(msg) || err.status === 409;

@@ -128,6 +128,50 @@ export function resolveArchiveScope({ workspaceId, agentId, userId, issueId, tas
 }
 
 /**
+ * Scopes of one agent run, from the host's own description of it
+ * (GET /v1/tasks/{id}) — never from tool input the model writes.
+ *
+ *   issue run      archive → task:{issue}            read ← task + agent + [delegation] + shared
+ *   chat run       archive → dm:{agent}:{chat user}  read ← dm + agent + shared
+ *   autopilot run  archive → automation:{autopilot}  read ← automation + agent + shared
+ *   other runs     archive → run:{task}              read ← run + agent + shared
+ *
+ * A run delegated by another agent also reads (and records its handoff in) the
+ * delegation channel between the two. Returns null when the run's own links are
+ * missing (e.g. a chat run without its chat user), so callers skip rather than
+ * invent a scope.
+ */
+export function runScopes({ workspaceId, task }) {
+  const ws = workspaceId;
+  const agentId = task?.agent_id;
+  if (!ws || !agentId || !task?.id) return null;
+  let archiveScope;
+  switch (task.kind) {
+    case 'issue':
+      if (!task.issue_id) return null;
+      archiveScope = scopeKey('task', ws, task.issue_id);
+      break;
+    case 'chat':
+      if (!task.chat_user_id) return null;
+      archiveScope = scopeKey('dm', ws, agentId, task.chat_user_id);
+      break;
+    case 'autopilot':
+      if (!task.autopilot_id) return null;
+      archiveScope = scopeKey('automation', ws, task.autopilot_id);
+      break;
+    default:
+      archiveScope = scopeKey('run', ws, task.id);
+  }
+  const delegationScope = task.delegated_from_agent_id && task.delegated_from_agent_id !== agentId
+    ? scopeKey('delegation', ws, task.delegated_from_agent_id, agentId)
+    : null;
+  const readScopes = [archiveScope, scopeKey('agent', ws, agentId)];
+  if (delegationScope) readScopes.push(delegationScope);
+  readScopes.push(scopeKey('shared', ws));
+  return { kind: task.kind, archiveScope, readScopes, delegationScope };
+}
+
+/**
  * Registry + lazy provisioning against a live OpenViking.
  * Persisted at {stateDir}/scopes.json (0600 — it holds space keys).
  */

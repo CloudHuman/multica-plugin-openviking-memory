@@ -1,253 +1,203 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { loadConfig, mergeCallConfig } from '../src/config.mjs';
-import { OvClient } from '../src/ov-client.mjs';
-import { ScopeRegistry, scopeKey } from '../src/scopes.mjs';
-import { JobQueue } from '../src/queue.mjs';
-import { makeArchiveHandler } from '../src/pipeline.mjs';
-import { Ledger, ArchiveStatusLog } from '../src/ledger.mjs';
-import { createApp, buildRequestListener } from '../src/server.mjs';
+import { scopeKey } from '../src/scopes.mjs';
 import {
-  startFakeOv, startFakeMultica, makeSigningSecret, signDelivery, postJson,
-  fixtureIssue, fixtureTranscript, hookBody,
-  FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A, FIXTURE_AGENT_B,
+  startFakeOv, startFakeMultica, fixtureIssue, fixtureTranscript, fixtureTask, hookBody, commentEvent, taskEvent,
+  FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A, FIXTURE_AGENT_B, FIXTURE_USER,
 } from './helpers.mjs';
-import { sleep } from '../src/util.mjs';
+import { bootService, waitFor } from './harness.mjs';
 
-const TASK_ID = 'task-run-1001';
+// Archiving paths end to end over realistic doubles. "Stock" multica is v0.6 as
+// released (no task read API); "patched" carries GET /v1/tasks/{id}[/messages].
 
-async function bootAll({ ov, multica, stateDir }) {
-  const cfg = {
-    ...loadConfig({}, { stateDir }),
-    ovBaseUrl: ov.baseUrl,
-    ovRootKey: 'root',
-    signingSecret: SECRET,
-    pluginToken: 'test-admin-token',
-    callbackTimeoutMs: 3000,
-    extractWatchTimeoutMs: 4000,
-    extractWatchIntervalMs: 40,
-    reextractAttempts: 2,
-    reextractBaseDelayMs: 30,
-    includeThinking: false,
-    dropToolPrefixes: ['multica issue list'],
-    recallEntries: 5,
-    recallPerScopeLimit: 10,
-    recallContentMaxChars: 2400,
-  };
-  const ovClient = new OvClient({ baseUrl: ov.baseUrl, timeoutMs: 3000 });
-  const registry = new ScopeRegistry({ ov: ovClient, rootKey: 'root', stateDir, log: () => {} });
-  const ledger = new Ledger({ stateDir });
-  const statusLog = new ArchiveStatusLog({ stateDir });
-  const queue = new JobQueue({
-    stateDir,
-    handler: makeArchiveHandler({ ov: ovClient, registry, statusLog, cfg, log: () => {} }),
-    maxAttempts: 3, baseDelayMs: 5, pollMs: 10, log: () => {},
-  });
-  queue.start();
-  const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog });
-  const handler = await buildRequestListener({ cfg, app });
-  const server = createServer(handler);
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { app, server, port: server.address().port, queue, cfg, registry, statusLog, ovClient };
-}
-
-const SECRET = makeSigningSecret();
-
-async function signedPost(port, path, body, { secret = SECRET, ts } = {}) {
-  const raw = JSON.stringify(body);
-  const { timestamp, signature } = signDelivery({ secret, body: raw, timestamp: ts });
-  return postJson(port, path, raw, { headers: {
-    'Content-Type': 'application/json',
-    'X-Multica-Timestamp': timestamp,
-    'X-Multica-Signature': signature,
-    'X-Multica-Plugin-Installation': 'inst-1',
-  } });
-}
-
-test('integration: task.completed → archive → extract → recall → isolation → dedupe', async () => {
-  const ov = await startFakeOv();
-  const multica = await startFakeMultica({
-    issue: fixtureIssue(),
-    transcript: fixtureTranscript({ taskId: TASK_ID }),
-  });
-  let harness;
+async function withStack({ taskApi = false, tasks = {}, transcript = [], ovOpts = {}, cfg = {} } = {}, fn) {
+  const ov = await startFakeOv(ovOpts);
+  const multica = await startFakeMultica({ issue: fixtureIssue(), tasks, transcript, taskApi });
+  const svc = await bootService({ ov, cfg });
   try {
-    const { mkdtempSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const stateDir = mkdtempSync(join(tmpdir(), 'ovmem-it-'));
-    harness = await bootAll({ ov, multica, stateDir });
-    const { port, registry, statusLog } = harness;
-
-    // ---- 1. signed event delivery is accepted fast and queued
-    const res = await signedPost(port, '/hooks/memory-archive', hookBody({
-      eventType: 'task.completed',
-      invocationId: 'inv-dedupe-1',
-      input: { task_id: TASK_ID, agent_id: FIXTURE_AGENT_A, issue_id: FIXTURE_ISSUE_ID, status: 'completed' },
-      callbackUrl: multica.baseUrl + '/v1',
-    }));
-    assert.equal(res.status, 200, res.text);
-    assert.equal(res.json.result.status, 'queued');
-    assert.equal(res.json.result.completeness, 'complete');
-
-    // ---- 2. unsigned / badly signed deliveries rejected
-    const bad = await postJson(port, '/hooks/memory-archive', hookBody({
-      eventType: 'task.completed',
-      input: { task_id: 'x', agent_id: 'y', issue_id: 'z' },
-      callbackUrl: multica.baseUrl + '/v1',
-    }));
-    assert.equal(bad.status, 401);
-
-    // ---- 3. queue archives into the task scope with proper structure
-    await sleep(400);
-    const taskScope = scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID);
-    const rec = registry.get(taskScope);
-    assert.ok(rec, 'task scope provisioned');
-    const session = ov.sessionsOf(rec.apiKey).get(`mc-task-${TASK_ID}`);
-    assert.ok(session, 'run session created');
-    assert.equal(session.committed, true);
-    assert.ok(session.tags.includes('scope=task'));
-    // user_query + business content present; probe tool dropped; runtime brief stripped
-    const userMsg = session.messages[0];
-    assert.equal(userMsg.message_kind, 'user_query');
-    assert.match(userMsg.content, /MUL-7/);
-    assert.match(userMsg.content, /对比 Kafka 与 RocketMQ/);
-    const flat = JSON.stringify(session.messages);
-    assert.equal(flat.includes('issue list'), false);
-    assert.equal(flat.includes('Multica Agent Runtime'), false);
-    assert.equal(flat.includes('推荐 RocketMQ'), true);
-
-    // ---- 4. redelivery of the same invocation is a ledger duplicate
-    const again = await signedPost(port, '/hooks/memory-archive', hookBody({
-      eventType: 'task.completed',
-      invocationId: 'inv-dedupe-1',
-      input: { task_id: TASK_ID, agent_id: FIXTURE_AGENT_A, issue_id: FIXTURE_ISSUE_ID, status: 'completed' },
-      callbackUrl: multica.baseUrl + '/v1',
-    }));
-    assert.equal(again.json.result.status, 'duplicate');
-    await sleep(150);
-    assert.equal(ov.sessionsOf(rec.apiKey).size, 1, 'no duplicate session');
-
-    // ---- 5. agent recall tool: signed agent trigger, scoped read
-    const recallBody = {
-      version: 1, invocation_id: 'inv-agent-1', attempt: 1,
-      occurred_at: new Date().toISOString(), hook_key: 'memory-recall',
-      trigger: 'agent', workspace_id: FIXTURE_WS, installation_id: 'inst-1',
-      actor: { type: 'agent', id: FIXTURE_AGENT_A },
-      input: { query: '选型' },
-      config: {},
-    };
-    const rr = await signedPost(port, '/hooks/memory-recall', recallBody);
-    assert.equal(rr.status, 200, rr.text);
-    // fake OV spaces are empty until written; scopesSearched shows provisioning state
-    assert.equal(rr.json.result.entries instanceof Array, true);
-
-    // ---- 6. agent remember tool writes into THIS agent's public space only
-    const remBody = {
-      ...recallBody, hook_key: 'memory-remember', invocation_id: 'inv-agent-2',
-      input: { content: '顺序性消息场景选 RocketMQ,事务消息原生支持。', title: '消息选型结论', kind: 'cases' },
-    };
-    const rem = await signedPost(port, '/hooks/memory-remember', remBody);
-    assert.equal(rem.status, 200, rem.text);
-    const agentScope = scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A);
-    const agentRec = registry.get(agentScope);
-    assert.ok(agentRec);
-    const files = ov.filesOf(agentRec.apiKey);
-    assert.equal(files.size, 1);
-    const [[uri, content]] = [...files];
-    assert.match(uri, /^viking:\/\/user\/[^/]+\/memories\/cases\//);
-    assert.match(content, /RocketMQ/);
-    assert.match(rem.json.result.uri, /^viking:\/\/user\/[^/]+\/memories\/cases\//);
-    // agent B's space stays empty
-    const scopeB = scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B);
-    assert.equal(registry.get(scopeB), null);
-
-    // ---- 7. recall now finds the remembered knowledge for agent A
-    const rr2 = await signedPost(port, '/hooks/memory-recall', { ...recallBody, invocation_id: 'inv-agent-3' });
-    assert.equal(rr2.status, 200);
-    assert.ok(rr2.json.result.entries.some((e) => e.scope === agentScope), 'agent-A recall hits own public memory');
-
-    // ---- 8. status tool
-    const st = await signedPost(port, '/hooks/memory-status', {
-      ...recallBody, hook_key: 'memory-status', invocation_id: 'inv-agent-4', input: {},
-    });
-    assert.equal(st.status, 200);
-    assert.equal(st.json.result.openviking.healthy, true);
-    assert.equal(st.json.result.archive_queue.done >= 1, true);
-    assert.ok(st.json.result.recent_archives.length >= 1);
-
-    // ---- 9. comment.created archives with attribution
-    const cres = await signedPost(port, '/hooks/memory-archive', hookBody({
-      eventType: 'comment.created',
-      input: {
-        comment: { id: 'cm-1', issue_id: FIXTURE_ISSUE_ID, content: '死信队列补充对比', author: { id: 'member-7', name: 'cloud' }, created_at: new Date().toISOString() },
-        issue_title: '为消息推送服务选型', issue_assignee_type: 'agent', issue_assignee_id: FIXTURE_AGENT_A, issue_status: 'open',
-      },
-      callbackUrl: multica.baseUrl + '/v1',
-    }));
-    assert.equal(cres.json.result.status, 'queued');
-    await sleep(300);
-    const csession = ov.sessionsOf(rec.apiKey).get('mc-comment-cm-1');
-    assert.ok(csession, 'comment session in task scope');
-    assert.equal(csession.messages[0].peer_id, 'member-7');
-
-    // ---- 10. admin status requires the bearer token
-    const noAuth = await postJson(port, '/admin/status', {});
-    assert.equal(noAuth.status, 401);
-    const admin = await postJson(port, '/admin/status', {}, { headers: { Authorization: 'Bearer test-admin-token' } });
-    assert.equal(admin.status, 200);
-    assert.equal(admin.json.result.scopes.scopes >= 2, true);
-
-    // ---- 11. isolation: task-scope key cannot read another space's content
-    const other = await fetch(`${ov.baseUrl}/api/v1/content/read?uri=${encodeURIComponent('memories/cases/x.md')}`, {
-      headers: { Authorization: `Bearer ${rec.apiKey}` },
-    });
-    assert.equal(other.status, 404);
+    await fn({ ov, multica, svc, cb: multica.baseUrl + '/v1' });
   } finally {
-    if (harness) {
-      await harness.queue.stop({ drainMs: 500 }).catch(() => {});
-      await new Promise((r) => harness.server.close(r));
-    }
+    await svc.stop();
     await multica.stop();
     await ov.stop();
   }
+}
+
+const archiveBody = (cb, eventType, input, extra) => hookBody({ eventType, input, callbackUrl: cb, extra });
+const taskScope = scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID);
+const archivedText = (ov, rec, sid) => JSON.stringify(ov.archivedOf(rec.apiKey, sid));
+
+test('stock multica: a task event it cannot describe is skipped with 200 — never a 5xx that trips the breaker', async () => {
+  await withStack({}, async ({ svc, cb }) => {
+    // issue run: no transcript API → nothing but metadata → skipped, not archived as noise
+    const issueRun = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: 'run-1' })));
+    assert.equal(issueRun.status, 200, issueRun.text);
+    assert.equal(issueRun.json.result.status, 'skipped');
+    assert.match(issueRun.json.result.reason, /nothing to archive/);
+
+    // chat run: multica publishes issue_id "" — the event that used to 500 three times per chat turn
+    const chat = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: 'chat-1', issueId: '', chatSessionId: 'cs-1' })));
+    assert.equal(chat.status, 200);
+    assert.equal(chat.json.result.status, 'skipped');
+    assert.match(chat.json.result.reason, /no task API/);
+
+    // intermediate failure of a run multica will retry
+    const retrying = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.failed', taskEvent({ taskId: 'run-2', status: 'failed', retry_pending: true, failure_reason: 'agent_error' })));
+    assert.equal(retrying.json.result.status, 'skipped');
+    assert.match(retrying.json.result.reason, /retrying/);
+
+    // an unsubscribed or unknown event is also a 200 skip
+    const other = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'issue.updated', {}));
+    assert.equal(other.status, 200);
+    assert.equal(other.json.result.status, 'skipped');
+    assert.equal(svc.queue.stats().queued + svc.queue.stats().done, 0, 'nothing was queued');
+  });
 });
 
-test('integration: extraction failure triggers auto re-extract recovery', async () => {
-  const ov = await startFakeOv({ taskBehavior: 'fail-once' });
-  const multica = await startFakeMultica({
-    issue: fixtureIssue(),
-    transcript: fixtureTranscript({ taskId: 'task-run-2002' }),
-  });
-  let harness;
-  try {
-    const { mkdtempSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const stateDir = mkdtempSync(join(tmpdir(), 'ovmem-it2-'));
-    harness = await bootAll({ ov, multica, stateDir });
-    const res = await signedPost(harness.port, '/hooks/memory-archive', hookBody({
-      eventType: 'task.completed',
-      input: { task_id: 'task-run-2002', agent_id: FIXTURE_AGENT_A, issue_id: FIXTURE_ISSUE_ID },
-      callbackUrl: multica.baseUrl + '/v1',
-    }));
-    assert.equal(res.json.result.status, 'queued');
-    // fake OV: task fails once (429) → plugin re-extracts → fake marks succeeded
-    await sleep(2000);
-    const taskScope = scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID);
-    const rec = harness.registry.get(taskScope);
-    const space = ov.spaces.get(rec.apiKey);
-    assert.equal(space.extracts.length >= 1, true, 're-extract was attempted');
-    const recent = harness.statusLog.recent({ limit: 5 }).find((e) => e.type === 'archive-run');
-    assert.ok(recent);
-    assert.equal(recent.extraction, 'reextracted');
-  } finally {
-    if (harness) {
-      await harness.queue.stop({ drainMs: 500 }).catch(() => {});
-      await new Promise((r) => harness.server.close(r));
+test('comments are archived with honest attribution: member = human feedback, agent = agent statement, system skipped', async () => {
+  await withStack({}, async ({ ov, svc, cb }) => {
+    const member = commentEvent({ id: 'cm-member', content: '死信队列的监控告警要求补充进方案,峰值堆积阈值 1 万条。' });
+    const agent = commentEvent({ id: 'cm-agent', content: '最终结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: 'run-9' });
+    const system = commentEvent({ id: 'cm-system', content: 'runtime unusable', authorType: 'system', authorId: '' });
+    for (const input of [member, agent, system]) {
+      const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created', input));
+      assert.equal(r.status, 200, r.text);
     }
-    await multica.stop();
-    await ov.stop();
-  }
+    const rec = await waitFor(() => svc.registry.get(taskScope), { label: 'task scope' });
+    await waitFor(() => ov.archivedOf(rec.apiKey, 'mc-comment-cm-member').length && ov.archivedOf(rec.apiKey, 'mc-comment-cm-agent').length, { label: 'comment archives' });
+
+    const [human] = ov.archivedOf(rec.apiKey, 'mc-comment-cm-member');
+    assert.equal(human.role, 'user');
+    assert.equal(human.peer_id, FIXTURE_USER);
+    assert.match(human.content, /\[人类反馈\]\[评论\] MUL-7/);
+
+    const agentMsgs = ov.archivedOf(rec.apiKey, 'mc-comment-cm-agent');
+    const statement = agentMsgs.find((m) => m.role === 'assistant');
+    assert.ok(statement, 'agent comment archived as assistant output');
+    assert.match(statement.parts[0].text, /\[智能体评论\] 智能体 33333333/);
+    assert.equal(JSON.stringify(agentMsgs).includes('人类反馈'), false, 'an agent is never recorded as human feedback');
+
+    assert.equal(ov.sessionsOf(rec.apiKey).has('mc-comment-cm-system'), false, 'system notices are not archived');
+    const skipped = svc.statusLog.recent({ limit: 20 }).find((e) => e.type === 'skipped' && e.ref === 'cm-system');
+    assert.ok(skipped, 'the skip is visible in the status log');
+  });
+});
+
+test('patched multica: issue run archives the real transcript with the installation\'s own archive settings', async () => {
+  const taskId = 'run-issue-1';
+  await withStack({
+    taskApi: true,
+    tasks: { [taskId]: fixtureTask({ taskId, input: [{ source: 'comment', author_type: 'member', author_id: FIXTURE_USER, content: '请比较 Kafka 与 RocketMQ' }] }) },
+    transcript: fixtureTranscript({ taskId }),
+    cfg: { dropToolPrefixes: [] }, // service default drops nothing …
+  }, async ({ ov, svc, cb }) => {
+    const body = archiveBody(cb, 'task.completed', taskEvent({ taskId }));
+    body.config = { drop_tool_prefixes: 'multica issue list', include_thinking: false }; // … the installation's config does
+    const r = await svc.signedPost('/hooks/memory-archive', body);
+    assert.equal(r.json.result.status, 'queued', r.text);
+    assert.equal(r.json.result.kind, 'issue');
+    assert.equal(r.json.result.completeness, 'complete');
+
+    const rec = await waitFor(() => svc.registry.get(taskScope), { label: 'task scope' });
+    await waitFor(() => ov.archivedOf(rec.apiKey, `mc-task-${taskId}`).length, { label: 'run archive' });
+    const flat = archivedText(ov, rec, `mc-task-${taskId}`);
+    assert.match(flat, /MUL-7/);
+    assert.match(flat, /推荐 RocketMQ/, 'the agent\'s conclusion is archived');
+    assert.match(flat, /触发评论/, 'the member input that started the run is archived');
+    assert.equal(flat.includes('issue list'), false, 'probe dropped by the installation\'s drop_tool_prefixes');
+    assert.equal(flat.includes('Multica Agent Runtime'), false, 'runtime brief stripped');
+    assert.equal(flat.includes('internal reasoning'), false, 'thinking excluded');
+
+    // once multica has shown it hands transcripts over, the agent's own comment
+    // from that run is covered by the run archive
+    const again = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
+      commentEvent({ id: 'cm-dup', content: '最终结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
+    assert.equal(again.json.result.status, 'skipped');
+    assert.match(again.json.result.reason, /covered by its run archive/);
+  });
+});
+
+test('multica\'s retry of a delivery (a new invocation id) is a duplicate, archived once', async () => {
+  const taskId = 'run-retried';
+  await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId }) }, transcript: fixtureTranscript({ taskId }) }, async ({ ov, svc, cb }) => {
+    const first = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId })));
+    assert.equal(first.json.result.status, 'queued', first.text);
+    const retry = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId })));
+    assert.equal(retry.json.result.status, 'duplicate', retry.text);
+    assert.equal(retry.json.result.job, first.json.result.job);
+
+    const comment = commentEvent({ id: 'cm-retried', content: '补充:需要回滚预案。' });
+    await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created', comment));
+    const commentRetry = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created', comment));
+    assert.equal(commentRetry.json.result.status, 'duplicate');
+
+    const rec = await waitFor(() => svc.registry.get(taskScope), { label: 'task scope' });
+    await waitFor(() => svc.queue.stats().done === 2, { label: 'both records settled' });
+    assert.equal(svc.queue.jobs.size, 2);
+    assert.equal(ov.sessionsOf(rec.apiKey).get(`mc-task-${taskId}`).commitCount, 1, 'committed once');
+  });
+});
+
+test('patched multica: chat, autopilot, quick-create and delegated runs land in their own scopes', async () => {
+  const tasks = {
+    'run-chat': fixtureTask({ taskId: 'run-chat', kind: 'chat', chat_session_id: 'cs-9', chat_user_id: FIXTURE_USER,
+      input: [{ source: 'chat_message', author_type: 'member', author_id: FIXTURE_USER, content: '记住:代码注释一律用中文。' }] }),
+    'run-auto': fixtureTask({ taskId: 'run-auto', kind: 'autopilot', autopilot_id: 'ap-1', trigger_summary: 'nightly triage' }),
+    'run-quick': fixtureTask({ taskId: 'run-quick', kind: 'quick_create', input: [{ source: 'quick_create', author_type: 'member', author_id: FIXTURE_USER, content: '建一个修复登录超时的任务' }] }),
+    'run-deleg': fixtureTask({ taskId: 'run-deleg', agentId: FIXTURE_AGENT_B, delegated_from_agent_id: FIXTURE_AGENT_A,
+      input: [{ source: 'handoff', author_type: 'agent', author_id: FIXTURE_AGENT_A, content: '请复核预算约束' }] }),
+  };
+  const transcript = Object.keys(tasks).map((id) => ({ task_id: id, seq: 1, type: 'text', content: `done ${id}` }));
+  await withStack({ taskApi: true, tasks, transcript }, async ({ ov, svc, cb }) => {
+    for (const id of Object.keys(tasks)) {
+      const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed',
+        taskEvent({ taskId: id, agentId: tasks[id].agent_id, issueId: tasks[id].issue_id ?? '' })));
+      assert.equal(r.json.result.status, 'queued', `${id}: ${r.text}`);
+    }
+    const expect = {
+      'run-chat': scopeKey('dm', FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_USER),
+      'run-auto': scopeKey('automation', FIXTURE_WS, 'ap-1'),
+      'run-quick': scopeKey('run', FIXTURE_WS, 'run-quick'),
+      'run-deleg': taskScope,
+    };
+    for (const [id, scope] of Object.entries(expect)) {
+      const rec = await waitFor(() => svc.registry.get(scope), { label: scope });
+      await waitFor(() => ov.archivedOf(rec.apiKey, `mc-task-${id}`).length, { label: `${id} archive` });
+    }
+    const dm = svc.registry.get(expect['run-chat']);
+    const chatMsgs = ov.archivedOf(dm.apiKey, 'mc-task-run-chat');
+    const said = chatMsgs.find((m) => /代码注释一律用中文/.test(m.content ?? ''));
+    assert.equal(said?.peer_id, FIXTURE_USER, 'the member\'s chat message is attributed to them');
+
+    const channel = await waitFor(() => svc.registry.get(scopeKey('delegation', FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B)), { label: 'delegation scope' });
+    await waitFor(() => ov.archivedOf(channel.apiKey, 'mc-deleg-run-deleg').length, { label: 'handoff archive' });
+    assert.match(JSON.stringify(ov.archivedOf(channel.apiKey, 'mc-deleg-run-deleg')), /请复核预算约束/);
+  });
+});
+
+test('commit tags built from client-supplied ids are always valid OV tags', async () => {
+  await withStack({}, async ({ ov, svc, cb }) => {
+    const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
+      commentEvent({ id: 'Y2hhdC0xMjM=', content: '回滚演练必须在灰度第一周完成。' })));
+    assert.equal(r.json.result.status, 'queued');
+    const rec = await waitFor(() => svc.registry.get(taskScope));
+    await waitFor(() => ov.archivedOf(rec.apiKey, 'mc-comment-Y2hhdC0xMjM_').length, { label: 'archived despite = in the id' });
+    const tags = ov.sessionsOf(rec.apiKey).get('mc-comment-Y2hhdC0xMjM_').tags;
+    assert.ok(tags.every((t) => t.split('=').length === 2), JSON.stringify(tags));
+  });
+});
+
+test('unsigned, wrongly signed or mis-addressed deliveries are refused before any handler runs', async () => {
+  await withStack({}, async ({ svc, cb }) => {
+    const body = archiveBody(cb, 'comment.created', commentEvent({ content: 'x' }));
+    const { postJson } = await import('./helpers.mjs');
+    const unsigned = await postJson(svc.port, '/hooks/memory-archive', body);
+    assert.equal(unsigned.status, 401);
+    const wrong = await svc.signedPost('/hooks/memory-archive', body, { secret: 'whsec_' + '0'.repeat(64) });
+    assert.equal(wrong.status, 401);
+    // body names one installation, headers another
+    const mismatched = await svc.signedPost('/hooks/memory-archive', { ...body, installation_id: 'other-installation' }, { installation: body.installation_id });
+    assert.equal(mismatched.status, 401);
+    assert.equal(svc.queue.stats().queued + svc.queue.stats().done, 0);
+  });
 });

@@ -119,3 +119,85 @@ test('dedupeKey also blocks re-enqueue after the job is done (redelivery under a
   assert.equal(ran, 1);
   assert.equal(q.stats().done, 1);
 });
+
+test('a failed record redelivered under its dedupe key runs again as the same job, next generation', async () => {
+  const stateDir = tempStateDir();
+  let fail = true;
+  const runs = [];
+  const q = new JobQueue({
+    stateDir, maxAttempts: 1, baseDelayMs: 5, pollMs: 10, log: () => {},
+    handler: async (job) => {
+      runs.push(job.payload.generation);
+      if (fail) throw new Error('OV down');
+    },
+  });
+  q.start();
+  const first = q.enqueue('archive', { x: 1 }, { dedupeKey: 'rec-1' });
+  await sleep(80);
+  assert.equal(q.jobs.get(first.id).status, 'failed');
+
+  fail = false;
+  const again = q.enqueue('archive', { x: 1 }, { dedupeKey: 'rec-1' });
+  assert.deepEqual(again, { id: first.id, reused: false, requeued: true });
+  await sleep(80);
+  await q.stop();
+  assert.equal(q.jobs.size, 1, 'never two jobs racing for one record');
+  assert.equal(q.jobs.get(first.id).status, 'done');
+  assert.deepEqual(runs, [0, 1], 'the re-run is a new generation (a fresh OV session)');
+});
+
+test('a partial archive is upgraded when the complete record arrives; a complete one is not re-run', async () => {
+  const stateDir = tempStateDir();
+  const seen = [];
+  const q = new JobQueue({ stateDir, pollMs: 10, log: () => {}, handler: async (job) => seen.push([job.payload.completeness, job.payload.generation]) });
+  q.start();
+  const a = q.enqueue('archive', { completeness: 'partial:no-transcript' }, { dedupeKey: 'run-1' });
+  await sleep(60);
+  const b = q.enqueue('archive', { completeness: 'complete' }, { dedupeKey: 'run-1' });
+  assert.equal(b.upgraded, true);
+  assert.equal(b.id, a.id);
+  await sleep(60);
+  const c = q.enqueue('archive', { completeness: 'complete' }, { dedupeKey: 'run-1' });
+  assert.equal(c.reused, true);
+  await sleep(40);
+  await q.stop();
+  assert.deepEqual(seen, [['partial:no-transcript', 0], ['complete', 1]]);
+});
+
+test('requeue leaves queued and running jobs alone; non-retryable errors fail at once', async () => {
+  const stateDir = tempStateDir();
+  let calls = 0;
+  const q = new JobQueue({
+    stateDir, maxAttempts: 5, baseDelayMs: 5, pollMs: 10, log: () => {},
+    handler: async () => {
+      calls++;
+      const e = new Error('HTTP 400 INVALID_ARGUMENT');
+      e.retryable = false;
+      throw e;
+    },
+  });
+  const { id } = q.enqueue('archive', {});
+  assert.equal(q.requeue(id), null, 'still queued: nothing to do');
+  q.start();
+  await sleep(80);
+  await q.stop();
+  assert.equal(calls, 1);
+  assert.equal(q.jobs.get(id).status, 'failed');
+  assert.equal(q.requeue('no-such-job'), null);
+});
+
+test('compaction never drops a done job that is still pinned (its extraction is being watched)', async () => {
+  const stateDir = tempStateDir();
+  const pinned = new Set();
+  const q = new JobQueue({ stateDir, pollMs: 5, keepDone: 1, log: () => {}, handler: async () => {}, isPinned: (id) => pinned.has(id) });
+  q.start();
+  const ids = [];
+  for (let i = 0; i < 4; i++) ids.push(q.enqueue('archive', { i }).id);
+  pinned.add(ids[0]);
+  await sleep(100);
+  await q.stop(); // stop() compacts
+  const q2 = new JobQueue({ stateDir, handler: async () => {}, log: () => {} });
+  assert.ok(q2.jobs.has(ids[0]), 'pinned job kept');
+  assert.ok(q2.jobs.has(ids[3]), 'newest done job kept (keepDone = 1)');
+  assert.equal(q2.jobs.has(ids[1]) || q2.jobs.has(ids[2]), false, 'older unpinned done jobs compacted away');
+});

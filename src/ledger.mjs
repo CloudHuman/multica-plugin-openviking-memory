@@ -1,6 +1,12 @@
-import { appendFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, mkdirSync, statSync, writeFileSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { atomicWriteJson, readJsonIfExists } from './util.mjs';
+
+function atomicWriteText(path, text) {
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, path);
+}
 
 /**
  * Delivery ledger: remembers which multica deliveries were already accepted,
@@ -29,12 +35,34 @@ export class Ledger {
   }
 }
 
-/** Append-only archive status log feeding the memory-status tool and /admin/status. */
+/**
+ * Append-only archive status log feeding memory-status and /admin/status.
+ * Every record carries its workspace, so a tool call only ever sees its own
+ * workspace's records. The file is rotated (last `keep` lines retained) once it
+ * outgrows maxBytes.
+ */
 export class ArchiveStatusLog {
-  constructor({ stateDir, keep = 200 } = {}) {
+  constructor({ stateDir, keep = 2000, maxBytes = 4 * 1024 * 1024 } = {}) {
     this.path = `${stateDir}/archives.jsonl`;
     this.keep = keep;
+    this.maxBytes = maxBytes;
     this.entries = [];
+    this.#load();
+  }
+
+  #load() {
+    if (!existsSync(this.path)) return;
+    try {
+      const lines = readFileSync(this.path, 'utf8').split('\n').filter(Boolean);
+      this.entries = lines.slice(-this.keep).map((l) => {
+        try { return JSON.parse(l); } catch { return null; }
+      }).filter(Boolean);
+      if (statSync(this.path).size > this.maxBytes) this.#rewrite();
+    } catch { /* status log is best-effort */ }
+  }
+
+  #rewrite() {
+    atomicWriteText(this.path, this.entries.map((e) => JSON.stringify(e)).join('\n') + (this.entries.length ? '\n' : ''));
   }
 
   append(entry) {
@@ -44,20 +72,15 @@ export class ArchiveStatusLog {
       appendFileSync(this.path, `${JSON.stringify(record)}\n`);
     } catch { /* status log is best-effort */ }
     this.entries.push(record);
-    if (this.entries.length > this.keep) this.entries = this.entries.slice(-this.keep);
+    if (this.entries.length > this.keep * 1.5) {
+      this.entries = this.entries.slice(-this.keep);
+      try { this.#rewrite(); } catch { /* best-effort */ }
+    }
     return record;
   }
 
-  recent({ limit = 20 } = {}) {
-    if (this.entries.length) return this.entries.slice(-limit).reverse();
-    if (!existsSync(this.path)) return [];
-    const lines = readFileSync(this.path, 'utf8').split('\n').filter(Boolean);
-    return lines
-      .slice(-limit)
-      .reverse()
-      .map((l) => {
-        try { return JSON.parse(l); } catch { return null; }
-      })
-      .filter(Boolean);
+  recent({ limit = 20, workspaceId } = {}) {
+    const pool = workspaceId ? this.entries.filter((e) => e.workspace === workspaceId) : this.entries;
+    return pool.slice(-limit).reverse();
   }
 }

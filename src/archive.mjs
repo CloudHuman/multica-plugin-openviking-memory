@@ -3,12 +3,15 @@ import { cap, slugify, shortHash } from './util.mjs';
 /**
  * Pure builders: turn multica events + transcripts into OpenViking session
  * messages (parts mode), plus the archiving hygiene rules from the spec:
- *   - user business input preserved verbatim (issue text / comment / append);
+ *   - user business input preserved verbatim (issue text / chat message / comment);
  *   - agent visible replies, tool calls and results preserved as evidence;
+ *   - who said what is kept honest: a member's words are user input attributed
+ *     to that member (peer_id), an agent's words are assistant output, and a
+ *     plugin's or system's text is never presented as a person's;
  *   - system prompts, runtime briefs and thinking are NOT sedimented as user
  *     input (thinking opt-in as distillation nourishment only);
  *   - probe/high-frequency tool calls dropped by prefix;
- *   - sizes capped; nothing silently re-quoted as human speech.
+ *   - sizes capped.
  */
 
 export const RUNTIME_BRIEF_MARK = '# Multica Agent Runtime';
@@ -22,7 +25,8 @@ export function stripRuntimeBrief(text, marker = RUNTIME_BRIEF_MARK) {
   if (typeof text !== 'string') return text;
   const idx = text.indexOf(marker);
   if (idx === -1) return text;
-  // The brief is a prefix block: drop from the marker to the end of its section.
+  // Everything from the marker on is dropped: the brief has no reliable end
+  // marker, and leaking part of it is worse than losing a trailing sentence.
   return text.slice(0, idx).trimEnd();
 }
 
@@ -51,23 +55,74 @@ export function makeDropToolMatcher(prefixes) {
   };
 }
 
-/**
- * Map one multica task transcript into OV messages.
- * transcript messages: {seq, type: thinking|tool_use|tool_result|text, tool, call_id, content, input, output}
- */
-export function buildRunMessages({ taskId, agentId, issue, transcript = [], status = 'completed', cfg }) {
-  const messages = [];
-  const identifier = issue?.identifier ?? issue?.id ?? '';
-  const title = issue?.title ?? '';
-  const description = typeof issue?.description === 'string' ? issue.description : '';
-  const turn = sanitizeSessionId(taskId);
+/** OV requires tool_input to be an object; transcripts may carry anything. */
+function toolInputObject(input) {
+  if (input && typeof input === 'object' && !Array.isArray(input)) return input;
+  if (input == null || input === '') return {};
+  return { value: input };
+}
 
+const HEADER = {
+  issue: '[Multica 任务]',
+  chat: '[私聊]',
+  autopilot: '[自动化运行]',
+  quick_create: '[快速创建]',
+  other: '[运行]',
+};
+
+/** The human/agent input that started a run, as attributed user messages. */
+function inputMessages(inputs, turn, cfg) {
+  const out = [];
+  for (const item of inputs ?? []) {
+    const text = String(item?.content ?? '').trim();
+    if (!text) continue;
+    const who = item.author_type === 'agent' ? `智能体 ${item.author_id}` : item.author_type === 'member' ? `成员 ${item.author_id}` : (item.author_type || '未知来源');
+    const label = {
+      chat_message: '[私聊消息]',
+      comment: '[触发评论]',
+      quick_create: '[快速创建请求]',
+      handoff: '[委派交接]',
+    }[item.source] ?? '[输入]';
+    const msg = {
+      role: 'user',
+      message_kind: 'user_query',
+      turn_id: turn,
+      content: `${label} ${who}:\n${cap(text, cfg.textPartMaxChars)}`,
+    };
+    if ((item.author_type === 'member' || item.author_type === 'agent') && item.author_id) msg.peer_id = String(item.author_id);
+    out.push(msg);
+  }
+  return out;
+}
+
+/**
+ * Map one multica run (task + transcript) into OV messages.
+ * run: { taskId, agentId, kind, status, issue?, task? (GET /v1/tasks payload) }
+ * transcript: [{seq, type: text|tool_use|tool_result|error|thinking, tool, call_id, content, input, output}]
+ */
+export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task, transcript = [], status = 'completed', cfg }) {
+  const messages = [];
+  const turn = sanitizeSessionId(taskId);
+  const header = HEADER[kind] ?? HEADER.other;
+  let context;
+  if (kind === 'issue') {
+    const identifier = issue?.identifier ?? issue?.id ?? task?.issue_id ?? '';
+    const description = typeof issue?.description === 'string' ? issue.description : '';
+    context = `${header} ${identifier} ${issue?.title ?? ''}\n\n任务描述：\n${cap(description, cfg.textPartMaxChars) || '(无描述)'}`;
+  } else if (kind === 'chat') {
+    context = `${header} 成员 ${task?.chat_user_id ?? 'unknown'} 与智能体 ${agentId} 的对话`;
+  } else if (kind === 'autopilot') {
+    context = `${header} autopilot ${task?.autopilot_id ?? ''}${task?.trigger_summary ? `\n触发: ${task.trigger_summary}` : ''}`;
+  } else {
+    context = `${header}${task?.trigger_summary ? ` ${task.trigger_summary}` : ''}`;
+  }
   messages.push({
     role: 'user',
     message_kind: 'user_query',
     turn_id: turn,
-    content: `[Multica 任务] ${identifier} ${title}\n\n任务描述：\n${description || '(无描述)'}\n\n执行智能体: ${agentId ?? 'unknown'} | 最终状态: ${status}`,
+    content: `${context}\n\n执行智能体: ${agentId ?? 'unknown'} | 最终状态: ${status}`,
   });
+  messages.push(...inputMessages(task?.input, turn, cfg));
 
   const drop = makeDropToolMatcher(cfg.dropToolPrefixes);
   const ordered = [...transcript].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
@@ -77,6 +132,7 @@ export function buildRunMessages({ taskId, agentId, issue, transcript = [], stat
     ordered.filter((m) => m.type === 'tool_use' && drop(m.tool, m.input)).map((m) => m.call_id).filter(Boolean),
   );
   let dropped = 0;
+  let evidence = 0;
   for (const m of ordered) {
     switch (m.type) {
       case 'thinking':
@@ -97,6 +153,19 @@ export function buildRunMessages({ taskId, agentId, issue, transcript = [], stat
           turn_id: turn,
           parts: [{ type: 'text', text: cap(clean, cfg.textPartMaxChars) }],
         });
+        evidence++;
+        break;
+      }
+      case 'error': {
+        const text = String(m.content ?? m.output ?? '').trim();
+        if (!text) break;
+        messages.push({
+          role: 'assistant',
+          message_kind: 'assistant_step',
+          turn_id: turn,
+          parts: [{ type: 'text', text: `[运行错误] ${cap(text, cfg.textPartMaxChars)}` }],
+        });
+        evidence++;
         break;
       }
       case 'tool_use': {
@@ -109,10 +178,11 @@ export function buildRunMessages({ taskId, agentId, issue, transcript = [], stat
             type: 'tool',
             tool_id: m.call_id ?? `call-${m.seq}`,
             tool_name: m.tool ?? 'unknown',
-            tool_input: m.input ?? {},
+            tool_input: toolInputObject(m.input),
             tool_status: 'completed',
           }],
         });
+        evidence++;
         break;
       }
       case 'tool_result': {
@@ -129,43 +199,75 @@ export function buildRunMessages({ taskId, agentId, issue, transcript = [], stat
             tool_status: 'completed',
           }],
         });
+        evidence++;
         break;
       }
       default:
         break;
     }
   }
-  return { messages, dropped, sessionId: `mc-task-${sanitizeSessionId(taskId)}` };
+  return { messages, dropped, evidence, sessionId: `mc-task-${sanitizeSessionId(taskId)}` };
 }
 
-/** Comment → one attributed user message (peer_id = commenting member). */
+/**
+ * Comment → attributed record. A member's comment is human feedback (user
+ * role, peer_id = that member); an agent's comment is that agent's statement
+ * (assistant role, after a one-line context turn so extraction has a user-role
+ * anchor); a plugin's is labelled as such and attributed to no person.
+ */
 export function buildCommentMessages({ comment, issue }) {
-  const authorId = comment?.author?.id ?? comment?.author_id ?? 'unknown-member';
+  const authorType = comment?.author_type ?? 'member';
+  const authorId = String(comment?.author_id ?? comment?.author?.id ?? '');
   const identifier = issue?.identifier ?? issue?.id ?? '';
-  return {
-    sessionId: `mc-comment-${sanitizeSessionId(comment.id ?? shortHash(JSON.stringify(comment)))}`,
-    messages: [
-      {
-        role: 'user',
-        message_kind: 'user_query',
-        turn_id: `comment-${sanitizeSessionId(comment.id ?? 'x')}`,
-        peer_id: authorId,
-        content: `[人类反馈][评论] ${identifier} ${issue?.title ?? ''}\n\n${cap(comment.content, 8000)}\n\n作者: ${comment?.author?.name ?? authorId} | 时间: ${comment?.created_at ?? ''}`,
-      },
-    ],
+  const where = `${identifier} ${issue?.title ?? ''}`.trim();
+  const turn = `comment-${sanitizeSessionId(comment.id ?? 'x')}`;
+  const body = cap(String(comment.content ?? ''), 8000);
+  const when = comment?.created_at ?? '';
+  const sessionId = `mc-comment-${sanitizeSessionId(comment.id ?? shortHash(JSON.stringify(comment)))}`;
+  if (authorType === 'agent') {
+    return {
+      sessionId,
+      messages: [
+        { role: 'user', message_kind: 'user_query', turn_id: turn, content: `[任务上下文] ${where}` },
+        {
+          role: 'assistant',
+          message_kind: 'assistant_step',
+          turn_id: turn,
+          parts: [{ type: 'text', text: `[智能体评论] 智能体 ${authorId} 在 ${where} 下发表 (${when}):\n\n${body}` }],
+        },
+      ],
+    };
+  }
+  if (authorType === 'plugin') {
+    return {
+      sessionId,
+      messages: [{ role: 'user', message_kind: 'user_query', turn_id: turn, content: `[插件消息] ${where}\n\n${body}\n\n来源插件: ${authorId} | 时间: ${when}` }],
+    };
+  }
+  const msg = {
+    role: 'user',
+    message_kind: 'user_query',
+    turn_id: turn,
+    content: `[人类反馈][评论] ${where}\n\n${body}\n\n作者: 成员 ${authorId || 'unknown'} | 时间: ${when}`,
   };
+  if (authorId) msg.peer_id = authorId;
+  return { sessionId, messages: [msg] };
 }
 
-/** Companion: direct-chat transcript → pair-space messages. */
-export function buildChatMessages({ chatRef, agentId, userId, messages = [] }) {
-  const sid = `mc-chat-${sanitizeSessionId(chatRef)}`;
-  const mapped = messages.map((m, i) => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    message_kind: m.role === 'assistant' ? 'assistant_step' : 'user_query',
-    turn_id: `${sid}-${m.turn ?? i}`,
-    peer_id: m.role === 'assistant' ? undefined : String(userId),
-    content: cap(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 4000),
-  }));
+/** Companion: one direct-chat turn → pair-space messages (one session per turn). */
+export function buildChatMessages({ chatRef, turnKey, agentId, userId, messages = [] }) {
+  const sid = `mc-chat-${sanitizeSessionId(chatRef)}${turnKey ? `-${sanitizeSessionId(turnKey)}` : ''}`;
+  const mapped = messages.map((m, i) => {
+    const isAgent = m.role === 'assistant';
+    const out = {
+      role: isAgent ? 'assistant' : 'user',
+      message_kind: isAgent ? 'assistant_step' : 'user_query',
+      turn_id: `${sid}-${m.turn ?? i}`,
+      content: cap(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 4000),
+    };
+    if (!isAgent && userId) out.peer_id = String(userId);
+    return out;
+  });
   return { sessionId: sid, messages: mapped };
 }
 
@@ -184,7 +286,7 @@ export function buildAppendMessages({ appendId, taskId, content, delivered = tru
   };
 }
 
-/** Companion: delegation handoff content → channel-space record. */
+/** Delegation handoff content → channel-space record. */
 export function buildDelegationMessages({ handoffId, fromAgentId, toAgentId, content }) {
   return {
     sessionId: `mc-deleg-${sanitizeSessionId(handoffId)}`,
@@ -220,18 +322,31 @@ export function buildRememberFile({ title, content, kind = 'experiences', agentI
   };
 }
 
+/**
+ * OV accepts strict `key=value` search tags only: exactly one '=', both sides
+ * non-empty. Values come from client-supplied ids, so anything else is folded.
+ */
+export function sanitizeTagValue(value) {
+  return String(value ?? '')
+    .replace(/[=\s,]+/g, '_')
+    .replace(/[^\p{L}\p{N}._:\-_/]+/gu, '_')
+    .slice(0, 64) || 'none';
+}
+
+/**
+ * Commit tags. OV attaches them as searchable scalar tags to the EVENT memories
+ * a commit produces (e.g. filter by agent=); they are not shown to the extractor,
+ * whose attribution comes from the message text and peer_id.
+ */
 export function commitTags({ workspaceId, scopeKey, kind, refId, agentId }) {
   const tags = [
     `source=multica-plugin`,
-    `workspace=${workspaceId}`,
-    `scope=${scopeKey.split(':')[0]}`,
+    `workspace=${sanitizeTagValue(workspaceId)}`,
+    `scope=${sanitizeTagValue(scopeKey.split(':')[0])}`,
   ];
-  if (kind) tags.push(`record=${kind}`);
-  if (refId) tags.push(`ref=${String(refId).slice(0, 64)}`);
-  // Machine-readable attribution: which agent executed this run — the
-  // distiller reads it as input, and it travels with the archive metadata
-  // so attribution never depends on narrative extraction alone.
-  if (agentId) tags.push(`agent=${String(agentId).slice(0, 64)}`);
+  if (kind) tags.push(`record=${sanitizeTagValue(kind)}`);
+  if (refId) tags.push(`ref=${sanitizeTagValue(refId)}`);
+  if (agentId) tags.push(`agent=${sanitizeTagValue(agentId)}`);
   return tags;
 }
 

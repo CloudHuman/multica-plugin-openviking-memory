@@ -9,6 +9,12 @@
  *   - transport URLs must be HTTPS and their host exactly covered by a net: scope
  *   - skill resources: entry exactly skills/<key>/SKILL.md, ≤256KiB
  *   - referenced files exist inside the package
+ *   - text limits in BYTES, as multica counts them (a CJK character is 3):
+ *     descriptions ≤2000, hook names ≤160, config descriptions ≤500
+ *
+ * `chats:read` exists only on multica builds carrying the task read API
+ * (upstream/multica); stock multica rejects a manifest that asks for it, so it
+ * is accepted here with a warning.
  */
 import { readFileSync, statSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -19,6 +25,9 @@ const SCOPE_CATALOG = new Set([
   'tasks:read', 'tasks:write', 'agents:read', 'members:read',
   'storage:user', 'storage:workspace',
 ]);
+const OPTIONAL_SCOPES = {
+  'chats:read': 'chats:read needs a multica build with the task read API (see upstream/multica); stock multica rejects this manifest',
+};
 const EVENT_CATALOG = new Set([
   'issue.created', 'issue.updated', 'issue.status_changed',
   'comment.created', 'task.started', 'task.completed', 'task.failed',
@@ -36,7 +45,9 @@ const KNOWN_TOP = new Set([
 ]);
 const MAX_SKILL_BYTES = 256 * 1024;
 
-export function validateManifest(json, { baseDir } = {}) {
+const bytes = (v) => Buffer.byteLength(String(v ?? ''), 'utf8');
+
+export function validateManifest(json, { baseDir, warnings = [] } = {}) {
   const errors = [];
   const push = (m) => errors.push(m);
 
@@ -50,8 +61,9 @@ export function validateManifest(json, { baseDir } = {}) {
   for (const seg of String(json.key ?? '').split('.')) {
     if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(seg)) push(`key segment "${seg}" violates [a-z][a-z0-9-]* pattern`);
   }
-  if (!json.name || String(json.name).length > 160) push('name required, ≤160 bytes');
-  if (json.description && String(json.description).length > 2000) push('description ≤2000 bytes');
+  if (!json.name || bytes(json.name) > 160) push('name required, ≤160 bytes');
+  if (json.description && bytes(json.description) > 2000) push(`description is ${bytes(json.description)} bytes (≤2000)`);
+  if (/\r/.test(String(json.description ?? ''))) push('description must not contain carriage returns');
   if (!/^\d+\.\d+\.\d+[-+0-9A-Za-z.-]*$/.test(String(json.version ?? ''))) push(`version "${json.version}" is not full semver`);
   if (!json.author?.name) push('author.name required');
   if (json.author?.url && !String(json.author.url).startsWith('https://')) push('author.url must be HTTPS');
@@ -65,6 +77,8 @@ export function validateManifest(json, { baseDir } = {}) {
       const d = s.slice(4);
       if (!/^[a-z0-9.-]+$/i.test(d) || d.length > 253) push(`net scope domain invalid: ${d}`);
       netDomains.add(d.toLowerCase());
+    } else if (OPTIONAL_SCOPES[s]) {
+      warnings.push(OPTIONAL_SCOPES[s]);
     } else if (!SCOPE_CATALOG.has(s)) {
       push(`scope "${s}" not in the closed catalog`);
     }
@@ -80,6 +94,8 @@ export function validateManifest(json, { baseDir } = {}) {
       if (!Array.isArray(f.options) || f.options.length < 1 || f.options.length > 64) push(`config.${k}: enum needs 1-64 options`);
     } else if (f?.options !== undefined) push(`config.${k}: options only allowed on enum`);
     if (f?.multiline && f?.type !== 'string') push(`config.${k}: multiline only on string`);
+    if (bytes(f?.description) > 500) push(`config.${k}: description is ${bytes(f.description)} bytes (≤500)`);
+    if (bytes(f?.placeholder) > 160) push(`config.${k}: placeholder is ${bytes(f.placeholder)} bytes (≤160)`);
   }
 
   const c = json.contributes ?? {};
@@ -92,6 +108,12 @@ export function validateManifest(json, { baseDir } = {}) {
     if (hookKeys.has(h.key)) push(`duplicate hook key ${h.key}`);
     hookKeys.add(h.key);
     if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(String(h.key ?? ''))) push(`hook key "${h.key}" pattern invalid`);
+    const name = String(h.name ?? '');
+    if (!name || name !== name.trim() || /[\r\n]/.test(name) || bytes(name) > 160) push(`hook ${h.key}: name must be one line, trimmed, ≤160 bytes`);
+    // The description is the MCP tool description an agent reads.
+    if (!String(h.description ?? '').trim()) push(`hook ${h.key}: description required`);
+    else if (bytes(h.description) > 2000) push(`hook ${h.key}: description is ${bytes(h.description)} bytes (≤2000)`);
+    if (h.input_schema !== undefined && h.input_schema?.type !== 'object') push(`hook ${h.key}: input_schema.type must be object`);
     const triggers = h.triggers ?? [];
     for (const t of triggers) if (!TRIGGERS.has(t)) push(`hook ${h.key}: unknown trigger ${t}`);
     if (triggers.includes('event')) {
@@ -144,7 +166,9 @@ const manifestPath = process.argv[2];
 if (manifestPath) {
   const baseDir = dirname(resolve(manifestPath));
   const json = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const errors = validateManifest(json, { baseDir });
+  const warnings = [];
+  const errors = validateManifest(json, { baseDir, warnings });
+  for (const w of warnings) console.warn('warning: ' + w);
   if (errors.length) {
     console.error('manifest INVALID:');
     for (const e of errors) console.error('  - ' + e);

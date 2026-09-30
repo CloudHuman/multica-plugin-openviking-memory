@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   buildRunMessages, buildCommentMessages, buildChatMessages, buildAppendMessages,
   buildDelegationMessages, buildRememberFile, stripRuntimeBrief, makeDropToolMatcher,
-  chunkMessages, commitTags,
+  chunkMessages, commitTags, sanitizeTagValue,
 } from '../src/archive.mjs';
-import { fixtureIssue, fixtureTranscript, FIXTURE_ISSUE_ID, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_USER } from './helpers.mjs';
+import { fixtureIssue, fixtureTranscript, FIXTURE_ISSUE_ID, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B, FIXTURE_USER } from './helpers.mjs';
 
 const cfg = {
   includeThinking: false,
@@ -83,26 +83,91 @@ test('long outputs and texts are capped', () => {
   assert.match(messages[2].parts[0].tool_output, /truncated/);
 });
 
-test('comment builder attributes the author via peer_id', () => {
-  const { sessionId, messages } = buildCommentMessages({
-    comment: { id: 'c1', content: '死信队列部分再补充一下', author: { id: FIXTURE_USER, name: 'cloud' }, created_at: '2026-09-29T00:00:00Z' },
-    issue: fixtureIssue(),
+test('comment builder: members are human feedback, agents speak as assistants, plugins as neither', () => {
+  const issue = fixtureIssue();
+  const base = { created_at: '2026-09-29T00:00:00Z', type: 'comment', issue_id: FIXTURE_ISSUE_ID };
+
+  const member = buildCommentMessages({ comment: { ...base, id: 'c1', author_type: 'member', author_id: FIXTURE_USER, content: '死信队列部分再补充一下' }, issue });
+  assert.equal(member.sessionId, 'mc-comment-c1');
+  assert.equal(member.messages.length, 1);
+  assert.equal(member.messages[0].role, 'user');
+  assert.equal(member.messages[0].peer_id, FIXTURE_USER);
+  assert.match(member.messages[0].content, /^\[人类反馈\]\[评论\] MUL-7/);
+  assert.match(member.messages[0].content, /死信队列部分再补充一下/);
+
+  const agent = buildCommentMessages({ comment: { ...base, id: 'c2', author_type: 'agent', author_id: FIXTURE_AGENT_A, content: '已完成压测,结论见附件。' }, issue });
+  assert.deepEqual(agent.messages.map((m) => m.role), ['user', 'assistant']);
+  assert.match(agent.messages[0].content, /^\[任务上下文\]/);
+  assert.equal(agent.messages[0].peer_id, undefined, 'the context line is not attributed to a person');
+  assert.match(agent.messages[1].parts[0].text, /^\[智能体评论\] 智能体 33333333/);
+  assert.match(agent.messages[1].parts[0].text, /已完成压测/);
+
+  const plugin = buildCommentMessages({ comment: { ...base, id: 'c3', author_type: 'plugin', author_id: 'inst-1', content: 'CI 通过' }, issue });
+  assert.equal(plugin.messages.length, 1);
+  assert.match(plugin.messages[0].content, /^\[插件消息\]/);
+  assert.equal(plugin.messages[0].peer_id, undefined);
+  assert.equal(/人类反馈/.test(plugin.messages[0].content), false);
+});
+
+test('run builder is kind-aware and archives the input that started the run', () => {
+  const taskId = 'chat-run-1';
+  const chat = buildRunMessages({
+    taskId, agentId: FIXTURE_AGENT_A, kind: 'chat', status: 'completed', cfg,
+    task: {
+      id: taskId, kind: 'chat', chat_user_id: FIXTURE_USER,
+      input: [{ source: 'chat_message', author_type: 'member', author_id: FIXTURE_USER, content: '帮我把周报改成要点形式' }],
+    },
+    transcript: [{ seq: 1, type: 'text', content: '好的,已改为要点。' }],
   });
-  assert.equal(sessionId, 'mc-comment-c1');
-  assert.equal(messages[0].peer_id, FIXTURE_USER);
-  assert.match(messages[0].content, /死信队列部分再补充一下/);
-  assert.match(messages[0].content, /人类反馈/);
+  assert.match(chat.messages[0].content, /^\[私聊\] 成员 55555555/);
+  assert.equal(chat.messages[1].role, 'user');
+  assert.equal(chat.messages[1].peer_id, FIXTURE_USER);
+  assert.match(chat.messages[1].content, /^\[私聊消息\] 成员 .*\n帮我把周报改成要点形式/);
+  assert.equal(chat.evidence, 1);
+
+  const autopilot = buildRunMessages({
+    taskId: 'ap-run', agentId: FIXTURE_AGENT_A, kind: 'autopilot', cfg,
+    task: { id: 'ap-run', kind: 'autopilot', autopilot_id: 'ap-1', trigger_summary: '每日 09:00', input: [] },
+    transcript: [],
+  });
+  assert.match(autopilot.messages[0].content, /^\[自动化运行\] autopilot ap-1\n触发: 每日 09:00/);
+  assert.equal(autopilot.evidence, 0, 'a run with no transcript has no evidence to archive');
+
+  const fromComment = buildRunMessages({
+    taskId: 'issue-run', agentId: FIXTURE_AGENT_A, kind: 'issue', issue: fixtureIssue(), cfg,
+    task: { id: 'issue-run', kind: 'issue', input: [{ source: 'comment', author_type: 'agent', author_id: FIXTURE_AGENT_B, content: '@A 请补充回滚方案' }] },
+    transcript: [],
+  });
+  assert.match(fromComment.messages[1].content, /^\[触发评论\] 智能体 44444444/);
+  assert.equal(fromComment.messages[1].peer_id, FIXTURE_AGENT_B);
+});
+
+test('tool inputs are always objects, and run errors are archived as evidence', () => {
+  const { messages, evidence } = buildRunMessages({
+    taskId: 't-err', agentId: 'a', issue: fixtureIssue(), cfg, status: 'failed',
+    transcript: [
+      { seq: 1, type: 'tool_use', tool: 'sh', call_id: 'c1', input: 'ls -la' },
+      { seq: 2, type: 'tool_use', tool: 'sh', call_id: 'c2', input: ['git', 'status'] },
+      { seq: 3, type: 'tool_use', tool: 'sh', call_id: 'c3' },
+      { seq: 4, type: 'error', content: 'agent exited: context window exceeded' },
+    ],
+  });
+  const inputs = messages.filter((m) => m.parts?.[0]?.type === 'tool').map((m) => m.parts[0].tool_input);
+  assert.deepEqual(inputs, [{ value: 'ls -la' }, { value: ['git', 'status'] }, {}]);
+  assert.match(messages.at(-1).parts[0].text, /^\[运行错误\] agent exited/);
+  assert.match(messages[0].content, /最终状态: failed/);
+  assert.equal(evidence, 4);
 });
 
 test('chat / append / delegation builders', () => {
   const chat = buildChatMessages({
-    chatRef: 'chat-9', agentId: 'a1', userId: 'u1',
+    chatRef: 'chat-9', turnKey: 'turn-3', agentId: 'a1', userId: 'u1',
     messages: [
       { role: 'user', content: '以后代码都用中文注释' },
       { role: 'assistant', content: '好的,已记住这个约定。' },
     ],
   });
-  assert.equal(chat.sessionId, 'mc-chat-chat-9');
+  assert.equal(chat.sessionId, 'mc-chat-chat-9-turn-3', 'one session per turn');
   assert.equal(chat.messages[0].peer_id, 'u1');
   assert.equal(chat.messages[1].message_kind, 'assistant_step');
 
@@ -143,5 +208,16 @@ test('drop matcher, chunking and commit tags', () => {
   assert.ok(tags.includes('scope=task'));
   assert.ok(tags.includes('workspace=' + FIXTURE_WS));
   assert.ok(tags.includes('agent=' + FIXTURE_AGENT_A));
-  assert.equal(commitTags({ workspaceId: FIXTURE_WS, scopeKey: `task:${FIXTURE_WS}:x` }).includes('agent='), false);
+  assert.equal(commitTags({ workspaceId: FIXTURE_WS, scopeKey: `task:${FIXTURE_WS}:x` }).some((t) => t.startsWith('agent=')), false);
+});
+
+test('commit tags stay strict k=v whatever the ids contain (OV rejects anything else)', () => {
+  const tags = commitTags({ workspaceId: 'ws=1, evil', scopeKey: 'task:x:y', kind: 'archive run', refId: 'a=b=c', agentId: '' });
+  for (const t of tags) {
+    const parts = t.split('=');
+    assert.equal(parts.length, 2, t);
+    assert.ok(parts[0] && parts[1], t);
+  }
+  assert.equal(sanitizeTagValue(''), 'none');
+  assert.ok(sanitizeTagValue('x'.repeat(200)).length <= 64);
 });
