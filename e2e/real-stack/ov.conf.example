@@ -1,0 +1,11 @@
+{
+  "server": { "host": "127.0.0.1", "port": 1936, "root_api_key": "<64 hex chars: openssl rand -hex 32>" },
+  "storage": {
+    "workspace": "/var/tmp/ovmem-real-stack/ov-data",
+    "vectordb": { "name": "context", "backend": "local", "path": "/var/tmp/ovmem-real-stack/ov-data" },
+    "agfs": { "path": "/var/tmp/ovmem-real-stack/ov-data", "backend": "local" }
+  },
+  "embedding": { "dense": { "provider": "openai", "model": "mock-embed", "api_key": "mock", "api_base": "http://127.0.0.1:18999/v1", "dimension": 256, "input": "text" } },
+  "vlm": { "provider": "openai", "model": "mock-llm", "api_key": "mock", "api_base": "http://127.0.0.1:18999/v1", "temperature": 0.0, "max_retries": 1 },
+  "memory": { "extraction_output_format": "json" }
+}
