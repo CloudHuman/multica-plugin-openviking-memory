@@ -43,7 +43,7 @@
 
     <rect x="360" y="364" width="240" height="46" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-dasharray="5 3"/>
     <text x="480" y="384" text-anchor="middle" fill="#111827">私聊配对空间（甲 ↔ 用户）</text>
-    <text x="480" y="401" text-anchor="middle" font-size="10.5" font-weight="400" fill="#6B7280">dm:{ws}:{甲}:{用户} — 需配套事件</text>
+    <text x="480" y="401" text-anchor="middle" font-size="10.5" font-weight="400" fill="#6B7280">dm:{ws}:{甲}:{用户} — 私聊运行 / 配套事件</text>
   </g>
 
   <!-- Access arrows from 甲 -->
