@@ -27,6 +27,8 @@
 
 本套件启用原生 OpenCode 请求观测，并在首个 B 查询发布最终评论后注入一次明确标记的受控 401，检验 `0004` 的确认交付恢复及重复提交。仅当评测已经核验答案、实际来源及原任务评论后才确认恢复；生产中需要成员作同样核验。合成故障不进入真实提供商失败计数，原始任务错误与恢复前状态保留。OV 侧原生请求观测需按 `deploy/observers/README.md` 配置。
 
+其他套件设置 `REAL_AGENT_OBSERVE_PROVIDER=1` 时，也会加载 OpenCode 请求观测（`deploy/observers/opencode.mjs`），记录写入状态目录的 `opencode-provider-requests.jsonl`；这种情况下不注入受控故障。
+
 `REAL_AGENT_SUITE=delivery` 独立验证交付恢复，不受共享检索是否可用影响。成员直接提供一条待交付 JSON，实际智能体发布后才注入受控失败，核验内容，再两次提交同一恢复凭据，并确认仍只有一个任务且评论数量不增加。这里的答案由成员提供，不计入蒸馏准确性。
 
 ```bash

@@ -97,9 +97,13 @@ try {
   for (const stream of [plugin.stdout, plugin.stderr]) stream.on('data', data => { const log = join(state, 'plugin.log'); writeFileSync(log, data, { flag: 'a' }); });
   await wait('plugin', async () => { try { return (await fetch(`${pluginUrl}/healthz`)).ok; } catch { return false; } }, 30000);
   const observeProvider = suite === 'benchmark' || suite === 'delivery';
-  const observers = observeProvider ? [`file://${repo}/deploy/observers/opencode.mjs`, `file://${repo}/e2e/real-agent/after-delivery-fault.mjs`] : [];
+  // Any suite can record OpenCode's provider requests on request; only benchmark/delivery inject the controlled fault.
+  const observeOnly = !observeProvider && env.REAL_AGENT_OBSERVE_PROVIDER === '1';
+  const observers = observeProvider ? [`file://${repo}/deploy/observers/opencode.mjs`, `file://${repo}/e2e/real-agent/after-delivery-fault.mjs`]
+    : observeOnly ? [`file://${repo}/deploy/observers/opencode.mjs`] : [];
   privateFile(join(state, 'opencode.json'), { $schema: 'https://opencode.ai/config.json', ...(observers.length ? { plugin: observers } : {}), provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } }, model });
   const daemonEnv = { ...process.env, OPENCODE_CONFIG: join(state, 'opencode.json'), MULTICA_SERVER_URL: mc.base, MULTICA_KEEP_ENV_AFTER_TASK: '1' };
+  if (observeOnly) Object.assign(daemonEnv, { OVMEM_PROVIDER_DIAGNOSTICS: '1', OVMEM_PROVIDER_DIAGNOSTICS_FILE: join(state, 'opencode-provider-requests.jsonl') });
   if (observeProvider) Object.assign(daemonEnv, { OVMEM_PROVIDER_DIAGNOSTICS: '1', OVMEM_PROVIDER_DIAGNOSTICS_FILE: join(state,'opencode-provider-requests.jsonl'), OVMEM_E2E_DELIVERY_AUTHORIZED: '1', OVMEM_E2E_DELIVERY_FAULT: join(state,'delivery-fault.json') });
   daemon = spawn(cli, ['--profile', profile, 'daemon', 'start', '--foreground', '--no-auto-update', '--no-auto-reload', '--poll-interval', '2s', '--ws-claim-poll-interval', '5s', '--heartbeat-interval', '5s', '--max-concurrent-tasks', suite === 'matrix' ? '2' : '1', '--agent-timeout', suite === 'matrix' ? '8m' : '5m', '--workspaces-root', join(state, 'workspaces'), '--device-name', `ovmem-real-agent-${run}`], { cwd: state, env: daemonEnv, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', data => writeFileSync(join(state, 'daemon-stderr.log'), data, { flag: 'a' }));

@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { listMemoryFiles } from '../../src/memory-inventory.mjs';
 import { auditMemories } from './memory-audit.mjs';
+import { sleep } from '../real-stack/multica.mjs';
 
 // Real daemon + actual agent tools. No hand-authored assistant transcript and
 // no active writes: the facts below must survive automatic native distillation.
@@ -75,6 +76,8 @@ export async function runQuality(ctx) {
     if (!rec) throw new Error(`Missing readiness scope ${scope}`);
     report.searchReadiness ??= [];
     for (let attempt = 1; attempt <= 3; attempt++) {
+      // Indexing can trail extraction and single embedding calls can take 30 s+: wait between attempts.
+      if (attempt > 1) await sleep(10000 * (attempt - 1));
       try {
         const hits = (await ov.search(rec.apiKey, { query, limit: 5, deadline: Date.now() + 25000 })).memories ?? [];
         const contents = await Promise.all(hits.filter(h => h.context_type === 'memory').map(h => ov.readContent(rec.apiKey, h.uri)));
