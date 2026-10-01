@@ -8,6 +8,7 @@ import { Multica, sleep } from '../real-stack/multica.mjs';
 import { OvClient } from '../../src/ov-client.mjs';
 import { auditMemories } from './memory-audit.mjs';
 import { assessNoAnswer } from './answer-checks.mjs';
+import { applyAccountMemoryPolicy } from './memory-policy.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -19,6 +20,9 @@ const suite = env.REAL_AGENT_SUITE ?? 'basic';
 // Issue keys of the test workspace (RAM-1, RAM-2, ...); the memory audit flags them in entity cards.
 const ISSUE_PREFIX = 'RAM';
 if (!['basic', 'matrix', 'quality', 'benchmark', 'delivery'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
+// OV's native extraction unless the test workspace's own OV account is given the opt-in account templates.
+const memoryPolicy = env.REAL_AGENT_MEMORY_POLICY ?? 'native';
+if (!['native', 'account'].includes(memoryPolicy)) throw new Error(`Unknown memory policy: ${memoryPolicy}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
@@ -53,6 +57,7 @@ if (previous) {
   report.attempts.push({ finishedAt: report.finishedAt, error: report.error, resumedAt: new Date().toISOString() });
   delete report.error; delete report.finishedAt;
   if (report.model !== model) throw new Error('Resume must retain the original agent model');
+  if ((report.memoryPolicy?.scope ?? 'native') !== memoryPolicy) throw new Error('Resume must retain the original memory policy');
 }
 report.profile = profile;
 report.multicaCliVersion = execFileSync(cli, ['--version'], { encoding: 'utf8' }).trim();
@@ -85,6 +90,8 @@ try {
   } else {
     user = await mc.login(`ovmem-real-agent-${run}@example.com`);
     ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: ISSUE_PREFIX });
+    // Before the plugin first sees the workspace, so every extraction in the run uses the same templates.
+    report.memoryPolicy = memoryPolicy === 'account' ? await applyAccountMemoryPolicy({ ov, rootKey: env.OV_ROOT_KEY, workspaceId: ws }) : { scope: 'native' };
     const pat = await mc.must('PAT', mc.call('/api/tokens', { method: 'POST', token: user.token, body: { name: `real-agent-${run}`, expires_in_days: 1 } }));
     const zipped = execFileSync('bash', ['scripts/package.sh', '--url', pluginUrl, '--with-chats-read'], { cwd: repo, encoding: 'utf8' }).match(/packaged: (\S+\.zip)/)[1];
     const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));

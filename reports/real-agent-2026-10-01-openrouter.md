@@ -1,6 +1,6 @@
 # 真实模型 real-agent 实测与 OpenRouter 401 复核 — 2026-10-01 UTC
 
-> **后续变更**：本轮 OV 配置沿用当时的 `deploy/ov.openrouter.conf.example`，其中 `memory.custom_templates_dir` 指向由 `deploy/memory-policy.json` 生成的抽取模板。该机制随后已移除，OV 改用原生模板（见 README 变更记录）。因此本文的抽取与蒸馏质量结果不代表原生抽取下的表现，文中调整 memory-policy 的建议也不再适用。401 复核的结论不受影响。
+> **后续变更**：本轮 OV 配置沿用当时的 `deploy/ov.openrouter.conf.example`，其中 `memory.custom_templates_dir` 指向由 `deploy/memory-policy.json` 生成的抽取模板。实例级模板随后已移除，默认改用 OV 原生模板；同类规则现在只作为测试选项写入测试账户的账号级模板（`REAL_AGENT_MEMORY_POLICY=account`），示例也不再使用测试值（见 README 变更记录）。因此本文的抽取与蒸馏质量结果不代表原生抽取或当前账号级规则下的表现。401 复核的结论不受影响。
 
 使用真实 `OPENROUTER_API_KEY` 执行。链路为：补丁版 Multica（`43b0571` + `0001`–`0004`）官方 daemon、OpenCode 1.17.7、OpenViking 0.4.22。执行模型为 `openrouter/openai/gpt-5.4-mini`；OpenViking 的抽取、向量和重排沿用 `deploy/ov.openrouter.conf.example`，即 `z-ai/glm-5.3-flash`、`qwen/qwen3-embedding-8b`、`qwen/qwen3-reranker-8b`。
 

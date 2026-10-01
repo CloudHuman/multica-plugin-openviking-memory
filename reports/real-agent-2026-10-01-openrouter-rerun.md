@@ -1,6 +1,6 @@
 # 真实模型 real-agent 重跑（dcc8bf2）— 2026-10-01 UTC
 
-> **后续变更**：本轮 OV 加载了由 `deploy/memory-policy.json` 生成的自定义抽取模板（见第 6 节）。该机制随后已移除，OV 改用原生模板（见 README 变更记录）。因此本文的抽取与蒸馏质量结果不代表原生抽取下的表现，第 7 节中修改模板策略的选项也不再适用。实体卡检查现在只记入 `entityFindings`，作为观察，不判失败。
+> **后续变更**：本轮 OV 加载了由 `deploy/memory-policy.json` 生成的自定义抽取模板（见第 6 节）。实例级模板随后已移除，默认改用 OV 原生模板；同类规则现在只作为测试选项写入测试账户的账号级模板（`REAL_AGENT_MEMORY_POLICY=account`），示例也不再使用测试值（见 README 变更记录）。因此本文的抽取与蒸馏质量结果不代表原生抽取或当前账号级规则下的表现。实体卡检查现在只记入 `entityFindings`，作为观察，不判失败。
 
 本次在 `fix/review-hardening` 的 `dcc8bf2` 上，用真实 `OPENROUTER_API_KEY` 重跑 basic 和 quality 两个套件，并与[上一轮](real-agent-2026-10-01-openrouter.md)逐项对比。
 
