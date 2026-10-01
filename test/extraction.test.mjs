@@ -107,6 +107,89 @@ test('when OV no longer knows a task, the archive\'s own .done / .failed.json ma
   }
 });
 
+test('expired extraction preserves model error and stage from the durable failure marker', async () => {
+  const stateDir = tempStateDir();
+  const statusLog = new ArchiveStatusLog({ stateDir });
+  const ov = {
+    async getTask() { throw Object.assign(new Error('expired'), { status: 404 }); },
+    async readContent(key, uri) {
+      if (uri.endsWith('/.done')) throw Object.assign(new Error('not found'), { status: 404 });
+      return { content: JSON.stringify({ stage: 'archive_summary', error: 'Error code: 401 - Missing Authentication header' }) };
+    },
+  };
+  const watcher = new ExtractionWatcher({ ov, registry: { get: () => ({ apiKey: 'key' }) }, stateDir, statusLog,
+    cfg: { extractPollIntervalMs: 1, extractPollMaxIntervalMs: 2, extractMaxWatchMs: 1000, extractMaxRedrives: 0 } });
+  watcher.watch({ jobId: 'j', workspaceId: 'w', scopeKey: 'task:w:i', sessionId: 's', ref: 'r', taskId: 't', type: 'archive-run', archiveUri: 'viking://user/u/sessions/s/history/archive_001' });
+  watcher.pending.s.nextCheckAt = 0;
+  await watcher.tick();
+  watcher.stop();
+  const result = statusLog.recent()[0];
+  assert.equal(result.extraction, 'failed');
+  assert.match(result.error, /Missing Authentication header/);
+  assert.deepEqual(result.error_diagnostic, { source: 'archive-marker', category: 'authentication', provider_status: 401, stage: 'archive_summary' });
+});
+
+for (const failureSource of ['task', 'marker']) {
+  test(`${failureSource} polling auth errors persist through restart, stay pending and recover without redrive`, async () => {
+    const stateDir = tempStateDir();
+    const statusLog = new ArchiveStatusLog({ stateDir });
+    let refused = true;
+    let redrives = 0;
+    const unavailable = () => { throw Object.assign(new Error('HTTP 401 invalid key Bearer private-key'), { status: 401 }); };
+    const ov = {
+      async getTask() {
+        if (failureSource === 'task') { if (refused) unavailable(); return { status: 'completed' }; }
+        throw Object.assign(new Error('expired'), { status: 404 });
+      },
+      async readContent() { if (refused) unavailable(); return { content: '' }; },
+    };
+    const deps = { ov, registry: { get: () => ({ apiKey: 'private-key' }) }, queue: { requeue() { redrives++; } }, stateDir, statusLog,
+      cfg: { extractPollIntervalMs: 1000, extractPollMaxIntervalMs: 2000, extractMaxWatchMs: 60_000, extractMaxRedrives: 1 } };
+    let watcher = new ExtractionWatcher(deps);
+    watcher.watch({ jobId: 'j', workspaceId: 'w', scopeKey: 'task:w:i', sessionId: 's', ref: 'r', taskId: 't', type: 'archive-run', archiveUri: 'viking://user/u/sessions/s/history/archive_001' });
+    watcher.pending.s.nextCheckAt = 0;
+    await watcher.tick();
+    watcher.stop();
+    assert.deepEqual(watcher.stats({ workspaceId: 'w' }), { pending: 1, polling_errors: 1 });
+    assert.deepEqual(watcher.stats({ workspaceId: 'other' }), { pending: 0, polling_errors: 0 });
+    assert.equal(statusLog.recent()[0].type, 'extraction-poll-error');
+    assert.equal(statusLog.recent()[0].error_diagnostic.http_status, 401);
+    assert.ok(!JSON.stringify(statusLog.recent()).includes('private-key'));
+    watcher = new ExtractionWatcher(deps);
+    assert.equal(watcher.stats().polling_errors, 1);
+    watcher.pending.s.nextCheckAt = 0;
+    await watcher.tick();
+    watcher.stop();
+    assert.equal(statusLog.recent().length, 1, 'unchanged errors do not flood the status log');
+    refused = false;
+    watcher.pending.s.nextCheckAt = 0;
+    await watcher.tick();
+    watcher.stop();
+    assert.equal(statusLog.recent()[0].extraction, 'done');
+    assert.equal(watcher.stats().polling_errors, 0);
+    assert.equal(redrives, 0, 'polling failure is not an extraction failure');
+  });
+}
+
+test('extraction timeout retains the last polling failure', async () => {
+  const stateDir = tempStateDir();
+  const statusLog = new ArchiveStatusLog({ stateDir });
+  const watcher = new ExtractionWatcher({
+    ov: { async getTask() { throw Object.assign(new Error('HTTP 401 unauthorized'), { status: 401 }); } },
+    registry: { get: () => ({ apiKey: 'k' }) }, stateDir, statusLog,
+    cfg: { extractPollIntervalMs: 1000, extractMaxWatchMs: 1 },
+  });
+  watcher.watch({ jobId: 'j', workspaceId: 'w', scopeKey: 'task:w:i', sessionId: 's', ref: 'r', taskId: 't', type: 'archive-run' });
+  watcher.pending.s.nextCheckAt = 0;
+  watcher.pending.s.startedAt = Date.now() - 1000;
+  await watcher.tick();
+  watcher.stop();
+  const result = statusLog.recent()[0];
+  assert.equal(result.extraction, 'timeout');
+  assert.match(result.error, /401/);
+  assert.equal(result.error_diagnostic.category, 'authentication');
+});
+
 test('a lost commit response is recovered from OV, not committed twice', async () => {
   const run = await archiveOneComment();
   try {

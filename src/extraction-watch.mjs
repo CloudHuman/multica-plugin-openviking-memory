@@ -1,4 +1,5 @@
 import { atomicWriteJson, readJsonIfExists, nowIso } from './util.mjs';
+import { failureDiagnostic, redactError } from './diagnostics.mjs';
 
 /**
  * Follows each commit's extraction or active-memory reindex to its end, beside
@@ -56,8 +57,13 @@ export class ExtractionWatcher {
 
   stats({ workspaceId } = {}) {
     let pending = 0;
-    for (const entry of Object.values(this.pending)) if (!workspaceId || entry.workspaceId === workspaceId) pending++;
-    return { pending };
+    let pollingErrors = 0;
+    for (const entry of Object.values(this.pending)) {
+      if (workspaceId && entry.workspaceId !== workspaceId) continue;
+      pending++;
+      if (entry.last_poll_error) pollingErrors++;
+    }
+    return { pending, polling_errors: pollingErrors };
   }
 
   start() {
@@ -99,6 +105,8 @@ export class ExtractionWatcher {
     if (!rec) return this.#settle(entry, 'failed', 'scope key missing from registry');
     let state = null;
     let error = null;
+    let diagnostic = null;
+    let pollFailed = false;
     let checkMarkers = !entry.taskId;
     try {
       const task = entry.taskId ? await this.ov.getTask(rec.apiKey, entry.taskId) : null;
@@ -106,7 +114,8 @@ export class ExtractionWatcher {
       if (status === 'completed' || status === 'succeeded' || status === 'done') state = 'done';
       else if (status === 'failed' || status === 'cancelled') {
         state = 'failed';
-        error = String(task?.error ?? status).slice(0, 300);
+        error = redactError(task?.error?.message ?? task?.error ?? status, [rec.apiKey]).slice(0, 300);
+        diagnostic = failureDiagnostic(task?.error?.message ?? task?.error ?? status, { source: 'extraction-task' });
       }
     } catch (err) {
       if (err.status === 404 && entry.type === 'index-memory') {
@@ -114,27 +123,49 @@ export class ExtractionWatcher {
         // vectors/summaries is idempotent, so recover an expired task by retry.
         state = 'failed';
         error = 'reindex task unavailable';
+        diagnostic = failureDiagnostic(err, { source: 'task-tracker' });
       } else if (err.status === 404) checkMarkers = true;
       else {
-        this.log(`extraction watch ${entry.sessionId}: ${err.message}`);
+        pollFailed = true;
+        this.#pollError(entry, err, rec.apiKey);
       }
     }
     if (checkMarkers && entry.archiveUri) {
-      if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.done`)) state = 'done';
-      else if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.failed.json`)) {
-        state = 'failed';
-        error = 'archive marked .failed.json';
+      try {
+        if (await this.#readMarker(rec.apiKey, `${entry.archiveUri}/.done`, 1)) state = 'done';
+        else {
+          const failed = await this.#readMarker(rec.apiKey, `${entry.archiveUri}/.failed.json`, 100);
+          if (failed) {
+            state = 'failed';
+            let marker = null;
+            try { marker = JSON.parse(failed.content); } catch { /* older/unreadable marker still proves failure */ }
+            const cause = marker?.error?.message ?? marker?.error ?? 'archive marked .failed.json';
+            error = redactError(cause, [rec.apiKey]).slice(0, 300);
+            diagnostic = failureDiagnostic(cause, { source: 'archive-marker' });
+            if (typeof marker?.stage === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(marker.stage)) diagnostic.stage = marker.stage;
+          }
+        }
+      } catch (err) {
+        // A refused/unavailable marker read does not prove absence or failure.
+        pollFailed = true;
+        this.#pollError(entry, err, rec.apiKey);
       }
+    }
+    if (!pollFailed) {
+      delete entry.last_poll_error;
+      delete entry.last_poll_diagnostic;
     }
 
     if (state === 'done') return this.#settle(entry, 'done');
     if (state === 'failed') {
       if (entry.generation < this.cfg.extractMaxRedrives && this.#redrive(entry, error)) {
-        return this.#settle(entry, 'redriven', error);
+        return this.#settle(entry, 'redriven', error, diagnostic);
       }
-      return this.#settle(entry, 'failed', error);
+      return this.#settle(entry, 'failed', error, diagnostic);
     }
-    if (Date.now() - entry.startedAt > this.cfg.extractMaxWatchMs) return this.#settle(entry, 'timeout');
+    if (Date.now() - entry.startedAt > this.cfg.extractMaxWatchMs) {
+      return this.#settle(entry, 'timeout', entry.last_poll_error, entry.last_poll_diagnostic);
+    }
     entry.checks += 1;
     entry.nextCheckAt = Date.now() + Math.min(
       this.cfg.extractPollIntervalMs * Math.pow(1.5, Math.min(entry.checks, 12)),
@@ -152,22 +183,36 @@ export class ExtractionWatcher {
     return Boolean(job);
   }
 
-  async #exists(key, uri) {
+  #pollError(entry, err, key) {
+    const message = redactError(err.message ?? err, [key]).slice(0, 300);
+    const diagnostic = failureDiagnostic(err, { source: 'extraction-poll' });
+    if (entry.last_poll_error !== message) {
+      this.log(`extraction watch ${entry.sessionId}: ${message}`);
+      this.statusLog.append({
+        type: 'extraction-poll-error', ref: entry.ref, scope: entry.scopeKey, workspace: entry.workspaceId,
+        session_id: entry.sessionId, error: message, error_diagnostic: diagnostic,
+      });
+    }
+    entry.last_poll_error = message;
+    entry.last_poll_diagnostic = diagnostic;
+  }
+
+  async #readMarker(key, uri, limit) {
     try {
-      await this.ov.readContent(key, uri, { limit: 1 });
-      return true;
-    } catch {
-      return false;
+      return await this.ov.readContent(key, uri, { limit });
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
     }
   }
 
-  #settle(entry, state, error = null) {
+  #settle(entry, state, error = null, diagnostic = null) {
     delete this.pending[entry.sessionId];
     this.save();
     this.statusLog.append({
       type: 'extraction', ref: entry.ref, record: entry.type, scope: entry.scopeKey, workspace: entry.workspaceId,
       session_id: entry.sessionId, extraction_task: entry.taskId, generation: entry.generation,
-      extraction: state, ...(error ? { error } : {}), settled_at: nowIso(),
+      extraction: state, ...(error ? { error } : {}), ...(diagnostic ? { error_diagnostic: diagnostic } : {}), settled_at: nowIso(),
     });
     this.log(`extraction ${state}: ${entry.sessionId}${error ? ` (${error})` : ''}`);
   }

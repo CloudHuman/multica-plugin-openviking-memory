@@ -49,6 +49,8 @@ test('failing jobs back off and eventually mark failed; checkpoints survive', as
   const job = q.list().find((j) => j.type === 'flaky');
   assert.equal(job.attempts, 3);
   assert.match(job.last_error, /transient/);
+  const replayed = new JobQueue({ stateDir, handler: async () => assert.fail('a failed job must not restart automatically') });
+  assert.deepEqual(replayed.jobs.get(job.id).last_error_diagnostic, { source: 'archive-job', category: 'unknown' });
 });
 
 test('crash recovery: jobs recorded as running are re-queued on boot', async () => {

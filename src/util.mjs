@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { renameSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { requestDiagnostic, redactError, authorizationSecrets } from './diagnostics.mjs';
 
 /** Short deterministic hex digest used for OV account/user ids. */
 export function shortHash(value, len = 12) {
@@ -63,6 +64,8 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   let res;
+  let text;
+  let phase = 'headers';
   try {
     res = await doFetch(url, {
       method,
@@ -73,14 +76,18 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ac.signal,
     });
+    phase = 'body';
+    text = await res.text();
   } catch (err) {
-    const e = new Error(`request failed: ${method} ${url}: ${err.message}`);
-    e.code = 'NETWORK';
+    const target = new URL(url);
+    const secrets = [...authorizationSecrets(headers), target.username, target.password].filter(Boolean);
+    const e = new Error(`request failed: ${method} ${target.origin}${target.pathname}: ${redactError(err.message, secrets)}`);
+    e.code = ac.signal.aborted ? 'ETIMEDOUT' : 'NETWORK';
+    e.diagnostic = requestDiagnostic(url, { method, headers, response: res, phase });
     throw e;
   } finally {
     clearTimeout(timer);
   }
-  const text = await res.text();
   let json = null;
   if (text) {
     try {
@@ -90,12 +97,14 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
     }
   }
   if (!res.ok) {
+    const target = new URL(url);
     const e = new Error(
-      `HTTP ${res.status} ${method} ${url}: ${json?.error?.message ?? text?.slice(0, 300) ?? '(empty)'}`,
+      `HTTP ${res.status} ${method} ${target.origin}${target.pathname}: ${redactError(json?.error?.message ?? text?.slice(0, 300) ?? '(empty)', authorizationSecrets(headers))}`,
     );
     e.status = res.status;
     e.body = json;
     e.code = json?.error?.code ?? String(res.status);
+    e.diagnostic = requestDiagnostic(url, { method, headers, response: res, phase: 'response' });
     throw e;
   }
   return json;

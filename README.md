@@ -183,6 +183,10 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 2. 抽取监视器在队列之外轮询 OV 的提交任务（任务记录过期后看归档目录的 `.done` / `.failed.json`）；失败就把记录作为下一代（会话 `…-r1`、`…-r2`）重新归档，默认最多 2 次。
 3. 手动兜底：`POST /admin/redrive {"job_id":"…"}` 或 `{"session_id":"…"}`；共享晋升也使用同一持久化队列和抽取监视，不需要删除晋升回执。旧版失败晋升按下文的 `replay_session_id` 恢复。
 
+**诊断与请求预算**：HTTP 超时覆盖接收响应头及读取完整响应体，超时会中止请求。管理员状态中的 `queue_recent[].last_error_diagnostic` 和 `recent_archives[].error_diagnostic` 保留错误类别、接口的 HTTP 状态及错误文本明确携带的模型 `provider_status`。HTTP 诊断只记录目标主机/路径、是否设置认证头、读取阶段和允许的响应请求 ID；省略查询串、认证值和请求体。`authorization_present` 只描述插件发往 OV / Multica 的这一跳，响应 ID 也属于这一跳，不能据此证明 OV 发往 OpenRouter 的请求是否带鉴权。
+
+任务记录过期后读取 `.failed.json` 会保留原始错误和抽取阶段。轮询任务或标记遇到 401、网络异常等，会保留待办、持久化最后错误，并在 `extraction.polling_errors` 中显示；只有 404 被视为标记不存在。相同持续错误只写一条状态记录，恢复后清除当前异常；观察超时会带出最后轮询错误。真实抽取失败仍使用原来的有界重驱，直接 HTTP 401 不增加自动重试。
+
 multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`，一条记录只对应一个作业。
 
 **共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间。跳过命中的临时执行控制、检索失败结论、平台脚手架和目录摘要；`skipped` 返回原因。保留来源范围与完整 URI，按内容版本幂等：同文件内容更新后可再次晋升，明确回滚到旧值也作为新版本处理；完全相同内容的副本不重复晋升。旧版 URI 回执会对当前安全内容补晋升一次。筛选规则是有限的防护，不是通用语义分类器；超过 3500 字符的候选暂不自动晋升，避免截掉事实。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
@@ -212,7 +216,7 @@ src/                      config · hmac · installations 安装绑定 · multic
                           scopes 范围引擎 · recall · archive · pipeline · queue · ledger
                           extraction-watch 抽取监视 · state-lock 租约
                           ov-mcp 转发 · ov-facade · consolidate · server
-test/                     76 项单元/集成测试（测试替身按真实 multica / OV 契约行为）
+test/                     单元/集成测试（测试替身按真实 multica / OV 契约行为）
 e2e/                      run-e2e.mjs：真实 OV + 模拟 multica（patched / stock 契约）
 e2e/real-stack/           真实 multica + 真实 OV 端到端（补丁版 / stock 版）
 upstream/multica/         multica 任务读取 API 补丁及说明
@@ -224,13 +228,13 @@ scripts/                  package.sh · gen-ov-hooks · validate-manifest
 ## 验证
 
 ```bash
-node --test test/*.test.mjs                       # 94/94
+node --test test/*.test.mjs
 node scripts/validate-manifest.mjs multica.plugin.json
 OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica；E2E_MULTICA=stock 切换合约
 node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV；R7 故障注入需 MOCK_LLM_URL
 ```
 
-最近的记录：[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
+最近的记录：[`reports/auth-resilience-2026-10-01.md`](reports/auth-resilience-2026-10-01.md)（鉴权诊断、请求预算与失败恢复）、[`reports/distillation-quality-2026-10-01.md`](reports/distillation-quality-2026-10-01.md)（真实多智能体蒸馏质量）、[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
 
 ## 变更记录
 

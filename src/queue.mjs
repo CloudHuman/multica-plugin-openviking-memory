@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, ren
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nowIso, sleep } from './util.mjs';
+import { failureDiagnostic, redactError } from './diagnostics.mjs';
 
 /**
  * Durable job queue: append-only journal (queue.ndjson) replayed on boot, so
@@ -151,6 +152,7 @@ export class JobQueue {
       ...job, payload: { ...(payload ?? job.payload), generation }, cp: {}, attempts: 0,
       status: 'queued', next_run_at: Date.now() + delayMs,
       last_error: reason ? `requeued: ${reason}` : null, updated_at: nowIso(),
+      last_error_diagnostic: null,
     };
     this.#append({ t: 'update', job: updated });
     Object.assign(job, updated);
@@ -191,9 +193,11 @@ export class JobQueue {
         await this.handler(job);
         job.status = 'done';
         job.last_error = null;
+        job.last_error_diagnostic = null;
       } catch (err) {
         job.attempts += 1;
-        job.last_error = String(err?.message ?? err).slice(0, 500);
+        job.last_error = redactError(err?.message ?? err).slice(0, 500);
+        job.last_error_diagnostic = failureDiagnostic(err, { source: 'archive-job' });
         // A request OV refuses as invalid will be refused again: fail now
         // instead of retrying for hours.
         if (err?.retryable === false || job.attempts >= this.maxAttempts) {

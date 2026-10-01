@@ -484,7 +484,7 @@ export function makeMemoryStatusHandler({ ov, registry, queue, statusLog, extrac
 }
 
 function publicStatusEntry(e) {
-  const { archive_uri, extraction_task, ...rest } = e;
+  const { archive_uri, extraction_task, error_diagnostic, ...rest } = e;
   return rest;
 }
 
