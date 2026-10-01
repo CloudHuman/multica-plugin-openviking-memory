@@ -1,0 +1,411 @@
+{
+  "date": "2026-10-01",
+  "branchHead": "dcc8bf2",
+  "previousReport": "real-agent-2026-10-01-openrouter.json",
+  "environment": {
+    "multica": "43b0571 + upstream/multica/0001-0004 (d061e93)",
+    "openviking": "0.4.22",
+    "opencode": "1.17.7",
+    "agentModel": "openrouter/openai/gpt-5.4-mini",
+    "ovModels": {
+      "vlm": "z-ai/glm-5.3-flash",
+      "embedding": "qwen/qwen3-embedding-8b",
+      "rerank": "qwen/qwen3-reranker-8b"
+    },
+    "REAL_AGENT_OBSERVE_PROVIDER": "1",
+    "localCodeChanges": false,
+    "policyTemplateCheck": {
+      "method": "yaml.safe_load",
+      "templatesWithPhrase": 9,
+      "phrase": "limits sharing, not remembering"
+    }
+  },
+  "suites": {
+    "basic": {
+      "startedAt": "2026-10-01T16:37:52.800Z",
+      "finishedAt": "2026-10-01T16:41:09.121Z",
+      "passed": 13,
+      "total": 13,
+      "previous": "12/13",
+      "results": [
+        {
+          "id": "runtime",
+          "result": "PASS"
+        },
+        {
+          "id": "actual-tools",
+          "result": "PASS"
+        },
+        {
+          "id": "successful-memory-tools",
+          "result": "PASS"
+        },
+        {
+          "id": "automatic-extraction",
+          "result": "PASS"
+        },
+        {
+          "id": "archive-prompt-hygiene",
+          "result": "PASS"
+        },
+        {
+          "id": "active-memory-index",
+          "result": "PASS"
+        },
+        {
+          "id": "recall-bound-to-run",
+          "result": "PASS"
+        },
+        {
+          "id": "cross-task-recall",
+          "result": "PASS"
+        },
+        {
+          "id": "no-answer",
+          "result": "PASS"
+        },
+        {
+          "id": "runtime-read-archive-hygiene",
+          "result": "PASS"
+        },
+        {
+          "id": "runtime-read-exercised",
+          "result": "PASS"
+        },
+        {
+          "id": "distilled-prompt-hygiene",
+          "result": "PASS"
+        },
+        {
+          "id": "memory-quality",
+          "result": "PASS"
+        }
+      ],
+      "tasks": [
+        {
+          "task": "RAM-1",
+          "status": "completed",
+          "runSeconds": 28
+        },
+        {
+          "task": "RAM-2",
+          "status": "completed",
+          "runSeconds": 27
+        },
+        {
+          "task": "RAM-3",
+          "status": "completed",
+          "runSeconds": 15
+        },
+        {
+          "task": "RAM-4",
+          "status": "completed",
+          "runSeconds": 45
+        }
+      ],
+      "ram2Recall": {
+        "calls": 1,
+        "originalQuery": "issue 01a0f855-a558-7d31-a1a1-bfb0c5c25628 context or prior work",
+        "query_rewritten_from_present": true,
+        "notes": [
+          "原 query 用当前运行的 issue 或任务标识指代本任务，标识本身不含业务含义；已在查询前补入该 issue 的业务目标，召回范围保持不变。"
+        ],
+        "scopesSearched": [
+          {
+            "scope": "task",
+            "hits": 0,
+            "skipped": "not-provisioned"
+          },
+          {
+            "scope": "agent",
+            "hits": 2
+          },
+          {
+            "scope": "shared",
+            "hits": 0,
+            "skipped": "not-provisioned"
+          }
+        ],
+        "citedUri": "viking://…/memories/cases/2026-10-01/海棠迁移方案确认-297b55.md"
+      },
+      "residualFindings": [
+        "entities/项目/海棠迁移.md 进度节含『在任务 RAM-1 下确认』与『隔离联调任务，无代码变更』，现有 memory-quality 未覆盖"
+      ]
+    },
+    "quality": {
+      "startedAt": "2026-10-01T16:41:24.847Z",
+      "finishedAt": "2026-10-01T16:47:22.590Z",
+      "passed": 15,
+      "total": 15,
+      "previous": "9/11 (+1 not executed)",
+      "results": [
+        {
+          "id": "runtime",
+          "result": "PASS"
+        },
+        {
+          "id": "automatic-fact-fidelity",
+          "result": "PASS"
+        },
+        {
+          "id": "lasting-preference-retained",
+          "result": "PASS"
+        },
+        {
+          "id": "no-active-write-shortcut",
+          "result": "PASS"
+        },
+        {
+          "id": "current-entity-update",
+          "result": "PASS"
+        },
+        {
+          "id": "historical-budget-retained",
+          "result": "PASS"
+        },
+        {
+          "id": "entity-category-stable",
+          "result": "PASS"
+        },
+        {
+          "id": "updated-uri-repromoted",
+          "result": "PASS"
+        },
+        {
+          "id": "real-B-current-shared-recall",
+          "result": "PASS"
+        },
+        {
+          "id": "real-B-task-delivery",
+          "result": "PASS"
+        },
+        {
+          "id": "dm-distilled-peer-layout",
+          "result": "PASS"
+        },
+        {
+          "id": "real-DM-layout-recall",
+          "result": "PASS"
+        },
+        {
+          "id": "peer-audit-coverage",
+          "result": "PASS"
+        },
+        {
+          "id": "reusable-memory-hygiene",
+          "result": "PASS"
+        },
+        {
+          "id": "runtime-markers-filtered",
+          "result": "PASS"
+        }
+      ],
+      "tasks": [
+        {
+          "task": "quality-seed",
+          "status": "completed",
+          "runSeconds": 17
+        },
+        {
+          "task": "quality-budget-update",
+          "status": "completed",
+          "runSeconds": 26
+        },
+        {
+          "task": "quality-shared-recall",
+          "status": "completed",
+          "runSeconds": 26
+        },
+        {
+          "task": "quality-dm-seed",
+          "status": "completed",
+          "runSeconds": 25
+        },
+        {
+          "task": "quality-dm-recall",
+          "status": "completed",
+          "runSeconds": 22
+        }
+      ],
+      "entityCard": {
+        "taskScope": "项目发布预算为 8100 元（2026-10-01 更新，明确以本次调整为准）。",
+        "sharedCopy": "项目发布预算为 8100 元（2026-10-01 更新，以本次调整为准；原每月预算为 7600 元）。",
+        "containsRamNumber": false,
+        "containsQueryRelations": false,
+        "monthlyQualifierDropped": true
+      },
+      "dmSeedMemoryDiff": {
+        "adds": 1,
+        "updates": 0,
+        "deletes": 0,
+        "added": "peers/…/memories/preferences/…/蓝鹊周报排版格式（私聊专用）.md"
+      },
+      "searchReadiness": [
+        {
+          "scope": "shared",
+          "attempts": 1,
+          "ready": true
+        },
+        {
+          "scope": "dm",
+          "attempts": 1,
+          "ready": true
+        }
+      ],
+      "residualFindings": [
+        "events 文件保留『记忆召回为空不影响结论』及 ChatLog 中的 RAM-1 标题"
+      ]
+    }
+  },
+  "providerAuth": {
+    "openviking": [
+      {
+        "endpoint": "/api/v1/chat/completions",
+        "client": "httpx",
+        "status": 200,
+        "authorization_scheme": "bearer",
+        "authorization_token_present": true,
+        "provider_auth_reason": null,
+        "count": 43
+      },
+      {
+        "endpoint": "/api/v1/embeddings",
+        "client": "httpx",
+        "status": 200,
+        "authorization_scheme": "bearer",
+        "authorization_token_present": true,
+        "provider_auth_reason": null,
+        "count": 223
+      },
+      {
+        "endpoint": "/api/v1/rerank",
+        "client": "requests",
+        "status": 200,
+        "authorization_scheme": "bearer",
+        "authorization_token_present": true,
+        "provider_auth_reason": null,
+        "count": 112
+      },
+      {
+        "endpoint": "/api/v1/rerank",
+        "client": "requests",
+        "status": 503,
+        "authorization_scheme": "bearer",
+        "authorization_token_present": true,
+        "provider_auth_reason": null,
+        "count": 3
+      },
+      {
+        "endpoint": "/api/v1/chat/completions",
+        "client": "httpx",
+        "status": "ReadError",
+        "authorization_scheme": null,
+        "authorization_token_present": null,
+        "provider_auth_reason": null,
+        "count": 1
+      }
+    ],
+    "openvikingRequests": {
+      "embeddings": 223,
+      "chat": 44,
+      "rerank": 115,
+      "allBearerTokenPresent": true
+    },
+    "opencode": {
+      "basic": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "source": "http",
+          "status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 23
+        }
+      ],
+      "quality": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "source": "http",
+          "status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 19
+        }
+      ]
+    },
+    "sessionCommits": {
+      "total": 20,
+      "completed": 20,
+      "stuckPending": 0,
+      "restartRequired": false
+    },
+    "logMatches401Texts": 0
+  },
+  "latency": {
+    "embeddings": {
+      "n": 223,
+      "p50_ms": 5438,
+      "p95_ms": 31186,
+      "max_ms": 53005
+    },
+    "chat": {
+      "n": 43,
+      "p50_ms": 9737,
+      "p95_ms": 21500,
+      "max_ms": 22108
+    },
+    "rerank": {
+      "n": 115,
+      "p50_ms": 586,
+      "p95_ms": 1266,
+      "max_ms": 6985
+    },
+    "embeddingSlowCallLogLines": 154
+  },
+  "recallTimedOut": {
+    "recallResults": 9,
+    "timedOutScopes": 4,
+    "detail": [
+      {
+        "task": "RAM-4",
+        "scope": "agent",
+        "count": 2
+      },
+      {
+        "task": "quality-budget-update",
+        "scope": "task",
+        "count": 1
+      },
+      {
+        "task": "quality-budget-update",
+        "scope": "shared",
+        "count": 1
+      }
+    ]
+  },
+  "cost": {
+    "usageBeforeUsd": 0.24905166,
+    "usageAfterUsd": 0.51153918,
+    "deltaUsd": 0.26248752,
+    "agentTokens": {
+      "input": 193929,
+      "output": 6051,
+      "cacheRead": 473600
+    },
+    "ovExtractionTokens": {
+      "prompt": 265187,
+      "completion": 17075
+    }
+  },
+  "conclusion": {
+    "reproduced401": false,
+    "emptyTokenObserved": false,
+    "previousFailuresResolved": [
+      "cross-task-recall",
+      "current-entity-update",
+      "dm-distilled-peer-layout"
+    ]
+  }
+}
