@@ -15,7 +15,7 @@ const env = process.env;
 const pluginUrl = env.PLUGIN_URL ?? 'https://127.0.0.1:8790';
 const model = env.AGENT_MODEL ?? 'openrouter/z-ai/glm-5.3-flash';
 const suite = env.REAL_AGENT_SUITE ?? 'basic';
-if (!['basic', 'matrix', 'quality'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
+if (!['basic', 'matrix', 'quality', 'benchmark', 'delivery'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
@@ -26,12 +26,15 @@ const previous = resumeState ? JSON.parse(readFileSync(join(resumeState, 'report
 const finishMatrix = env.REAL_AGENT_MATRIX_PHASE === 'finish';
 const recoverShared = env.REAL_AGENT_MATRIX_PHASE === 'shared';
 const continueQuality = env.REAL_AGENT_QUALITY_PHASE === 'continue';
+const continueBenchmark = env.REAL_AGENT_BENCHMARK_PHASE === 'continue';
+if (env.REAL_AGENT_BENCHMARK_PHASE && !continueBenchmark) throw new Error('Unknown benchmark continuation phase');
+if (continueBenchmark && (!previous || suite !== 'benchmark' || previous.suite !== 'benchmark')) throw new Error('Benchmark continuation requires its original isolated workspace');
 if (env.REAL_AGENT_QUALITY_PHASE && !continueQuality) throw new Error('Unknown quality recovery phase');
 if (continueQuality && (!previous || suite !== 'quality' || previous.suite !== 'quality')) throw new Error('Quality continuation requires its existing isolated workspace');
 if (env.REAL_AGENT_MATRIX_PHASE && !finishMatrix && !recoverShared) throw new Error('Unknown matrix phase');
 const stoppedAtVersionGate = previous && [previous.error, ...(previous.attempts ?? []).map(a => a.error)].some(error => error?.includes('daemon_version_unsupported'));
 if ((finishMatrix || recoverShared) && (!previous || suite !== 'matrix' || previous.suite !== 'matrix')) throw new Error('Recovery phase requires an existing isolated matrix');
-if (previous && !finishMatrix && !recoverShared && !continueQuality && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
+if (previous && !finishMatrix && !recoverShared && !continueQuality && !continueBenchmark && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
   throw new Error('Resume requires a matrix stopped at the quick-create version gate');
 }
 const run = previous ? previous.platformCanary.replace(/^PLATFORM_ONLY_/, '') : Date.now().toString(36);
@@ -93,8 +96,11 @@ try {
   plugin = spawn(process.execPath, ['src/server.mjs'], { cwd: repo, env: { ...process.env, OVMEM_PORT: String(new URL(pluginUrl).port || 443), OVMEM_BIND: '127.0.0.1', OVMEM_STATE_DIR: pluginState, OVMEM_OV_BASE_URL: ov.baseUrl, OVMEM_OV_ROOT_KEY: env.OV_ROOT_KEY, OVMEM_SIGNING_SECRETS: JSON.stringify({ [inst.installationId]: { secret: inst.signingSecret, workspace_id: ws } }), OVMEM_MULTICA_API_URL: `${mc.base}/v1`, OVMEM_PLUGIN_TOKEN: pluginToken, OVMEM_TLS_CERT: env.OVMEM_TLS_CERT, OVMEM_TLS_KEY: env.OVMEM_TLS_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [plugin.stdout, plugin.stderr]) stream.on('data', data => { const log = join(state, 'plugin.log'); writeFileSync(log, data, { flag: 'a' }); });
   await wait('plugin', async () => { try { return (await fetch(`${pluginUrl}/healthz`)).ok; } catch { return false; } }, 30000);
-  privateFile(join(state, 'opencode.json'), { $schema: 'https://opencode.ai/config.json', provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } }, model });
+  const observeProvider = suite === 'benchmark' || suite === 'delivery';
+  const observers = observeProvider ? [`file://${repo}/deploy/observers/opencode.mjs`, `file://${repo}/e2e/real-agent/after-delivery-fault.mjs`] : [];
+  privateFile(join(state, 'opencode.json'), { $schema: 'https://opencode.ai/config.json', ...(observers.length ? { plugin: observers } : {}), provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } }, model });
   const daemonEnv = { ...process.env, OPENCODE_CONFIG: join(state, 'opencode.json'), MULTICA_SERVER_URL: mc.base, MULTICA_KEEP_ENV_AFTER_TASK: '1' };
+  if (observeProvider) Object.assign(daemonEnv, { OVMEM_PROVIDER_DIAGNOSTICS: '1', OVMEM_PROVIDER_DIAGNOSTICS_FILE: join(state,'opencode-provider-requests.jsonl'), OVMEM_E2E_DELIVERY_AUTHORIZED: '1', OVMEM_E2E_DELIVERY_FAULT: join(state,'delivery-fault.json') });
   daemon = spawn(cli, ['--profile', profile, 'daemon', 'start', '--foreground', '--no-auto-update', '--no-auto-reload', '--poll-interval', '2s', '--ws-claim-poll-interval', '5s', '--heartbeat-interval', '5s', '--max-concurrent-tasks', suite === 'matrix' ? '2' : '1', '--agent-timeout', suite === 'matrix' ? '8m' : '5m', '--workspaces-root', join(state, 'workspaces'), '--device-name', `ovmem-real-agent-${run}`], { cwd: state, env: daemonEnv, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', data => writeFileSync(join(state, 'daemon-stderr.log'), data, { flag: 'a' }));
   daemon.on('exit', code => console.log(`Official daemon exited: ${code}`));
@@ -140,9 +146,15 @@ try {
     if (task.status !== 'completed') throw new Error(`Real task ${issue.identifier} ended ${task.status}: ${String(task.error ?? task.output ?? '').slice(0, 600)}`);
     return { issue, task, messages, record };
   }
-  if (suite === 'matrix' || suite === 'quality') {
+  if (suite === 'matrix' || suite === 'quality' || suite === 'benchmark' || suite === 'delivery') {
     const ctx = { mc, ov, user, ws, agent, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, run, report, step, save, wait, privateFile, toolResultData, resume: !!previous, finish: finishMatrix };
-    if (suite === 'quality') {
+    if (suite === 'delivery') {
+      const { runDeliveryCheck } = await import('./delivery-check.mjs');
+      await runDeliveryCheck(ctx);
+    } else if (suite === 'benchmark') {
+      const { runBenchmark } = await import('./benchmark.mjs');
+      await runBenchmark(ctx);
+    } else if (suite === 'quality') {
       const { runQuality } = await import('./quality.mjs');
       await runQuality(ctx);
     } else if (recoverShared) {

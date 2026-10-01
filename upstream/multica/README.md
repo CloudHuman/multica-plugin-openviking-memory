@@ -8,6 +8,8 @@
 
 `0003-fix-plugins-quick-create-kind-after-issue-linking.patch` 修复快速创建的类型变化：真实 CLI 创建 issue 后会把它关联到原运行，先前任务读取 API 此时优先返回 `kind=issue`，导致归档离开开始召回时使用的 run 空间，并遗漏成员的快速创建提示。现在关联前后均保留 `kind=quick_create` 与原始提示；普通 issue、私聊和创建 issue 的自动化仍遵循原有归属。新增真实 PostgreSQL 回归先复现失败，修复后通过。
 
+`0004-feat-recover-confirmed-final-delivery.patch` 增加显式交付恢复：成员核验某次失败运行已经发布的最终评论后，可把其精确内容作为交付结果。仅接受错误包含 `Missing Authentication header` 的 issue 运行；评论必须属于该运行与智能体，且 SHA-256 与当前内容匹配。事务检查没有已存在的重试、重跑或活跃后续运行，恢复时不创建任务、评论或模型调用。原始失败原因保存在 `result.delivery_recovery`，重复提交同一凭据返回 `recovered: false`。这项操作需要人工确认评论确实是完整交付，不应在收到任意评论或任意 401 时自动执行。
+
 ## 补丁内容
 
 | 变更 | 说明 |
@@ -28,6 +30,7 @@ git checkout 43b0571            # 本轮真实智能体验证的服务端基线
 git am <本仓库>/upstream/multica/0001-*.patch
 git am <本仓库>/upstream/multica/0002-*.patch
 git am <本仓库>/upstream/multica/0003-*.patch
+git am <本仓库>/upstream/multica/0004-*.patch
 cd server && go build ./... && go vet ./internal/handler/ ./internal/service/
 
 # 补丁自带测试（需要已迁移的测试库）
@@ -35,7 +38,18 @@ DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'Plugi
 DATABASE_URL=postgres://…/multica_test go test ./internal/service/ -run TestTaskIDFromPayloadOnlyReadsTheRunItReportsOn -count=1
 DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'TestRemoteMCPDaemonTokenForClaim|TestPluginHookOnlyClaimHasDaemonCredential' -count=1
 DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run TestPluginTaskQuickCreateKeepsOriginAfterCreatingIssue -count=1
+DATABASE_URL=postgres://…/multica_test go test -race ./internal/handler/ -run TestRecoverTaskDelivery -count=1
 ```
+
+## 确认已发布的交付
+
+`POST /api/tasks/{taskId}/recover-delivery` 使用现有成员登录与 `X-Workspace-ID`，拒绝 agent actor，仍检查工作区及私有智能体访问权限。请求体上限 4 KiB：
+
+```json
+{"comment_id":"<已核验的最终评论 UUID>","comment_sha256":"<评论原始 UTF-8 内容的 64 位小写 SHA-256>"}
+```
+
+响应为 `{"task_id":"…","status":"completed","recovered":true,"comment_id":"…"}`；再次提交相同凭据时 `recovered` 为 `false`。错误的内容摘要、来源、失败类型或已有后续运行返回 409；无效摘要返回 400；其他工作区任务返回 404，无私有智能体访问权返回 403。评论修改会使原摘要失效。恢复完成只广播原任务的完成事件，供插件按原 task ID 归档；它不保证评论语义正确，确认者须核验答案。
 
 2026-09-30 在 `e31da86` 上验证：干净应用，`go build` / `go vet` 通过，10 个补丁测试全部通过；再用真实 multica（补丁版与 stock 版各一轮）跑 `e2e/real-stack/`，均 12/12（见 `reports/e2e-2026-09-30.md`）。
 

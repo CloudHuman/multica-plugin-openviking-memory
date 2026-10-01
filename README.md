@@ -187,6 +187,8 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 
 任务记录过期后读取 `.failed.json` 会保留原始错误和抽取阶段。轮询任务或标记遇到 401、网络异常等，会保留待办、持久化最后错误，并在 `extraction.polling_errors` 中显示；只有 404 被视为标记不存在。相同持续错误只写一条状态记录，恢复后清除当前异常；观察超时会带出最后轮询错误。真实抽取失败仍使用原来的有界重驱，直接 HTTP 401 不增加自动重试。
 
+可选的[原生模型请求观测](deploy/observers/README.md)进一步记录 OpenCode / OV 发往 OpenRouter 的实际 SDK 请求，默认关闭且不记录凭据或请求体。若最终评论已发布、收尾模型调用却因鉴权失败，可应用[交付恢复补丁](upstream/multica/README.md#确认已发布的交付)，由成员确认具体评论及其摘要后复用已有交付，保留原失败记录并避免重跑动作。
+
 multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`，一条记录只对应一个作业。
 
 **共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间。跳过命中的临时执行控制、检索失败结论、平台脚手架和目录摘要；`skipped` 返回原因。保留来源范围与完整 URI，按内容版本幂等：同文件内容更新后可再次晋升，明确回滚到旧值也作为新版本处理；完全相同内容的副本不重复晋升。旧版 URI 回执会对当前安全内容补晋升一次。筛选规则是有限的防护，不是通用语义分类器；超过 3500 字符的候选暂不自动晋升，避免截掉事实。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。

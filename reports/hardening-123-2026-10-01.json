@@ -1,0 +1,1242 @@
+{
+  "date": "2026-10-01",
+  "scope": [
+    "native model request diagnostics",
+    "confirmed delivery recovery",
+    "repeated real-agent distillation benchmark"
+  ],
+  "runtime": {
+    "multicaCli": "multica v0.6.0-7-g267203249 (commit: 267203249, built: 2026-10-01T05:19:17Z)\ngo: go1.26.6, os/arch: linux/amd64",
+    "openCode": "1.17.7",
+    "agentModel": "openrouter/openai/gpt-5.4-mini",
+    "openViking": "0.4.22",
+    "multicaPatchCommit": "d1cb259ee",
+    "apiDuringBenchmark": "20d2bd24c",
+    "provider": "OpenRouter, original credential/proxy/trust configuration"
+  },
+  "diagnostics": {
+    "openViking": {
+      "requests": 743,
+      "responses": 741,
+      "byEndpointStatus": {
+        "/api/v1/embeddings:401": 244,
+        "/api/v1/chat/completions:401": 78,
+        "/api/v1/embeddings:200": 317,
+        "/api/v1/chat/completions:200": 102
+      },
+      "missingAuthAtSdk": 0,
+      "redirects": 0,
+      "sampleFailures": [
+        {
+          "id": "b6924b3c-e75b-4c17-863a-453566d8d9f6",
+          "runtime": "openviking",
+          "ts": 1790842742.4469194,
+          "event": "response",
+          "duration_ms": 314,
+          "host": "openrouter.ai",
+          "path": "/api/v1/embeddings",
+          "method": "POST",
+          "authorization_present": true,
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a0a463fbd0d7b-ORD"
+          },
+          "redirects": []
+        },
+        {
+          "id": "4b943fb2-4c71-4deb-9dad-fc5529fbab1f",
+          "runtime": "openviking",
+          "ts": 1790842742.7661884,
+          "event": "response",
+          "duration_ms": 492,
+          "host": "openrouter.ai",
+          "path": "/api/v1/embeddings",
+          "method": "POST",
+          "authorization_present": true,
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a0a494e5b72e5-ORD"
+          },
+          "redirects": []
+        },
+        {
+          "id": "6436acdb-0e21-44c6-ab00-c9a3ef0f1a21",
+          "runtime": "openviking",
+          "ts": 1790842742.4254365,
+          "event": "response",
+          "duration_ms": 988,
+          "host": "openrouter.ai",
+          "path": "/api/v1/embeddings",
+          "method": "POST",
+          "authorization_present": true,
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a0a463fbf0d7b-ORD"
+          },
+          "redirects": []
+        }
+      ],
+      "firstTs": 1790842742.3743746,
+      "lastTs": 1790844970.026801
+    },
+    "openCode": {
+      "requests": 86,
+      "responses": 86,
+      "byEndpointStatus": {
+        "/api/v1/chat/completions:200": 80,
+        "/api/v1/chat/completions:401": 6
+      },
+      "missingAuthAtSdk": 0,
+      "redirects": 0,
+      "sampleFailures": [
+        {
+          "id": "56a590c9-6dfc-4307-80c0-103f18deee0a",
+          "runtime": "opencode",
+          "ts": "2026-10-01T08:29:48.440Z",
+          "event": "response",
+          "source": "http",
+          "method": "POST",
+          "host": "openrouter.ai",
+          "path": "/api/v1/chat/completions",
+          "authorization_present": true,
+          "phase": "response",
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a1a0c6c7072e5-ORD"
+          },
+          "duration_ms": 435,
+          "redirected": false,
+          "response_host": "openrouter.ai"
+        },
+        {
+          "id": "4210bdc7-373f-4821-8b7a-a56cab29cf93",
+          "runtime": "opencode",
+          "ts": "2026-10-01T08:29:48.685Z",
+          "event": "response",
+          "source": "http",
+          "method": "POST",
+          "host": "openrouter.ai",
+          "path": "/api/v1/chat/completions",
+          "authorization_present": true,
+          "phase": "response",
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a1a0df84472e5-ORD"
+          },
+          "duration_ms": 443,
+          "redirected": false,
+          "response_host": "openrouter.ai"
+        },
+        {
+          "id": "9d5ba74f-1140-4c86-b619-7f6e7e4549d3",
+          "runtime": "opencode",
+          "ts": "2026-10-01T08:29:53.351Z",
+          "event": "response",
+          "source": "http",
+          "method": "POST",
+          "host": "openrouter.ai",
+          "path": "/api/v1/chat/completions",
+          "authorization_present": true,
+          "phase": "response",
+          "http_status": 401,
+          "response_ids": {
+            "cf-ray": "a43a1a2b1a924f6c-ORD"
+          },
+          "duration_ms": 429,
+          "redirected": false,
+          "response_host": "openrouter.ai"
+        }
+      ],
+      "firstTs": "2026-10-01T08:23:34.161Z",
+      "lastTs": "2026-10-01T08:55:55.506Z"
+    },
+    "scopeNote": "OV observations cover the shared native instance observation window; they are not attributed to individual tasks. OpenCode observations are from this isolated benchmark. Controlled faults bypass the provider and are excluded from these request status counts.",
+    "conclusion": "Actual requests carried Authorization at the SDK boundary, without observed redirects; both 200 and 401 occurred. This does not prove what intermediate infrastructure received, or establish the final root cause."
+  },
+  "delivery": {
+    "taskId": "01a0f69a-db0a-7283-a3f2-36f9f1ada878",
+    "originalStatus": "failed",
+    "originalError": "Missing Authentication header",
+    "commentId": "01a0f69b-06f4-73e6-9151-920cf9a24d16",
+    "commentsBefore": 2,
+    "receipt": {
+      "task_id": "01a0f69a-db0a-7283-a3f2-36f9f1ada878",
+      "status": "completed",
+      "recovered": true,
+      "comment_id": "01a0f69b-06f4-73e6-9151-920cf9a24d16"
+    },
+    "replay": {
+      "task_id": "01a0f69a-db0a-7283-a3f2-36f9f1ada878",
+      "status": "completed",
+      "recovered": false,
+      "comment_id": "01a0f69b-06f4-73e6-9151-920cf9a24d16"
+    },
+    "commentsAfter": 2,
+    "issueTasksAfter": 1,
+    "controlledFault": {
+      "injected": true,
+      "source": "controlled-e2e-fault",
+      "taskId": "01a0f69a-db0a-7283-a3f2-36f9f1ada878",
+      "commentId": "01a0f69b-06f4-73e6-9151-920cf9a24d16",
+      "ts": "2026-10-01T08:35:50.240Z"
+    },
+    "checks": [
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "delivery-control-confirmed-content",
+        "ok": true,
+        "detail": "Actual agent persisted the exact member-requested final answer"
+      },
+      {
+        "id": "delivery-control-post-comment-failure",
+        "ok": true,
+        "detail": "Final generation failed after the confirmed comment was posted"
+      },
+      {
+        "id": "delivery-control-idempotent-recovery",
+        "ok": true,
+        "detail": "Recovery reused one comment and one task, including the repeated confirmation"
+      }
+    ],
+    "scopeNote": "Delivery-only fixture supplied its answer explicitly. It is excluded from distillation accuracy."
+  },
+  "benchmark": {
+    "startedAt": "2026-10-01T08:23:25.712Z",
+    "finishedAt": "2026-10-01T08:56:37.997Z",
+    "workspaceId": "3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+    "plannedTasks": 20,
+    "observedTasks": 20,
+    "repeats": 3,
+    "metrics": {
+      "plannedFactQueries": 9,
+      "observedFactQueries": 9,
+      "factsCorrect": 0,
+      "plannedFacts": 27,
+      "groundedCurrentAnswers": 0,
+      "deliveryBeforeRecovery": 9,
+      "deliveryAfterRecovery": 9,
+      "privateRecallCorrect": 0,
+      "nativeTaskFailures": 3,
+      "recoveredDeliveries": 0,
+      "completeAudit": true,
+      "knownQualityFindings": 0
+    },
+    "cases": [
+      {
+        "name": "银杉发布",
+        "alias": "SilverFir",
+        "expected": {
+          "queue": "Apache Pulsar",
+          "currentBudget": 8100,
+          "historicalBudget": 7600,
+          "days": 5
+        },
+        "setupErrors": [
+          "Extraction failed: Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+        ],
+        "queries": [
+          {
+            "taskId": "01a0f692-f4e2-7f2a-b163-4f41fcc58ef0",
+            "entry": "query-0-0",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 2,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f694-7954-7c40-a9ac-227b2184cf76",
+            "entry": "query-0-1",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 3,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f69b-8de0-7dcf-b5ec-f191df37ec0a",
+            "entry": "query-0-2",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 2,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          }
+        ]
+      },
+      {
+        "name": "海燕发布",
+        "alias": "StormPetrel",
+        "expected": {
+          "queue": "Redpanda",
+          "currentBudget": 6400,
+          "historicalBudget": 5900,
+          "days": 4
+        },
+        "setupErrors": [
+          "Native delivery failed: Missing Authentication header",
+          "Seed delivery failed: Missing Authentication header"
+        ],
+        "queries": [
+          {
+            "taskId": "01a0f6a1-1c1f-7bb5-a0cc-2ff4e10327a0",
+            "entry": "query-1-0",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 3,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f6a2-5f5e-757b-a6eb-440e8e89af18",
+            "entry": "query-1-1",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 3,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f6a3-a87b-7e5c-99b6-08fb78cb47c9",
+            "entry": "query-1-2",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 3,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          }
+        ]
+      },
+      {
+        "name": "白鹭发布",
+        "alias": "WhiteEgret",
+        "expected": {
+          "queue": "NATS JetStream",
+          "currentBudget": 9200,
+          "historicalBudget": 8800,
+          "days": 7
+        },
+        "setupErrors": [
+          "Native delivery failed: Missing Authentication header",
+          "Seed delivery failed: Missing Authentication header"
+        ],
+        "queries": [
+          {
+            "taskId": "01a0f6a6-70ca-77a3-8dbc-bbfe6513efc9",
+            "entry": "query-2-0",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 1,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f6a7-d71c-776e-bcfc-191fdec73e37",
+            "entry": "query-2-1",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 3,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          },
+          {
+            "taskId": "01a0f6a9-31cf-7b5a-abf6-1340252d9c61",
+            "entry": "query-2-2",
+            "originalStatus": "completed",
+            "status": "completed",
+            "error": null,
+            "queue": false,
+            "budget": false,
+            "days": false,
+            "provenance": false,
+            "correct": false,
+            "recallCalls": 2,
+            "returnedEntries": 0,
+            "timedOutScopes": [
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+              "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+              "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392"
+            ],
+            "retrievalErrors": []
+          }
+        ]
+      }
+    ],
+    "privateQueries": [
+      {
+        "taskId": "01a0f6aa-8c76-7890-9673-fb35de2a0c11",
+        "repetition": 0,
+        "correct": false
+      },
+      {
+        "taskId": "01a0f6ab-7797-792c-9917-fc892d2a7da5",
+        "repetition": 1,
+        "correct": false
+      },
+      {
+        "taskId": "01a0f6ac-5d0a-776f-8106-ef3c3535a3d1",
+        "repetition": 2,
+        "correct": false
+      }
+    ],
+    "privateIsolation": {
+      "taskId": "01a0f6ad-24e5-7289-9d8f-bca5f05beeec",
+      "delivered": true,
+      "recallObserved": true,
+      "unauthorizedScopeSearched": false,
+      "unauthorizedScopeReturned": false,
+      "leakedPrivateValues": false
+    },
+    "privateErrors": [],
+    "originalPrivateError": "Native delivery failed: Missing Authentication header",
+    "finalExtractionErrors": [],
+    "memoryAudit": [
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f68f-b826-7cc3-9c1f-3809d5b779f9",
+        "files": 4,
+        "uris": [
+          "viking://user/mcs-08e14d9f10c2/memories/entities/项目/silverfir.md",
+          "viking://user/mcs-08e14d9f10c2/memories/events/2026/10/01/SilverFir月预算更新为8100元.md",
+          "viking://user/mcs-08e14d9f10c2/memories/events/2026/10/01/银杉发布命名与配置确认.md",
+          "viking://user/mcs-08e14d9f10c2/memories/preferences/user/代码注释语言.md"
+        ],
+        "roots": [
+          "viking://user/mcs-08e14d9f10c2/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "shared:3832de1d-fdaa-42d0-82f7-e0f28c14b392",
+        "files": 4,
+        "uris": [
+          "viking://user/mcs-6de1504f0ca6/memories/entities/项目/silverfir.md",
+          "viking://user/mcs-6de1504f0ca6/memories/entities/项目/海燕.md",
+          "viking://user/mcs-6de1504f0ca6/memories/entities/项目/白鹭.md",
+          "viking://user/mcs-6de1504f0ca6/memories/preferences/mcs-6de1504f0ca6/代码注释语言.md"
+        ],
+        "roots": [
+          "viking://user/mcs-6de1504f0ca6/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-101518d7e134/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f692-f4a2-7efd-ad04-ae96a14ead88",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-cc53b80eec9d/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f694-7946-75ec-8e48-fdb5ea268cff",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-23301859c1a6/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f695-7020-7d4f-a22e-65bef5a1b5d8",
+        "files": 5,
+        "uris": [
+          "viking://user/mcs-30d663bcea76/memories/entities/项目/海燕.md",
+          "viking://user/mcs-30d663bcea76/memories/events/2026/10/01/StormPetrel月预算上调.md",
+          "viking://user/mcs-30d663bcea76/memories/events/2026/10/01/海燕正式约定成员确认.md",
+          "viking://user/mcs-30d663bcea76/memories/preferences/user/代码注释语言.md",
+          "viking://user/mcs-30d663bcea76/peers/97a931f5-68c4-4b1f-aa8d-eea569992991/memories/events/2026/10/01/海燕月预算更新为6400元.md"
+        ],
+        "roots": [
+          "viking://user/mcs-30d663bcea76/memories",
+          "viking://user/mcs-30d663bcea76/peers/97a931f5-68c4-4b1f-aa8d-eea569992991/memories"
+        ],
+        "peerFiles": 1,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f695-87ca-701c-a2c4-cdbd89c8ea8e",
+        "files": 5,
+        "uris": [
+          "viking://user/mcs-a52613c8f6a1/memories/entities/项目/white_egret.md",
+          "viking://user/mcs-a52613c8f6a1/memories/entities/项目/白鹭.md",
+          "viking://user/mcs-a52613c8f6a1/memories/events/2026/10/01/白鹭发布正式确认.md",
+          "viking://user/mcs-a52613c8f6a1/memories/events/2026/10/01/白鹭项目预算上调确认.md",
+          "viking://user/mcs-a52613c8f6a1/memories/preferences/user/代码注释语言.md"
+        ],
+        "roots": [
+          "viking://user/mcs-a52613c8f6a1/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-ef846e9442f9/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f69b-8dd3-7def-962c-39a17dac61da",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-61b1e1d22b37/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a1-1c0c-7849-8b45-f8076744c089",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-a50e069ade2b/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a2-5f51-7c18-ab4f-01afcae8b6f6",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-80fcf3792e3c/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a3-a86e-7e58-9be3-b43cf1576071",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-602d66d7b40c/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a6-70bb-77a2-a599-b7ee0e57dbbe",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-c4bca0f6bc83/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a7-d70e-7d89-b648-985c023b6f46",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-49f5c2219b9d/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:3832de1d-fdaa-42d0-82f7-e0f28c14b392:01a0f6a9-31c5-75c0-b81f-17b8366234db",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-0c7079541aa3/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "agent:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-1faa02437231/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a2eef5fd-4f78-4cba-95d3-d865e3ca6e44:97a931f5-68c4-4b1f-aa8d-eea569992991",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-ab52699f7ed6/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      }
+    ],
+    "attempts": [
+      {
+        "finishedAt": "2026-10-01T08:33:42.977Z",
+        "resumedAt": "2026-10-01T08:36:21.523Z"
+      }
+    ],
+    "taskStatuses": [
+      {
+        "taskId": "01a0f68f-b837-77ce-821b-fc2c9d56c0e2",
+        "entry": "seed-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 12000
+      },
+      {
+        "taskId": "01a0f691-70fc-7514-997e-53d4388d7502",
+        "entry": "update-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 10000
+      },
+      {
+        "taskId": "01a0f692-f4e2-7f2a-b163-4f41fcc58ef0",
+        "entry": "query-0-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 55000
+      },
+      {
+        "taskId": "01a0f694-7954-7c40-a9ac-227b2184cf76",
+        "entry": "query-0-1",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 37000
+      },
+      {
+        "taskId": "01a0f695-702a-78f8-85ed-3158f38b8ea9",
+        "entry": "seed-1",
+        "originalStatus": "failed",
+        "status": "failed",
+        "error": "Missing Authentication header",
+        "recovered": false,
+        "durationMs": 6000
+      },
+      {
+        "taskId": "01a0f695-87db-7760-850d-bccb53b2735e",
+        "entry": "seed-2",
+        "originalStatus": "failed",
+        "status": "failed",
+        "error": "Missing Authentication header",
+        "recovered": false,
+        "durationMs": 5000
+      },
+      {
+        "taskId": "01a0f695-99a4-7aee-b80a-8cbfb5faf479",
+        "entry": "private-seed",
+        "originalStatus": "failed",
+        "status": "failed",
+        "error": "Missing Authentication header",
+        "recovered": false,
+        "durationMs": 4000
+      },
+      {
+        "taskId": "01a0f69b-8de0-7dcf-b5ec-f191df37ec0a",
+        "entry": "query-0-2",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 38000
+      },
+      {
+        "taskId": "01a0f69e-bec6-7c8b-92d1-987c4b8b972e",
+        "entry": "update-1",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 24000
+      },
+      {
+        "taskId": "01a0f6a1-1c1f-7bb5-a0cc-2ff4e10327a0",
+        "entry": "query-1-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 41000
+      },
+      {
+        "taskId": "01a0f6a2-5f5e-757b-a6eb-440e8e89af18",
+        "entry": "query-1-1",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 42000
+      },
+      {
+        "taskId": "01a0f6a3-a87b-7e5c-99b6-08fb78cb47c9",
+        "entry": "query-1-2",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 52000
+      },
+      {
+        "taskId": "01a0f6a5-2d04-7588-9400-3fcc5b89df62",
+        "entry": "update-2",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 11000
+      },
+      {
+        "taskId": "01a0f6a6-70ca-77a3-8dbc-bbfe6513efc9",
+        "entry": "query-2-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 24000
+      },
+      {
+        "taskId": "01a0f6a7-d71c-776e-bcfc-191fdec73e37",
+        "entry": "query-2-1",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 42000
+      },
+      {
+        "taskId": "01a0f6a9-31cf-7b5a-abf6-1340252d9c61",
+        "entry": "query-2-2",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 37000
+      },
+      {
+        "taskId": "01a0f6aa-8c76-7890-9673-fb35de2a0c11",
+        "entry": "private-query-0",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 32000
+      },
+      {
+        "taskId": "01a0f6ab-7797-792c-9917-fc892d2a7da5",
+        "entry": "private-query-1",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 31000
+      },
+      {
+        "taskId": "01a0f6ac-5d0a-776f-8106-ef3c3535a3d1",
+        "entry": "private-query-2",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 23000
+      },
+      {
+        "taskId": "01a0f6ad-24e5-7289-9d8f-bca5f05beeec",
+        "entry": "private-isolation",
+        "originalStatus": "completed",
+        "status": "completed",
+        "error": null,
+        "recovered": false,
+        "durationMs": 20000
+      }
+    ],
+    "checks": [
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "facts-0-0",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-0-1",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "benchmark-observed-coverage",
+        "ok": true,
+        "detail": "All planned independent fact recalls were actually run"
+      },
+      {
+        "id": "benchmark-private-coverage",
+        "ok": true,
+        "detail": "All planned independent private recalls were actually run"
+      },
+      {
+        "id": "benchmark-memory-audit",
+        "ok": true,
+        "detail": "Own and peer memories were read completely for the quality audit"
+      },
+      {
+        "id": "benchmark-private-isolation",
+        "ok": true,
+        "detail": "Other agent did not receive the private pair scope or its distinctive values"
+      },
+      {
+        "id": "benchmark-delivery-fault-exercised",
+        "ok": false,
+        "detail": "Controlled post-delivery model failure exercised receipt recovery"
+      },
+      {
+        "id": "facts-0-2",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-1-0",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-1-1",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-1-2",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-2-0",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-2-1",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "facts-2-2",
+        "ok": false,
+        "detail": "Independent actual B recall used current aliased facts and cited a shared source"
+      },
+      {
+        "id": "private-recall-0",
+        "ok": false,
+        "detail": "Fresh private session recalled the ordered preference with its authorized source"
+      },
+      {
+        "id": "private-recall-1",
+        "ok": false,
+        "detail": "Fresh private session recalled the ordered preference with its authorized source"
+      },
+      {
+        "id": "private-recall-2",
+        "ok": false,
+        "detail": "Fresh private session recalled the ordered preference with its authorized source"
+      },
+      {
+        "id": "benchmark-reusable-memory-hygiene",
+        "ok": true,
+        "detail": "Complete audit found no known platform or execution controls in reusable memories"
+      }
+    ],
+    "strictIsolationAssessment": {
+      "exercised": true,
+      "passed": true
+    },
+    "scoringNote": "All nine planned queries and 27 facts remain the denominator. Existing failed queries were preserved in continuation. Accuracy requires current facts plus an actually recalled shared source. Native setup failures, missing corpus, timeouts and response-format errors can all lower end-to-end results; they are not a pure distillation model score."
+  },
+  "verification": {
+    "node": "135/135",
+    "nativeHttpx": "3/3",
+    "recoveryDatabaseRace": "10 scenarios passed",
+    "buildAndVet": "passed",
+    "sqlc": "passed",
+    "orderedPatches": "All four patches applied cleanly to 43b0571f9; resulting source matched d1cb259ee.",
+    "fullGo": {
+      "changedFailedPackages": [
+        "github.com/multica-ai/multica/server/internal/daemon",
+        "github.com/multica-ai/multica/server/internal/daemon/execenv",
+        "github.com/multica-ai/multica/server/internal/daemon/processtree",
+        "github.com/multica-ai/multica/server/internal/daemon/repocache",
+        "github.com/multica-ai/multica/server/internal/handler",
+        "github.com/multica-ai/multica/server/internal/storage"
+      ],
+      "baselineFailedPackages": [
+        "github.com/multica-ai/multica/server/internal/daemon",
+        "github.com/multica-ai/multica/server/internal/daemon/execenv",
+        "github.com/multica-ai/multica/server/internal/daemon/processtree",
+        "github.com/multica-ai/multica/server/internal/daemon/repocache",
+        "github.com/multica-ai/multica/server/internal/handler",
+        "github.com/multica-ai/multica/server/internal/storage"
+      ],
+      "baselineCommit": "cb3dbeeca",
+      "status": "Both full suites failed in the same six packages. Process cleanup, filesystem permissions and database fixture failures remain; full Go success is not claimed."
+    }
+  },
+  "limitations": [
+    "Intermittent native provider 401 remains unresolved.",
+    "The SDK observers record response headers, not stream payloads.",
+    "The repeated benchmark shares one provider connection and workspace; this small sample does not establish population-wide accuracy.",
+    "Human confirmation of a complete final comment is required for production receipt recovery."
+  ],
+  "privateSeedEvidence": {
+    "seedStatus": "failed",
+    "seedError": "Missing Authentication header",
+    "events": [
+      {
+        "type": "accepted",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "archive-run",
+        "extraction": "pending",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "extraction",
+        "extraction": "redriven",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "archive-run",
+        "extraction": "pending",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "extraction",
+        "extraction": "redriven",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "archive-run",
+        "extraction": "pending",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      },
+      {
+        "type": "extraction",
+        "extraction": "done",
+        "scope": "dm:3832de1d-fdaa-42d0-82f7-e0f28c14b392:a3b4b938-0807-48e1-97f7-ef9566c7027f:97a931f5-68c4-4b1f-aa8d-eea569992991"
+      }
+    ],
+    "inputHeadingsArchived": true
+  },
+  "storedContentEvidence": {
+    "note": "Literal content checks only, not successful indexed retrieval or semantic correctness.",
+    "shared": [
+      {
+        "alias": "SilverFir",
+        "hasAlias": true,
+        "hasCurrentAmountString": true,
+        "hasQueueString": true
+      },
+      {
+        "alias": "StormPetrel",
+        "hasAlias": true,
+        "hasCurrentAmountString": true,
+        "hasQueueString": true
+      },
+      {
+        "alias": "WhiteEgret",
+        "hasAlias": true,
+        "hasCurrentAmountString": true,
+        "hasQueueString": true
+      }
+    ],
+    "privatePreferenceFilePresent": false
+  },
+  "readOnlyRetrievalProbe": {
+    "method": "native-find",
+    "durationMs": 15005,
+    "error": "ETIMEDOUT"
+  },
+  "postTestServices": {
+    "api": {
+      "httpStatus": 200,
+      "commit": "d1cb259ee"
+    },
+    "openViking": {
+      "httpStatus": 200
+    },
+    "web": {
+      "httpStatus": 200
+    },
+    "plugin": {
+      "httpStatus": 200
+    },
+    "ovmem-real-benchmark-latest": {
+      "activeTasks": 0,
+      "pendingExtractions": 0
+    },
+    "ovmem-real-delivery-latest": {
+      "activeTasks": 0,
+      "pendingExtractions": 0
+    }
+  },
+  "deliveryExtractionCleanup": {
+    "pending": 0,
+    "noFurtherTestRedrives": true,
+    "terminalFailures": [
+      {
+        "ref": "01a0f69a-db0a-7283-a3f2-36f9f1ada878",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}",
+        "diagnostic": {
+          "source": "extraction-task",
+          "category": "authentication",
+          "provider_status": 401
+        }
+      },
+      {
+        "ref": "01a0f69b-06f4-73e6-9151-920cf9a24d16",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}",
+        "diagnostic": {
+          "source": "extraction-task",
+          "category": "authentication",
+          "provider_status": 401
+        }
+      }
+    ]
+  },
+  "privateArtifacts": {
+    "benchmark": "/tmp/ovmem-real-agent-gOes1X",
+    "delivery": "/tmp/ovmem-real-agent-NRxM9Q",
+    "credentialFilesExported": false
+  }
+}
