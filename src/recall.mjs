@@ -43,11 +43,30 @@ export function recallPriority(scopeKeyStr) {
   return SCOPE_PRIORITY[String(scopeKeyStr).split(':')[0]] ?? 9;
 }
 
+// Words that carry no business intent around an identifier, in English and Chinese.
+const GENERIC_EN_RE = /\b(?:task|issue|id|context|related|memories|memory|and|or|for|of|the|a|an|about|on|in|to|with|this|that|any|all|prior|previous|decisions?|notes?|info(?:rmation)?|details?|background|history)\b/gi;
+const GENERIC_ZH_RE = /任务|相关|记忆|上下文|背景|历史|之前|以前|先前|决策|决定|约定|信息|资料|内容|有关|关于|的|和|或|及|与/g;
+
 /** A UUID plus generic search boilerplate contains no business search intent. */
 export function isOpaqueMemoryQuery(query) {
   const text = String(query ?? '');
   const withoutIds = text.replace(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi, '').replace(/\b[A-Z]{2,12}-\d+\b/g, '');
-  return withoutIds !== text && !withoutIds.replace(/\b(?:task|issue|id|context|related|memories|memory|and|prior|previous|decisions)\b/gi, '').replace(/[\s:,_\-.]+/g, '');
+  return withoutIds !== text && !withoutIds.replace(GENERIC_EN_RE, '').replace(GENERIC_ZH_RE, '').replace(/[\s:,_\-.、，。：；;!?？！()（）]+/g, '');
+}
+
+// An identifier as a whole token: MUL-8 is not MUL-80, and UUIDs match in any case.
+const identifierRe = (id, flags) => new RegExp(`(?<![A-Za-z0-9_-])${String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_])`, flags);
+
+/** Whether the query names any of these identifiers (issue UUID or key, task UUID). */
+export function mentionsIdentifier(query, ids) {
+  return ids.some((id) => id && identifierRe(id, 'i').test(String(query ?? '')));
+}
+
+/** The query with these identifiers removed; what is left is the caller's own wording. */
+export function withoutIdentifiers(query, ids) {
+  let text = String(query ?? '');
+  for (const id of ids) if (id) text = text.replace(identifierRe(id, 'gi'), ' ');
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 export function issueMemoryQuery(issue) {

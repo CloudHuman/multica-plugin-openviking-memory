@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery } from '../src/recall.mjs';
+import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery, mentionsIdentifier, withoutIdentifiers } from '../src/recall.mjs';
 import { OvClient } from '../src/ov-client.mjs';
 import { ScopeRegistry, scopeKey } from '../src/scopes.mjs';
 import { startFakeOv, tempStateDir, FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A } from './helpers.mjs';
@@ -23,6 +23,21 @@ test('only identifier-only queries are eligible for business-context recovery', 
   assert.equal(isOpaqueMemoryQuery('MUL-123'), true);
   assert.equal(isOpaqueMemoryQuery(`${id} 原先的负责人是谁`), false);
   assert.equal(isOpaqueMemoryQuery('苍鹭项目的预算与双写周期'), false);
+  // English stopwords and Chinese generic words around an identifier carry no intent either.
+  assert.equal(isOpaqueMemoryQuery(`issue ${id} context or related decisions for this task`), true);
+  assert.equal(isOpaqueMemoryQuery(`任务 ${id} 相关记忆`), true);
+  assert.equal(isOpaqueMemoryQuery('MUL-123 相关约定和决策'), true);
+  assert.equal(isOpaqueMemoryQuery('MUL-123 预算'), false);
+});
+
+test('run identifiers are recognised as whole tokens and can be removed from a query', () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  assert.equal(mentionsIdentifier(`issue ${id.toUpperCase()} context`, [id]), true);
+  assert.equal(mentionsIdentifier('MUL-8 的预算', ['MUL-8']), true);
+  assert.equal(mentionsIdentifier('MUL-80 的预算', ['MUL-8']), false);
+  assert.equal(mentionsIdentifier('XMUL-8 的预算', ['MUL-8']), false);
+  assert.equal(mentionsIdentifier('海棠迁移预算', [id, 'MUL-8', null, undefined]), false);
+  assert.equal(withoutIdentifiers(`issue ${id} context for MUL-8 海棠`, [id, 'MUL-8']), 'issue context for 海棠');
 });
 
 test('recall merges scopes, drops stubs, ranks and caps, and reads each hit from its first line', async () => {

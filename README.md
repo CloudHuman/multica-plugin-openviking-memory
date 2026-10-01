@@ -201,7 +201,9 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 
 - **历史运行时记录（本轮未复验）**：OpenCode 全工具；kimi 需直连条目解锁（机制待查）；pi 无 MCP（上游 #8961）；并发投递、跨运行时交接（oc→kimi / oc→pi）、小队分派-汇总。本轮真实智能体验证使用 OpenCode，其他运行时与客户端的验收不能从这些历史记录推定。
 - **蒸馏质量**：归档保留业务原话及出处；抽取规则区分持久偏好、业务事实与临时执行指令。召回会过滤已知执行控制，并合并完全相同内容的副本，返回 `content_filtered` 和 `duplicate_sources` 标记；仍保留不同数值、日期和条件的证据。真实模型的分类与实体维护不是确定性保证，未解决的冲突需按出处核实。
-- **业务查询兜底**：绑定 issue 的运行若只用 UUID / issue 编号加通用词查询，使用该绑定 issue 的业务目标补全查询，并返回 `query_rewritten_from` 及说明；明确业务查询保持原样，不扩大任何读取范围。超时与错误表示检索未完成，空结果不能证明没有记忆。
+- **业务查询兜底**：分两种情况，都返回 `query_rewritten_from` 及说明；不含本运行标识的业务查询保持原样，也不扩大任何读取范围。
+  - 绑定 issue 的运行若只用 UUID / issue 编号加中英文通用词查询，改用该 issue 的业务目标查询。
+  - 查询用本运行自己的 issue UUID、编号或任务 UUID 指代本任务（例如 `issue <uuid> context or related decisions for <工作区名>`）时，去掉这些标识，在原措辞前补入该 issue 的业务目标。超时与错误表示检索未完成，空结果不能证明没有记忆。
 
 OpenViking 的抽取模板单独部署。使用运行 OpenViking 的同一 Python 环境执行 `python3 scripts/install-memory-policy.py --output /app/.openviking/multica-memory-templates`，然后在 OV 配置中设置 `memory.custom_templates_dir` 为该目录并重启 OV。脚本从已安装版本的原生模板生成覆盖文件，保留字段、路径与合并格式；不修改原生文件，也不删除已有记忆。规则见 `deploy/memory-policy.json`，推荐配置已包含此路径。容器部署时将脚本和规则文件带入 OV 容器，或挂载生成后的目录；只部署插件 ZIP 不会自动改变 OV 的抽取规则。运行 `python3 scripts/test-memory-policy.py` 可核验原生结构保留。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。

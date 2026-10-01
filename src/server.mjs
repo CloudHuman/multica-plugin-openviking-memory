@@ -31,7 +31,7 @@ import { loadConfig, validateStartupConfig, mergeCallConfig, archiveSettings } f
 import { OvClient, isAlreadyExists } from './ov-client.mjs';
 import { MulticaClient, isNotFound } from './multica-client.mjs';
 import { ScopeRegistry, resolveReadScopes, resolveArchiveScope, scopeKey, runScopes } from './scopes.mjs';
-import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery, issueMemoryQuery } from './recall.mjs';
+import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery, issueMemoryQuery, mentionsIdentifier, withoutIdentifiers } from './recall.mjs';
 import { buildJobMessages } from './pipeline.mjs';
 import { createArchiveProcessing } from './processing.mjs';
 import { Ledger, ArchiveStatusLog } from './ledger.mjs';
@@ -367,14 +367,26 @@ export function makeMemoryRecallHandler(deps) {
     const run = await resolveRun({ mc, body, ws, agentId });
     const notes = [];
     let effectiveQuery = query;
-    if (run.bound && run.kind === 'issue' && run.issueId && isOpaqueMemoryQuery(query)) {
-      try {
-        const contextual = issueMemoryQuery(await mc.getIssue(run.issueId));
-        if (contextual) {
-          effectiveQuery = contextual;
-          notes.push('原 query 只有任务标识和通用查询词，已使用当前绑定 issue 的业务目标查询；召回范围保持不变。');
-        }
-      } catch { /* keep the original query if the callback can't read its issue */ }
+    if (run.bound && run.kind === 'issue' && run.issueId) {
+      const opaque = isOpaqueMemoryQuery(query);
+      const runIds = [run.issueId, body.task_id];
+      // Read the issue only when the query may refer to this run by an identifier.
+      if (opaque || mentionsIdentifier(query, runIds) || /\b[A-Z]{2,12}-\d+\b/i.test(query)) {
+        try {
+          const issue = await mc.getIssue(run.issueId);
+          const ownIds = [...runIds, issue?.identifier];
+          const contextual = issueMemoryQuery(issue);
+          if (contextual && opaque) {
+            effectiveQuery = contextual;
+            notes.push('原 query 只有任务标识和通用查询词，已使用当前绑定 issue 的业务目标查询；召回范围保持不变。');
+          } else if (contextual && mentionsIdentifier(query, ownIds)) {
+            // The run's own identifier means "this task" but has no semantic content to search by.
+            const rest = withoutIdentifiers(query, ownIds);
+            effectiveQuery = rest ? `${contextual}\n${rest}` : contextual;
+            notes.push('原 query 用当前运行的 issue 或任务标识指代本任务，标识本身不含业务含义；已在查询前补入该 issue 的业务目标，召回范围保持不变。');
+          }
+        } catch { /* keep the original query if the callback can't read its issue */ }
+      }
     }
     let scopeKeys = run.readScopes;
     if (input.issue_id) {

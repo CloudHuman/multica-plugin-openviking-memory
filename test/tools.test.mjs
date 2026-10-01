@@ -97,6 +97,31 @@ test('bound identifier-only recall uses its own issue goal and never another req
   });
 });
 
+test('a query that names its own run is completed with that issue goal; other wording is kept', async () => {
+  const taskId = '11111111-2222-4333-8444-555555555555';
+  await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId, issueId: FIXTURE_ISSUE2_ID }) } }, async ({ svc, cb }) => {
+    const recall = async (query) => (await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query }, cb, { task_id: taskId }))).json.result;
+    // The shape a real agent sent: its issue UUID, stopwords and a workspace slug, no business words.
+    const slug = `issue ${FIXTURE_ISSUE2_ID} context or related decisions for ovmem-real-agent-x`;
+    const bySlug = await recall(slug);
+    assert.equal(bySlug.query_rewritten_from, slug);
+    assert.ok(bySlug.query.startsWith('另一个任务'), bySlug.query);
+    assert.ok(bySlug.query.endsWith('issue context or related decisions for ovmem-real-agent-x'), bySlug.query);
+    assert.ok(!bySlug.query.includes(FIXTURE_ISSUE2_ID));
+    assert.ok(bySlug.notes.some((n) => /补入该 issue 的业务目标/.test(n)), JSON.stringify(bySlug.notes));
+    // Its issue key or task UUID with business words: the words stay, the identifier is replaced.
+    const byKey = await recall('MUL-8 迁移预算');
+    assert.ok(byKey.query.startsWith('另一个任务') && byKey.query.endsWith('迁移预算'), byKey.query);
+    const byTask = await recall(`${taskId} 的预算约定`);
+    assert.ok(byTask.query.startsWith('另一个任务') && byTask.query.endsWith('的预算约定'), byTask.query);
+    // Another issue's key is not this run: the query is left alone.
+    const other = await recall('MUL-7 迁移预算');
+    assert.equal(other.query, 'MUL-7 迁移预算');
+    assert.equal(other.query_rewritten_from, undefined);
+    assert.ok(other.scopesSearched.every((s) => s.scope !== scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID)));
+  });
+});
+
 test('tool failures come back as a readable 200 payload, not a bare 500', async () => {
   await withStack({}, async ({ svc, cb }) => {
     const empty = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '' }, cb));
