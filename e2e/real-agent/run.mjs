@@ -13,19 +13,39 @@ const cli = process.env.MC_CLI ?? 'multica';
 const env = process.env;
 const pluginUrl = env.PLUGIN_URL ?? 'https://127.0.0.1:8790';
 const model = env.AGENT_MODEL ?? 'openrouter/z-ai/glm-5.3-flash';
+const suite = env.REAL_AGENT_SUITE ?? 'basic';
+if (!['basic', 'matrix'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
 execFileSync(cli, ['--version'], { stdio: 'pipe' });
 const runtimeVersion = execFileSync('opencode', ['--version'], { encoding: 'utf8' }).trim();
-const run = Date.now().toString(36);
-const state = mkdtempSync(join(tmpdir(), 'ovmem-real-agent-'));
+const resumeState = env.REAL_AGENT_RESUME_STATE;
+const previous = resumeState ? JSON.parse(readFileSync(join(resumeState, 'report.json'), 'utf8')) : null;
+const finishMatrix = env.REAL_AGENT_MATRIX_PHASE === 'finish';
+const recoverShared = env.REAL_AGENT_MATRIX_PHASE === 'shared';
+if (env.REAL_AGENT_MATRIX_PHASE && !finishMatrix && !recoverShared) throw new Error('Unknown matrix phase');
+const stoppedAtVersionGate = previous && [previous.error, ...(previous.attempts ?? []).map(a => a.error)].some(error => error?.includes('daemon_version_unsupported'));
+if ((finishMatrix || recoverShared) && (!previous || suite !== 'matrix' || previous.suite !== 'matrix')) throw new Error('Recovery phase requires an existing isolated matrix');
+if (previous && !finishMatrix && !recoverShared && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
+  throw new Error('Resume requires a matrix stopped at the quick-create version gate');
+}
+const run = previous ? previous.platformCanary.replace(/^PLATFORM_ONLY_/, '') : Date.now().toString(36);
+const state = resumeState ?? mkdtempSync(join(tmpdir(), 'ovmem-real-agent-'));
 const pluginState = join(state, 'plugin');
 const cliRoot = join(homedir(), '.multica');
 const profile = `real-agent-${run}`;
-mkdirSync(pluginState); mkdirSync(join(cliRoot, 'profiles', profile), { recursive: true });
-const results = [];
-const report = { startedAt: new Date().toISOString(), state, results, runtime: 'real OpenCode CLI via official Multica daemon' };
+mkdirSync(pluginState, { recursive: true }); mkdirSync(join(cliRoot, 'profiles', profile), { recursive: true });
+const results = previous?.results ?? [];
+const report = previous ?? { startedAt: new Date().toISOString(), state, suite, model, results, runtime: 'real OpenCode CLI via official Multica daemon' };
+if (previous) {
+  report.attempts ??= [];
+  report.attempts.push({ finishedAt: report.finishedAt, error: report.error, resumedAt: new Date().toISOString() });
+  delete report.error; delete report.finishedAt;
+  if (report.model !== model) throw new Error('Resume must retain the original agent model');
+}
+report.profile = profile;
+report.multicaCliVersion = execFileSync(cli, ['--version'], { encoding: 'utf8' }).trim();
 function save() { writeFileSync(join(state, 'report.json'), JSON.stringify(report, null, 2)); }
 function step(id, ok, detail) { results.push({ id, ok: !!ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'} ${id}: ${detail}`); save(); }
 function toolResultData(message) {
@@ -43,22 +63,35 @@ const mc = new Multica({ base: env.MC_BASE ?? 'http://127.0.0.1:18080', devCode:
 const ov = new OvClient({ baseUrl: env.OV_BASE ?? 'http://127.0.0.1:1936' });
 let daemon, plugin;
 try {
-  const user = await mc.login(`ovmem-real-agent-${run}@example.com`);
-  const ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: 'RAM' });
-  const pat = await mc.must('PAT', mc.call('/api/tokens', { method: 'POST', token: user.token, body: { name: `real-agent-${run}`, expires_in_days: 1 } }));
-  const zipped = execFileSync('bash', ['scripts/package.sh', '--url', pluginUrl, '--with-chats-read'], { cwd: repo, encoding: 'utf8' }).match(/packaged: (\S+\.zip)/)[1];
-  const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));
-  const inst = await mc.installPlugin(user.token, ws, pkg.versions[0].id);
-  report.workspaceId = ws; report.installationId = inst.installationId;
-  privateFile(join(state, 'access.json'), { token: user.token, workspaceId: ws });
-  privateFile(join(cliRoot, 'profiles', profile, 'config.json'), { server_url: mc.base, token: pat.token, workspace_id: ws, workspaces_root: join(state, 'workspaces') });
-  privateFile(join(pluginState, 'config.json'), { extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000 });
-  plugin = spawn(process.execPath, ['src/server.mjs'], { cwd: repo, env: { ...process.env, OVMEM_PORT: String(new URL(pluginUrl).port || 443), OVMEM_BIND: '127.0.0.1', OVMEM_STATE_DIR: pluginState, OVMEM_OV_BASE_URL: ov.baseUrl, OVMEM_OV_ROOT_KEY: env.OV_ROOT_KEY, OVMEM_SIGNING_SECRETS: JSON.stringify({ [inst.installationId]: { secret: inst.signingSecret, workspace_id: ws } }), OVMEM_MULTICA_API_URL: `${mc.base}/v1`, OVMEM_PLUGIN_TOKEN: randomUUID(), OVMEM_TLS_CERT: env.OVMEM_TLS_CERT, OVMEM_TLS_KEY: env.OVMEM_TLS_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let user, ws, inst;
+  if (previous) {
+    const access = JSON.parse(readFileSync(join(state, 'access.json'), 'utf8'));
+    const dmUserIds = [...new Set(Object.keys(JSON.parse(readFileSync(join(pluginState, 'scopes.json'), 'utf8')).scopes).filter(s => s.startsWith(`dm:${report.workspaceId}:`)).map(s => s.split(':')[3]))];
+    if (dmUserIds.length !== 1) throw new Error('Cannot recover the isolated test member');
+    user = { token: access.token, userId: access.userId ?? dmUserIds[0] }; ws = access.workspaceId;
+    if (ws !== report.workspaceId) throw new Error('Resume workspace mismatch');
+    const rotated = await mc.must('rotate owned test installation token', mc.call(`/api/workspaces/${ws}/plugins/${report.installationId}/token`, { method: 'POST', token: user.token, ws }));
+    inst = { installationId: report.installationId, signingSecret: rotated.signing_secret };
+  } else {
+    user = await mc.login(`ovmem-real-agent-${run}@example.com`);
+    ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: 'RAM' });
+    const pat = await mc.must('PAT', mc.call('/api/tokens', { method: 'POST', token: user.token, body: { name: `real-agent-${run}`, expires_in_days: 1 } }));
+    const zipped = execFileSync('bash', ['scripts/package.sh', '--url', pluginUrl, '--with-chats-read'], { cwd: repo, encoding: 'utf8' }).match(/packaged: (\S+\.zip)/)[1];
+    const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));
+    inst = await mc.installPlugin(user.token, ws, pkg.versions[0].id);
+    report.workspaceId = ws; report.installationId = inst.installationId;
+    privateFile(join(state, 'access.json'), { token: user.token, userId: user.userId, workspaceId: ws });
+    privateFile(join(cliRoot, 'profiles', profile, 'config.json'), { server_url: mc.base, token: pat.token, workspace_id: ws, workspaces_root: join(state, 'workspaces') });
+    privateFile(join(pluginState, 'config.json'), { extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000 });
+  }
+  const pluginToken = previous ? JSON.parse(readFileSync(join(state, 'plugin-access.json'), 'utf8')).pluginToken : randomUUID();
+  privateFile(join(state, 'plugin-access.json'), { pluginToken, pluginUrl });
+  plugin = spawn(process.execPath, ['src/server.mjs'], { cwd: repo, env: { ...process.env, OVMEM_PORT: String(new URL(pluginUrl).port || 443), OVMEM_BIND: '127.0.0.1', OVMEM_STATE_DIR: pluginState, OVMEM_OV_BASE_URL: ov.baseUrl, OVMEM_OV_ROOT_KEY: env.OV_ROOT_KEY, OVMEM_SIGNING_SECRETS: JSON.stringify({ [inst.installationId]: { secret: inst.signingSecret, workspace_id: ws } }), OVMEM_MULTICA_API_URL: `${mc.base}/v1`, OVMEM_PLUGIN_TOKEN: pluginToken, OVMEM_TLS_CERT: env.OVMEM_TLS_CERT, OVMEM_TLS_KEY: env.OVMEM_TLS_KEY }, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [plugin.stdout, plugin.stderr]) stream.on('data', data => { const log = join(state, 'plugin.log'); writeFileSync(log, data, { flag: 'a' }); });
   await wait('plugin', async () => { try { return (await fetch(`${pluginUrl}/healthz`)).ok; } catch { return false; } }, 30000);
   privateFile(join(state, 'opencode.json'), { $schema: 'https://opencode.ai/config.json', provider: { openrouter: { options: { apiKey: '{env:OPENROUTER_API_KEY}' } } }, model });
   const daemonEnv = { ...process.env, OPENCODE_CONFIG: join(state, 'opencode.json'), MULTICA_SERVER_URL: mc.base, MULTICA_KEEP_ENV_AFTER_TASK: '1' };
-  daemon = spawn(cli, ['--profile', profile, 'daemon', 'start', '--foreground', '--no-auto-update', '--no-auto-reload', '--poll-interval', '2s', '--ws-claim-poll-interval', '5s', '--heartbeat-interval', '5s', '--max-concurrent-tasks', '1', '--agent-timeout', '5m', '--workspaces-root', join(state, 'workspaces'), '--device-name', `ovmem-real-agent-${run}`], { cwd: state, env: daemonEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+  daemon = spawn(cli, ['--profile', profile, 'daemon', 'start', '--foreground', '--no-auto-update', '--no-auto-reload', '--poll-interval', '2s', '--ws-claim-poll-interval', '5s', '--heartbeat-interval', '5s', '--max-concurrent-tasks', suite === 'matrix' ? '2' : '1', '--agent-timeout', suite === 'matrix' ? '8m' : '5m', '--workspaces-root', join(state, 'workspaces'), '--device-name', `ovmem-real-agent-${run}`], { cwd: state, env: daemonEnv, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const stream of [daemon.stdout, daemon.stderr]) stream.on('data', data => writeFileSync(join(state, 'daemon-stderr.log'), data, { flag: 'a' }));
   daemon.on('exit', code => console.log(`Official daemon exited: ${code}`));
   const runtime = await wait('actual OpenCode registration', async () => {
@@ -73,7 +106,10 @@ try {
   const memorySkill = (Array.isArray(installedSkills) ? installedSkills : installedSkills.skills ?? []).find(skill => skill.name === 'openviking-memory');
   if (!memorySkill) throw new Error('Installed memory skill is unavailable');
   report.skillId = memorySkill.id;
-  const agent = await mc.must('create actual agent', mc.call('/api/agents', { method: 'POST', token: user.token, ws, body: { name: `Real memory auditor ${run}`, description: 'Authorized isolated real-agent memory test', instructions: `使用中文完成任务。遵循安装的 openviking-memory skill。不要创建子智能体。不得打印环境变量、凭据、配置密钥。只读取任务目录的 AGENTS.md、平台挂载到任务目录的该 skill 及任务需要的记忆。不要全盘搜索技能文件。内部运行标记 ${canary} 只用于平台测试，不是业务事实，不要在回复或主动记忆里记录。`, skill_ids: [memorySkill.id], runtime_id: runtime.id, model, custom_env: { OPENCODE_CONFIG: join(state, 'opencode.json') }, visibility: 'workspace', max_concurrent_tasks: 1 } }));
+  const agentTemplate = { description: 'Authorized isolated real-agent memory test', instructions: `使用中文完成任务。遵循安装的 openviking-memory skill。不要创建新智能体。只有任务明确要求时，才可向该测试工作区已有智能体发送一次委派评论。不得打印环境变量、凭据、配置密钥。只读取任务目录的 AGENTS.md、平台挂载到任务目录的该 skill 及任务需要的记忆。不要全盘搜索技能文件。内部运行标记 ${canary} 只用于平台测试，不是业务事实，不要在回复或主动记忆里记录。`, skill_ids: [memorySkill.id], runtime_id: runtime.id, model, custom_env: { OPENCODE_CONFIG: join(state, 'opencode.json') }, visibility: 'workspace', max_concurrent_tasks: 1 };
+  const agent = previous
+    ? await mc.must('bind resumed actual agent', mc.call(`/api/agents/${report.agentId}`, { method: 'PUT', token: user.token, ws, body: { runtime_id: runtime.id } }))
+    : await mc.must('create actual agent', mc.call('/api/agents', { method: 'POST', token: user.token, ws, body: { ...agentTemplate, name: `Real memory auditor ${run}` } }));
   report.agentId = agent.id; report.platformCanary = canary; save();
   const memberCall = path => mc.must(path, mc.call(path, { token: user.token, ws }));
   async function execute(title, description) {
@@ -96,6 +132,16 @@ try {
     if (task.status !== 'completed') throw new Error(`Real task ${issue.identifier} ended ${task.status}: ${String(task.error ?? task.output ?? '').slice(0, 600)}`);
     return { issue, task, messages, record };
   }
+  if (suite === 'matrix') {
+    const ctx = { mc, ov, user, ws, agent, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, run, report, step, save, wait, privateFile, toolResultData, resume: !!previous, finish: finishMatrix };
+    if (recoverShared) {
+      const { recoverSharedMatrix } = await import('./recover-shared.mjs');
+      await recoverSharedMatrix(ctx);
+    } else {
+      const { runMatrix } = await import('./matrix.mjs');
+      await runMatrix(ctx);
+    }
+  } else {
   const first = await execute('海棠迁移方案确认', '这是隔离联调任务。海棠迁移项目已确认：使用 RocketMQ；每月预算 3800 元；双写持续两周；死信队列超过 10000 条时告警。请先调用 memory-recall 查询既有约定。必须使用 read 工具实际读取当前任务工作目录的 AGENTS.md（这是本任务验收项），确认平台操作方式，但不要复述平台说明。把上述已确认方案通过 memory-remember 记录为一条可复用的业务记忆，kind 选 cases。最后以简短中文确认四项约定，并按平台流程提交最终任务回复。不要把平台说明或内部运行标记写入业务记忆。无需修改代码。');
   step('actual-tools', first.record.tools.some(t => /memory.*recall/.test(t)) && first.record.tools.some(t => /memory.*remember/.test(t)), `Actual tool calls: ${first.record.tools.join(', ')}`);
   const memoryResults = first.messages.filter(m => m.type === 'tool_result' && /memory.*(recall|remember)/.test(m.tool ?? ''));
@@ -135,7 +181,7 @@ try {
       for (const entry of await ov.listDir(rec.apiKey, uri).catch(() => [])) {
         const child = entry.uri ?? `${uri.replace(/\/$/, '')}/${entry.name}`;
         if (entry.isDir || entry.is_dir || entry.type === 'directory') await walk(child, depth + 1);
-        else if (child.endsWith('.md') && !/\.(overview|abstract)\.md$/.test(child)) files.push(child);
+        else if (child.endsWith('.md') && !/\.(overview|abstract)\.md$/.test(child) && !/\/memories\/(identity|soul)\.md$/.test(child)) files.push(child);
       }
     }
     await walk(`viking://user/${rec.userId}/memories`);
@@ -155,7 +201,9 @@ try {
   report.transcriptContainsCanary = serialized.includes(canary);
   step('runtime-read-exercised', report.transcriptContainsRuntimeBanner && report.transcriptContainsCanary, 'Actual agent read injected runtime instructions before archive filtering');
   step('distilled-prompt-hygiene', audit.some(a => a.memoryFiles.length > 0) && audit.every(a => !a.extractedContainsRuntimeBanner && !a.extractedContainsCanary && !a.extractedContainsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.memoryFiles.length, 0)} extracted files`);
-  if (results.some(result => !result.ok)) process.exitCode = 1;
+  }
+  report.currentResults = [...new Map(results.map(result => [result.id, result])).values()];
+  if (report.currentResults.some(result => !result.ok)) process.exitCode = 1;
 } catch (error) {
   report.error = error.message; console.error(error.message); process.exitCode = 1;
 } finally {

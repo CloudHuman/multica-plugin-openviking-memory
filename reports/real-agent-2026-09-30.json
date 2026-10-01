@@ -331,5 +331,11 @@
       "error": "Plugin-only claims omit daemon credentials; every real memory tool returned HTTP 401."
     }
   ],
-  "state": "/tmp/ovmem-real-agent-WRD9tY"
+  "state": "/tmp/ovmem-real-agent-WRD9tY",
+  "fileCountClarification": {
+    "totalInspected": 12,
+    "businessMemoryFiles": 4,
+    "nativeBootstrapFiles": 8,
+    "note": "Native identity.md and soul.md are scaffold files, not extracted business memories. Original file inventory is preserved."
+  }
 }
