@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
  * Real-stack end-to-end run: a REAL multica server (patched or stock), a REAL
- * OpenViking, and this plugin, wired the way a deployment wires them. Nothing
- * on the multica side is simulated: runs are driven through the daemon API an
- * agent runtime uses, agent tool calls go daemon → multica → signed hook, and
- * events are delivered by multica's own dispatcher (retries, breaker and all).
+ * OpenViking, and this plugin. Scenario transcripts and tool requests are
+ * fixtures driven through the daemon API; this runner does not launch an agent
+ * CLI. Multica delivers signed hooks and events using its real dispatcher.
  *
  * The runner creates two workspaces, installs the plugin package in each,
  * starts the plugin service with the rotated signing secrets, then plays the

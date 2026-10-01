@@ -59,6 +59,43 @@ test('runtime brief block is stripped from text parts', () => {
   assert.equal(stripRuntimeBrief('普通文本'), '普通文本');
 });
 
+test('runtime instructions read by tools never enter distillation, while member input stays intact', () => {
+  const brief = '# Multica Agent Runtime\nPLATFORM_ONLY_CANARY\nUse the multica CLI.';
+  const human = `Review this literal heading: ${brief}`;
+  const { messages } = buildRunMessages({
+    taskId: 'tool-runtime', agentId: 'a', issue: fixtureIssue(),
+    task: { input: [{ author_type: 'member', author_id: 'u', content: human }] },
+    transcript: [
+      { seq: 1, type: 'tool_use', tool: 'bash', call_id: 'c', input: { command: `cat <<'EOF'\n${brief}`, nested: [{ text: brief }] } },
+      { seq: 2, type: 'tool_result', tool: 'read', call_id: 'r', output: `<content>\n1: ${brief}\n</content>` },
+      { seq: 3, type: 'tool_result', tool: 'bash', call_id: 'c', output: { business: 'Budget: 3800', instructions: [brief] } },
+      { seq: 4, type: 'error', content: `Business failure\n${brief}` },
+      { seq: 5, type: 'thinking', content: `Business reasoning\n${brief}` },
+    ], cfg: { ...cfg, includeThinking: true },
+  });
+  const businessInput = messages.find(m => m.content?.includes(human));
+  assert.ok(businessInput, 'human business input must remain verbatim');
+  const evidence = messages.filter(m => m !== businessInput);
+  const raw = JSON.stringify(evidence);
+  assert.doesNotMatch(raw, /PLATFORM_ONLY_CANARY|# Multica Agent Runtime|Use the multica CLI/);
+  assert.match(raw, /Budget: 3800/);
+  assert.match(raw, /Business failure/);
+  assert.match(raw, /Business reasoning/);
+});
+
+test('agent comments and chat replies filter runtime instructions without changing member messages', () => {
+  const brief = '# Multica Agent Runtime\nPLATFORM_ONLY_CANARY';
+  const agentComment = buildCommentMessages({ comment: { id: 'c', author_type: 'agent', content: `Budget: 3800\n${brief}` }, issue: fixtureIssue() });
+  assert.match(JSON.stringify(agentComment.messages), /Budget: 3800/);
+  assert.doesNotMatch(JSON.stringify(agentComment.messages), /PLATFORM_ONLY_CANARY/);
+  const runtimeOnly = buildCommentMessages({ comment: { id: 'c2', author_type: 'agent', content: brief }, issue: fixtureIssue() });
+  assert.equal(runtimeOnly.messages.length, 0);
+  const chat = buildChatMessages({ chatRef: 'chat', userId: 'u', messages: [{ role: 'user', content: brief }, { role: 'assistant', content: `Confirmed\n${brief}` }, { role: 'assistant', content: brief }] });
+  assert.equal(chat.messages.length, 2);
+  assert.equal(chat.messages[0].content, brief);
+  assert.equal(chat.messages[1].content, 'Confirmed');
+});
+
 test('include_thinking opt-in keeps thinking as distillation nourishment', () => {
   const t = fixtureTranscript({ taskId: 't2' });
   const { messages } = buildRunMessages({

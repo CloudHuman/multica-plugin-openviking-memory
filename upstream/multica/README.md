@@ -2,7 +2,9 @@
 
 `0001-feat-plugins-task-read-API-and-run-context-for-agent.patch` 是给 multica 服务端的补丁（基线 `e31da86`，multica main @ 2026-09-30）。它补上插件系统 v1 的一处缺口：插件能收到 `task.completed`，却读不到**这次运行里发生了什么**；智能体调用插件工具时，插件也不知道**是哪一次运行在调用**。
 
-本插件在 stock multica 上照常工作（见下方降级矩阵），打上补丁后才能归档运行转写、按运行绑定召回、归档私聊。
+下方 stock 降级矩阵描述没有 `0001` 任务读取接口时的能力；真实 daemon 的 HTTP 插件工具仍需 `0002` 凭据修复。应用 `0001` 后才能归档运行转写、按运行绑定召回、归档私聊。
+
+`0002-fix-plugins-daemon-credential-for-hook-only-tasks.patch` 修复真实 daemon 的插件工具鉴权：原实现仅在运行包含远程 MCP 连接时签发 daemon 凭据，只有 HTTP 插件工具的运行会遗漏凭据，工具调用因此返回 401。补丁在存在任一种工具时签发原有的工作区与 daemon 范围凭据；签名密钥仍只在服务端。真实智能体联调复现了该问题，新增回归覆盖凭据签发、范围、期限、缺少 daemon 身份时拒绝和无工具时不签发。
 
 ## 补丁内容
 
@@ -20,13 +22,15 @@
 
 ```bash
 cd <multica 仓库>
-git checkout e31da86            # 或任何能干净应用的更新版本
+git checkout 43b0571            # 本轮真实智能体验证的服务端基线
 git am <本仓库>/upstream/multica/0001-*.patch
+git am <本仓库>/upstream/multica/0002-*.patch
 cd server && go build ./... && go vet ./internal/handler/ ./internal/service/
 
 # 补丁自带测试（需要已迁移的测试库）
 DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'PluginTask|PluginChatRun|AgentHook' -count=1
 DATABASE_URL=postgres://…/multica_test go test ./internal/service/ -run TestTaskIDFromPayloadOnlyReadsTheRunItReportsOn -count=1
+DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'TestRemoteMCPDaemonTokenForClaim|TestPluginHookOnlyClaimHasDaemonCredential' -count=1
 ```
 
 2026-09-30 在 `e31da86` 上验证：干净应用，`go build` / `go vet` 通过，10 个补丁测试全部通过；再用真实 multica（补丁版与 stock 版各一轮）跑 `e2e/real-stack/`，均 12/12（见 `reports/e2e-2026-09-30.md`）。

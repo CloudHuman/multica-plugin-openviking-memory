@@ -1,6 +1,6 @@
 # 真实栈端到端（真实 multica + 真实 OpenViking）
 
-`run.mjs` 把插件放进一套真实部署里跑：真实 multica 服务端（补丁版或 stock 版）、真实 OpenViking、本插件。multica 侧没有任何模拟——运行由智能体运行时所用的 daemon API 驱动，智能体工具调用走 daemon → multica → 签名钩子，事件由 multica 自己的派发器投递（重试、熔断都是真的）。
+`run.mjs` 验证真实 multica 服务端（补丁版或 stock 版）、真实 OpenViking 和本插件之间的协议。运行转写与工具请求使用场景样例，通过 daemon API 提交；multica 的签名、事件投递、重试、熔断和 OpenViking 的抽取、检索均实际执行。该脚本不启动智能体 CLI；真实智能体执行见 [`../real-agent/`](../real-agent/README.md)。
 
 脚本会：创建两个工作区 → 在两边安装插件包并轮换密钥 → 用轮换得到的签名密钥启动插件服务 → 逐个场景执行，输出 PASS/FAIL。
 

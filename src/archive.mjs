@@ -30,6 +30,16 @@ export function stripRuntimeBrief(text, marker = RUNTIME_BRIEF_MARK) {
   return text.slice(0, idx).trimEnd();
 }
 
+/** Preserve nested payload shape while removing recognized runtime briefs. */
+function stripRuntimeBriefValue(value) {
+  if (typeof value === 'string') return stripRuntimeBrief(value);
+  if (Array.isArray(value)) return value.map(stripRuntimeBriefValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stripRuntimeBriefValue(item)]));
+  }
+  return value;
+}
+
 /** Flatten a tool input (string / array / object) into comparable command text. */
 export function toolInputToText(input) {
   if (input == null) return '';
@@ -150,15 +160,18 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
   let evidence = 0;
   for (const m of ordered) {
     switch (m.type) {
-      case 'thinking':
+      case 'thinking': {
         if (!cfg.includeThinking) continue;
+        const clean = stripRuntimeBrief(m.content);
+        if (!clean || !clean.trim()) break;
         messages.push({
           role: 'assistant',
           message_kind: 'assistant_step',
           turn_id: turn,
-          content: `[thinking] ${cap(m.content, cfg.textPartMaxChars)}`,
+          content: `[thinking] ${cap(clean, cfg.textPartMaxChars)}`,
         });
         break;
+      }
       case 'text': {
         const clean = stripRuntimeBrief(m.content);
         if (!clean || !clean.trim()) break;
@@ -172,7 +185,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
         break;
       }
       case 'error': {
-        const text = String(m.content ?? m.output ?? '').trim();
+        const text = stripRuntimeBrief(String(m.content ?? m.output ?? '')).trim();
         if (!text) break;
         messages.push({
           role: 'assistant',
@@ -193,7 +206,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
             type: 'tool',
             tool_id: m.call_id ?? `call-${m.seq}`,
             tool_name: m.tool ?? 'unknown',
-            tool_input: toolInputObject(m.input),
+            tool_input: toolInputObject(stripRuntimeBriefValue(m.input)),
             tool_status: 'completed',
           }],
         });
@@ -202,6 +215,8 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
       }
       case 'tool_result': {
         if (droppedCalls.has(m.call_id) || drop(m.tool, m.output)) { dropped++; continue; }
+        const clean = stripRuntimeBriefValue(m.output);
+        const output = clean && typeof clean === 'object' ? JSON.stringify(clean) : clean;
         messages.push({
           role: 'user',
           message_kind: 'tool_transport',
@@ -210,7 +225,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
             type: 'tool',
             tool_id: m.call_id ?? `call-${m.seq}`,
             tool_name: m.tool ?? 'unknown',
-            tool_output: cap(m.output, cfg.toolOutputMaxChars),
+            tool_output: cap(output, cfg.toolOutputMaxChars),
             tool_status: 'completed',
           }],
         });
@@ -236,10 +251,12 @@ export function buildCommentMessages({ comment, issue }) {
   const identifier = issue?.identifier ?? issue?.id ?? '';
   const where = `${identifier} ${issue?.title ?? ''}`.trim();
   const turn = `comment-${sanitizeSessionId(comment.id ?? 'x')}`;
-  const body = cap(String(comment.content ?? ''), 8000);
+  const rawBody = String(comment.content ?? '');
+  const body = cap(authorType === 'agent' ? stripRuntimeBrief(rawBody) : rawBody, 8000);
   const when = comment?.created_at ?? '';
   const sessionId = `mc-comment-${sanitizeSessionId(comment.id ?? shortHash(JSON.stringify(comment)))}`;
   if (authorType === 'agent') {
+    if (!body.trim()) return { sessionId, messages: [] };
     return {
       sessionId,
       messages: [
@@ -272,13 +289,16 @@ export function buildCommentMessages({ comment, issue }) {
 /** Companion: one direct-chat turn → pair-space messages (one session per turn). */
 export function buildChatMessages({ chatRef, turnKey, agentId, userId, messages = [] }) {
   const sid = `mc-chat-${sanitizeSessionId(chatRef)}${turnKey ? `-${sanitizeSessionId(turnKey)}` : ''}`;
-  const mapped = messages.map((m, i) => {
+  const mapped = messages.flatMap((m, i) => {
     const isAgent = m.role === 'assistant';
+    const clean = isAgent ? stripRuntimeBriefValue(m.content) : m.content;
+    const text = typeof clean === 'string' ? clean : JSON.stringify(clean);
+    if (isAgent && !String(text ?? '').trim()) return [];
     const out = {
       role: isAgent ? 'assistant' : 'user',
       message_kind: isAgent ? 'assistant_step' : 'user_query',
       turn_id: `${sid}-${m.turn ?? i}`,
-      content: cap(typeof m.content === 'string' ? m.content : JSON.stringify(m.content), 4000),
+      content: cap(text, 4000),
     };
     if (!isAgent && userId) out.peer_id = String(userId);
     return out;

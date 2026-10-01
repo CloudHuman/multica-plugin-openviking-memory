@@ -108,7 +108,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ### 3. （推荐）给 multica 打任务读取 API 补丁
 
-运行转写、私聊/自动化/快速创建/委派归档、召回绑定运行都依赖它：`git am upstream/multica/0001-*.patch` 后重新构建 multica 服务端。说明与 stock 降级对照见 [`upstream/multica/README.md`](upstream/multica/README.md)。
+运行转写、私聊/自动化/快速创建/委派归档、召回绑定运行都依赖任务读取补丁。另一个凭据补丁修复只有插件工具、没有远程 MCP 连接时，真实 daemon 调用插件工具返回 401 的问题。按顺序应用 `upstream/multica/0001-*.patch`、`0002-*.patch`，然后重新构建 multica 服务端。说明与 stock 降级对照见 [`upstream/multica/README.md`](upstream/multica/README.md)。
 
 ### 4. 打包并安装
 
@@ -118,6 +118,8 @@ bash scripts/package.sh --url https://hooks.example.com --with-chats-read  # 打
 ```
 
 在 multica 工作区：Settings → Plugins → 上传 zip → 授权 scopes（`issues:read` / `comments:read` / `tasks:read` / `net:<钩子域名>`，补丁版另有 `chats:read`）→ 安装。不带 `--url` 时钩子指向 `https://host.docker.internal:8790`，只适合配了 `MULTICA_PLUGIN_DEV_ORIGINS` 的本地联调。
+
+安装后，在需要使用记忆的智能体设置中绑定 `openviking-memory` skill。插件工具会进入运行环境，但工作区中的 skill 仍需绑定到智能体，才能随任务正式挂载；API 创建智能体时传入该 skill 的 `skill_ids`。
 
 ### 5. 轮换签名密钥并回填
 
