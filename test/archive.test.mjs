@@ -219,6 +219,22 @@ test('chat / append / delegation builders', () => {
   assert.match(del.messages[0].content, /委派交接/);
 });
 
+test('delegation inputs filter agent runtime briefs while member input stays verbatim', () => {
+  const brief = '# Multica Agent Runtime\nPLATFORM_ONLY_HANDOFF';
+  const content = `业务重试上限为七次。\n${brief}`;
+  const run = buildRunMessages({ taskId: 'delegation-brief', agentId: 'b', kind: 'issue', cfg,
+    task: { input: [
+      { source: 'comment', author_type: 'agent', author_id: 'a', content },
+      { source: 'comment', author_type: 'member', author_id: 'u', content },
+    ] }, transcript: [] });
+  assert.match(run.messages[1].content, /业务重试上限为七次/);
+  assert.ok(!run.messages[1].content.includes('PLATFORM_ONLY_HANDOFF'));
+  assert.ok(run.messages[2].content.includes(content));
+  const handoff = buildDelegationMessages({ handoffId: 'handoff-brief', fromAgentId: 'a', toAgentId: 'b', content });
+  assert.match(handoff.messages[0].content, /业务重试上限为七次/);
+  assert.ok(!handoff.messages[0].content.includes('PLATFORM_ONLY_HANDOFF'));
+});
+
 test('remember file builds frontmattered memory in agent-public namespace', () => {
   const f = buildRememberFile({ title: 'RocketMQ 选型结论', content: '顺序性场景选 RocketMQ,预算内。', kind: 'cases', agentId: FIXTURE_AGENT_A });
   assert.match(f.uri, /^memories\/cases\/\d{4}-\d{2}-\d{2}\/[\w\u4e00-\u9fff-]+-[0-9a-f]{6}\.md$/);

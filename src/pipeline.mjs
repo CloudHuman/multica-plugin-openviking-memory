@@ -41,6 +41,8 @@ export function buildJobMessages(job, cfg) {
       return buildAppendMessages({ appendId: p.refId, taskId: p.scope.taskId, content: p.content, delivered: p.delivered });
     case 'archive-delegation':
       return buildDelegationMessages({ handoffId: p.refId, fromAgentId: p.scope.fromAgentId, toAgentId: p.scope.toAgentId, content: p.content });
+    case 'consolidate':
+      return { sessionId: p.sessionId, messages: p.messages };
     default: {
       const e = new Error(`unknown archive job type: ${job.type}`);
       e.retryable = false;

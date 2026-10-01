@@ -84,7 +84,8 @@ const HEADER = {
 function inputMessages(inputs, turn, cfg, { chatWith } = {}) {
   const out = [];
   for (const item of inputs ?? []) {
-    const text = String(item?.content ?? '').trim();
+    const raw = String(item?.content ?? '').trim();
+    const text = item?.author_type === 'agent' ? stripRuntimeBrief(raw) : raw;
     if (!text) continue;
     let who = item.author_type === 'agent' ? `智能体 ${item.author_id}` : item.author_type === 'member' ? `成员 ${item.author_id}` : (item.author_type || '未知来源');
     if (chatWith && item.source === 'chat_message') who += `（与智能体 ${chatWith} 的私聊）`;
@@ -331,7 +332,7 @@ export function buildDelegationMessages({ handoffId, fromAgentId, toAgentId, con
         message_kind: 'user_query',
         turn_id: `deleg-${sanitizeSessionId(handoffId)}`,
         peer_id: String(fromAgentId),
-        content: `[委派交接] ${fromAgentId} → ${toAgentId}\n\n${cap(content, 8000)}`,
+        content: `[委派交接] ${fromAgentId} → ${toAgentId}\n\n${cap(stripRuntimeBrief(content), 8000)}`,
       },
     ],
   };

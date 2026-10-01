@@ -1,15 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { consolidateShared } from '../src/consolidate.mjs';
-import { OvClient } from '../src/ov-client.mjs';
-import { ScopeRegistry, scopeKey } from '../src/scopes.mjs';
-import { startFakeOv, tempStateDir, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B } from './helpers.mjs';
+import { scopeKey } from '../src/scopes.mjs';
+import { startFakeOv, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B } from './helpers.mjs';
+import { bootService, waitFor } from './harness.mjs';
+
+test('shared promotion is durable and recovers a failed extraction after restart', async () => {
+  const ovF = await startFakeOv({ taskBehavior: 'fail-first' });
+  let svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    await svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/cases/共享方案.md`, content: '项目采用 NATS JetStream，每月成本不超过 2450 元；这是需要共享的业务约定。' });
+    const response = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(response.status, 200, response.text);
+    const result = response.json.result;
+    assert.equal(result.status, 'queued');
+    assert.ok(result.job_id, 'durable job exists before promotion is acknowledged');
+    const stateDir = svc.stateDir;
+    await svc.stop();
+    svc = await bootService({ ov: ovF, stateDir });
+    await waitFor(() => svc.statusLog.recent({ limit: 100 }).some(e => e.record === 'consolidate' && e.extraction === 'done'), { label: 'shared extraction recovered' });
+    const events = svc.statusLog.recent({ limit: 100 }).filter(e => e.record === 'consolidate');
+    assert.ok(events.some(e => e.extraction === 'redriven'));
+    const shared = svc.registry.get(scopeKey('shared', FIXTURE_WS));
+    assert.ok(ovF.sessionsOf(shared.apiKey).has(`${result.session_id}-r1`));
+    const hits = await svc.ovClient.search(shared.apiKey, { query: 'NATS', limit: 5 });
+    assert.ok(hits.memories.length > 0, 'the recovered promotion is searchable');
+    const repeated = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(repeated.json.result.promoted.length, 0, 'the durable promotion remains idempotent');
+  } finally { await svc.stop(); await ovF.stop(); }
+});
 
 test('consolidate promotes reusable kinds into shared with provenance, idempotently', async () => {
   const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
   try {
-    const ov = new OvClient({ baseUrl: ovF.baseUrl });
-    const registry = new ScopeRegistry({ ov, rootKey: 'root', stateDir: tempStateDir(), log: () => {} });
+    const { ovClient: ov, registry, queue, stateDir } = svc;
     const agentRec = await registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
 
     const U = (p) => `viking://user/${agentRec.userId}/${p}`;
@@ -17,33 +44,125 @@ test('consolidate promotes reusable kinds into shared with provenance, idempoten
     await ov.writeContent(agentRec.apiKey, { uri: U('memories/preferences/注释规范.md'), content: '代码注释一律使用中文,对外 API 命名保持驼峰,错误码统一放在响应头。' });
     await ov.writeContent(agentRec.apiKey, { uri: U('memories/events/噪音事件.md'), content: '一次运行完成的事件记录,不应晋升。' });
 
-    const stateDir = tempStateDir();
-    const r1 = await consolidateShared({ ov, registry, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
+    const r1 = await consolidateShared({ ov, registry, queue, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
     assert.equal(r1.promoted.length, 2, 'experiences+preferences promoted, events skipped');
     assert.ok(r1.promoted.every((p) => p.from.startsWith('agent:')));
     assert.ok(r1.session_id.startsWith('mc-consolidate-'));
 
     // The promotion session landed in the SHARED space (native extraction path).
     const sharedRec = registry.get(scopeKey('shared', FIXTURE_WS));
+    await waitFor(() => ovF.archivedOf(sharedRec.apiKey, r1.session_id).length === 2);
     const sharedSessions = ovF.sessionsOf(sharedRec.apiKey);
     assert.ok(sharedSessions.has(r1.session_id));
     const archived = ovF.archivedOf(sharedRec.apiKey, r1.session_id);
     assert.equal(archived.length, 2, 'committed: both promotions reached the archive');
     assert.match(archived[0].content, /共享记忆晋升 #1/);
     assert.match(archived[0].content, /五维框架/);
-    assert.ok(r1.extraction_task, 'the commit started an extraction task');
+    assert.ok(r1.job_id, 'the promotion is durably queued');
 
     // Idempotent: rerun promotes nothing new.
-    const r2 = await consolidateShared({ ov, registry, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
+    const r2 = await consolidateShared({ ov, registry, queue, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
     assert.equal(r2.promoted.length, 0);
     assert.equal(ovF.sessionsOf(sharedRec.apiKey).size, 1);
 
     // A memory with the same file name in another space is a different memory.
     const agentB = await registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B), { workspaceId: FIXTURE_WS });
     await ov.writeContent(agentB.apiKey, { uri: `viking://user/${agentB.userId}/memories/experiences/选型框架.md`, content: '另一个智能体的同名经验:压测先行,指标先定义清楚再比较候选方案。' });
-    const r3 = await consolidateShared({ ov, registry, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
+    const r3 = await consolidateShared({ ov, registry, queue, workspaceId: FIXTURE_WS, stateDir, log: () => {} });
     assert.deepEqual(r3.promoted.map((p) => p.from), [scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B)]);
   } finally {
+    await svc.stop();
     await ovF.stop();
   }
+});
+
+test('failed queue admission leaves promotion available for retry', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    await svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/cases/队列恢复.md`, content: '发布回归窗口必须保留七天，回滚演练最长三小时，测试确认后才可晋升共享。' });
+    const enqueue = svc.queue.enqueue.bind(svc.queue);
+    svc.queue.enqueue = () => { throw new Error('disk admission failed'); };
+    const rejected = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(rejected.status, 500);
+    assert.equal(existsSync(`${svc.stateDir}/consolidated.json`), false);
+    svc.queue.enqueue = enqueue;
+    const retried = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(retried.json.result.promoted.length, 1);
+    assert.ok(retried.json.result.job_id);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('a per-scope promotion limit does not skip other agents', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    for (const id of [FIXTURE_AGENT_A, FIXTURE_AGENT_B]) {
+      const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, id), { workspaceId: FIXTURE_WS });
+      for (const name of ['第一条', '第二条']) await svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/cases/${name}.md`, content: `${name}业务结论：发布窗口必须保留七天，回滚演练最长三小时，使用独立指标复核。` });
+    }
+    const result = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, per_scope_limit: 1 });
+    assert.equal(result.json.result.promoted.length, 2);
+    assert.equal(new Set(result.json.result.promoted.map(p => p.from)).size, 2);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('a failed receipt write cannot duplicate accepted memories when new files arrive', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    const write = name => svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/cases/${name}.md`, content: `${name}业务约定：发布回归窗口保留七天，回滚演练最长三小时。` });
+    await write('原有记忆');
+    mkdirSync(`${svc.stateDir}/consolidated.json`);
+    const failed = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(failed.status, 500);
+    assert.equal([...svc.queue.jobs.values()].filter(j => j.type === 'consolidate').length, 1);
+    rmdirSync(`${svc.stateDir}/consolidated.json`);
+    await write('新到记忆');
+    const retried = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(retried.json.result.promoted.length, 1);
+    assert.equal(retried.json.result.promoted[0].file, '新到记忆.md');
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('legacy failed shared sessions can be replayed, with failure and scope validation', async () => {
+  const ovF = await startFakeOv({ taskBehavior: 'fail-first' });
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('shared', FIXTURE_WS), { workspaceId: FIXTURE_WS });
+    const sid = 'mc-consolidate-legacy-failed';
+    const messages = [{ role: 'user', content: '青岚项目采用 NATS JetStream，每月成本上限为 2450 元。' }];
+    await svc.ovClient.createSession(rec.apiKey, { sessionId: sid });
+    await svc.ovClient.addMessages(rec.apiKey, sid, messages);
+    const committed = await svc.ovClient.commitSession(rec.apiKey, sid);
+    await svc.ovClient.getTask(rec.apiKey, committed.task_id);
+    assert.equal((await svc.ovClient.getTask(rec.apiKey, committed.task_id)).status, 'failed');
+    ovF.filesOf(rec.apiKey).set(`${committed.archive_uri}/messages.jsonl`, messages.map(m => JSON.stringify({ role: m.role, parts: [{ type: 'text', text: m.content }] })).join('\n'));
+    const bad = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, replay_session_id: '../../private' });
+    assert.equal(bad.status, 400);
+    const replay = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, replay_session_id: sid });
+    assert.equal(replay.status, 200, replay.text);
+    await waitFor(() => svc.statusLog.recent({ limit: 100 }).some(e => e.ref === sid && e.extraction === 'done'));
+    assert.equal(ovF.archivedOf(rec.apiKey, `${sid}-r1`)[0].content, messages[0].content);
+    const successful = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, replay_session_id: `${sid}-r1` });
+    assert.equal(successful.status, 409);
+    const missing = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, replay_session_id: 'mc-consolidate-other-workspace' });
+    assert.equal(missing.status, 409);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('concurrent promotion requests with different limits cannot duplicate source files', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    for (const name of ['并发一', '并发二']) await svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/cases/${name}.md`, content: `${name}业务约定：发布回归窗口保留七天，回滚演练最长三小时，须按审批计划复核。` });
+    const results = await Promise.all([1, 2].map(limit => svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS, per_scope_limit: limit })));
+    assert.ok(results.every(r => r.status === 200));
+    const promoted = results.flatMap(r => r.json.result.promoted);
+    assert.equal(promoted.length, 2);
+    assert.equal(new Set(promoted.map(p => `${p.from}|${p.file}`)).size, 2);
+  } finally { await svc.stop(); await ovF.stop(); }
 });

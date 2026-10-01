@@ -237,6 +237,46 @@ test('patched multica: chat, autopilot, quick-create and delegated runs land in 
   });
 });
 
+test('agent mention delegation archives its triggering comment in the handoff channel', async () => {
+  const id = 'run-mentioned';
+  const tasks = { [id]: fixtureTask({ taskId: id, agentId: FIXTURE_AGENT_B, delegated_from_agent_id: FIXTURE_AGENT_A,
+    input: [{ source: 'comment', author_type: 'agent', author_id: FIXTURE_AGENT_A, content: '[@复核](mention://agent/b) 雨燕项目重试上限为 7 次，请复核。' }] }) };
+  await withStack({ taskApi: true, tasks, transcript: [{ task_id: id, seq: 1, type: 'text', content: '复核完成' }] }, async ({ ov, svc, cb }) => {
+    const result = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: id, agentId: FIXTURE_AGENT_B })));
+    assert.equal(result.json.result.status, 'queued');
+    await waitFor(() => svc.queue.stats().done === 2, { label: 'run and delegation archives settled' });
+    const channel = svc.registry.get(scopeKey('delegation', FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B));
+    assert.ok(channel, 'a modern agent-authored trigger is a handoff, without a legacy handoff_note');
+    await waitFor(() => ov.archivedOf(channel.apiKey, `mc-deleg-${id}`).length, { label: 'modern handoff archive' });
+    assert.match(JSON.stringify(ov.archivedOf(channel.apiKey, `mc-deleg-${id}`)), /重试上限为 7 次/);
+  });
+});
+
+test('delegation does not treat member or unrelated agent comments as sender handoffs', async () => {
+  for (const author of [{ type: 'member', id: FIXTURE_USER }, { type: 'agent', id: FIXTURE_AGENT_B }]) {
+    const id = 'non-sender-trigger';
+    const tasks = { [id]: fixtureTask({ taskId: id, agentId: FIXTURE_AGENT_B, delegated_from_agent_id: FIXTURE_AGENT_A,
+      input: [{ source: 'comment', author_type: author.type, author_id: author.id, content: 'This is not a handoff from the linked sender.' }] }) };
+    await withStack({ taskApi: true, tasks, transcript: [{ task_id: id, seq: 1, type: 'text', content: 'done' }] }, async ({ svc, cb }) => {
+      await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: id, agentId: FIXTURE_AGENT_B })));
+      await waitFor(() => svc.queue.stats().done === 1, { label: 'archive settled' });
+      assert.equal(svc.registry.get(scopeKey('delegation', FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B)), null);
+    });
+  }
+});
+
+test('a failed memory search is reported as incomplete, never as evidence of no memory', async () => {
+  await withStack({}, async ({ svc, cb }) => {
+    await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    svc.ovClient.search = async () => { throw Object.assign(new Error('Upstream model authentication failed'), { status: 401 }); };
+    const response = await svc.signedPost('/hooks/memory-recall', hookBody({ hookKey: 'memory-recall', trigger: 'agent', callbackUrl: cb, input: { query: 'previous business agreement' } }));
+    assert.equal(response.json.status, 'ok');
+    assert.deepEqual(response.json.result.entries, []);
+    assert.ok(response.json.result.scopesSearched.some(s => s.error));
+    assert.ok(response.json.result.notes.some(note => /空结果不能证明没有记忆/.test(note)));
+  });
+});
+
 test('commit tags built from client-supplied ids are always valid OV tags', async () => {
   await withStack({}, async ({ ov, svc, cb }) => {
     const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',

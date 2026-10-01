@@ -26,7 +26,9 @@
 
 ## Multica 覆盖面
 
-功能规格 v0.5.0 的**七类使用场景全部接入**。评论在 multica 插件系统 v1 的公开事件内开箱即用；运行类场景（issue 任务、私聊、快速创建、自动化、委派）由 `task.completed` / `task.failed` 驱动，插件通过 multica 的**任务读取 API** 得知运行类型、触发输入和转写，再归档进对应空间——stock multica 没有这组 API，补丁见 [`upstream/multica/`](upstream/multica/README.md)；运行中追加要求等仍可经插件的版本化配套接口（`/internal/events` / `/internal/recall`）推送。`memory-*` 与 `ov-*` 工具随安装**自动注入工作区全部智能体**。
+功能规格 v0.5.0 的**七类记忆范围已实现**。评论在 multica 插件系统 v1 的公开事件内开箱即用；运行类场景（issue 任务、私聊、快速创建、自动化、委派）由 `task.completed` / `task.failed` 驱动，插件通过 multica 的**任务读取 API** 得知运行类型、触发输入和转写，再归档进对应空间——stock multica 没有这组 API，补丁见 [`upstream/multica/`](upstream/multica/README.md)；运行中追加要求等仍可经插件的版本化配套接口（`/internal/events` / `/internal/recall`）推送。`memory-*` 与 `ov-*` 工具随安装**自动注入工作区全部智能体**。
+
+范围实现不代表每个入口、客户端和运行时都已通过真实智能体验收。实际测试范围与限制见 [`e2e/real-agent/`](e2e/real-agent/README.md)。运行中追加要求仍需对接配套接口，并依赖运行时支持；当前 OpenCode 适配器不支持向进行中的运行追加输入。
 
 ![Multica 覆盖面](docs/diagrams/coverage.svg)
 
@@ -185,11 +187,13 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 
 **共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间（保留来源范围，按"范围 + URI"幂等）。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
 
+晋升先返回 `status: queued`、`job_id` 与 `session_id`，表示持久化受理，抽取结果通过同一归档状态接口查看。队列和抽取监视在重启后恢复，失败时在新会话重驱；超过重驱预算后可用 `/admin/redrive {job_id}` 再试。旧版本未经监视的失败晋升可通过 `/admin/consolidate {workspace_id, replay_session_id}` 从原归档恢复，须提供 `mc-consolidate-*` 会话且有失败记录；只读取该工作区的共享空间，成功或尚未完成的会话不能重放。
+
 **数据与安全**：`state/` 内含各空间 API key（0600）与安装绑定（`installations.json`）——按密钥备份与管控；状态目录由心跳租约保护，第二个实例（包括共享主机名的孪生容器）会拒绝启动，接管的一方继续写、被接管的一方退出。`/healthz` 只返回服务名、版本和 OV 健康。OV 实例备份参考 `pg_dump + 对象存储镜像 + conf`（自包含脚本模式）。
 
 ## 与功能规格的对照与已知边界
 
-- **运行时矩阵（实测）**：OpenCode 全工具 ✓；kimi 需直连条目解锁（机制待查）；pi 无 MCP（上游 #8961）；并发投递 ✓；跨运行时交接 ✓（oc→kimi / oc→pi）；小队分派-汇总 ✓。
+- **历史运行时记录（本轮未复验）**：OpenCode 全工具；kimi 需直连条目解锁（机制待查）；pi 无 MCP（上游 #8961）；并发投递、跨运行时交接（oc→kimi / oc→pi）、小队分派-汇总。本轮真实智能体验证使用 OpenCode，其他运行时与客户端的验收不能从这些历史记录推定。
 - **蒸馏质量**：抽取器正确区分"谁登记的知识 / 谁执行 / 谁主张"（盲测实证）；commit 元数据带 `agent=` 归属标签；冲突记忆并存靠出处追溯，不自动裁决。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。

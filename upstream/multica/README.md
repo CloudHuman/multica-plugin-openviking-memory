@@ -6,6 +6,8 @@
 
 `0002-fix-plugins-daemon-credential-for-hook-only-tasks.patch` 修复真实 daemon 的插件工具鉴权：原实现仅在运行包含远程 MCP 连接时签发 daemon 凭据，只有 HTTP 插件工具的运行会遗漏凭据，工具调用因此返回 401。补丁在存在任一种工具时签发原有的工作区与 daemon 范围凭据；签名密钥仍只在服务端。真实智能体联调复现了该问题，新增回归覆盖凭据签发、范围、期限、缺少 daemon 身份时拒绝和无工具时不签发。
 
+`0003-fix-plugins-quick-create-kind-after-issue-linking.patch` 修复快速创建的类型变化：真实 CLI 创建 issue 后会把它关联到原运行，先前任务读取 API 此时优先返回 `kind=issue`，导致归档离开开始召回时使用的 run 空间，并遗漏成员的快速创建提示。现在关联前后均保留 `kind=quick_create` 与原始提示；普通 issue、私聊和创建 issue 的自动化仍遵循原有归属。新增真实 PostgreSQL 回归先复现失败，修复后通过。
+
 ## 补丁内容
 
 | 变更 | 说明 |
@@ -25,12 +27,14 @@ cd <multica 仓库>
 git checkout 43b0571            # 本轮真实智能体验证的服务端基线
 git am <本仓库>/upstream/multica/0001-*.patch
 git am <本仓库>/upstream/multica/0002-*.patch
+git am <本仓库>/upstream/multica/0003-*.patch
 cd server && go build ./... && go vet ./internal/handler/ ./internal/service/
 
 # 补丁自带测试（需要已迁移的测试库）
 DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'PluginTask|PluginChatRun|AgentHook' -count=1
 DATABASE_URL=postgres://…/multica_test go test ./internal/service/ -run TestTaskIDFromPayloadOnlyReadsTheRunItReportsOn -count=1
 DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run 'TestRemoteMCPDaemonTokenForClaim|TestPluginHookOnlyClaimHasDaemonCredential' -count=1
+DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run TestPluginTaskQuickCreateKeepsOriginAfterCreatingIssue -count=1
 ```
 
 2026-09-30 在 `e31da86` 上验证：干净应用，`go build` / `go vet` 通过，10 个补丁测试全部通过；再用真实 multica（补丁版与 stock 版各一轮）跑 `e2e/real-stack/`，均 12/12（见 `reports/e2e-2026-09-30.md`）。

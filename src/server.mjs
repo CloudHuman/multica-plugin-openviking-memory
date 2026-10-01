@@ -210,7 +210,11 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
   const enq = queue.enqueue('archive-run', payload, { dedupeKey: `archive-run:${ws}:${taskId}` });
   // multica retries a delivery under a new invocation id: same record, same job.
   // A delegated run also records its handoff in the channel between the two agents.
-  const handoff = task?.input?.find((i) => i.source === 'handoff' && i.content);
+  // Current Multica delegates through agent-authored mention comments. Accept
+  // only the linked sender's trigger, alongside the legacy handoff-note input.
+  const handoff = task?.input?.find((i) => i.source === 'handoff' && i.content)
+    ?? task?.input?.find((i) => i.source === 'comment' && i.content
+      && i.author_type === 'agent' && i.author_id === task.delegated_from_agent_id);
   if (scopes.delegationScope && handoff) {
     queue.enqueue('archive-delegation', {
       workspaceId: ws, installationId: ctx.installationId, refId: taskId, content: handoff.content,
@@ -383,6 +387,8 @@ export function makeMemoryRecallHandler(deps) {
     });
     const late = result.scopesSearched.filter((s) => s.timedOut).length;
     if (late) notes.push(`${late} 个记忆空间没有在时限内返回(OpenViking 检索慢),结果可能不完整;需要时可以稍后再查`);
+    const failed = result.scopesSearched.filter((s) => s.error && !s.timedOut).length;
+    if (failed) notes.push(`${failed} 个记忆空间检索失败，本次结果不完整；空结果不能证明没有记忆，请如实说明检索未完成，稍后可重试。`);
     return {
       note: '参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。',
       run: { kind: run.kind, bound: run.bound },
@@ -643,14 +649,22 @@ export function makeAdminRedriveHandler({ queue }) {
   };
 }
 
-export function makeAdminConsolidateHandler({ ov, registry, cfg, log }) {
+export function makeAdminConsolidateHandler({ ov, registry, queue, cfg, log }) {
+  const pending = new Map();
   return async function adminConsolidate(body) {
     if (!body.workspace_id) throw httpError(400, 'invalid_request', 'workspace_id is required');
-    return consolidateShared({
-      ov, registry, workspaceId: body.workspace_id, stateDir: cfg.stateDir,
+    // Selection and its durable receipt form one operation per workspace.
+    // Concurrent requests with different limits must not select the same files.
+    const workspaceId = body.workspace_id;
+    const work = (pending.get(workspaceId) ?? Promise.resolve()).catch(() => {}).then(() => consolidateShared({
+      ov, registry, queue, workspaceId: body.workspace_id, stateDir: cfg.stateDir,
       perScopeLimit: Math.min(20, Math.max(1, Number(body.per_scope_limit) || 8)),
+      replaySessionId: body.replay_session_id,
       log,
-    });
+    }));
+    pending.set(workspaceId, work);
+    try { return await work; }
+    finally { if (pending.get(workspaceId) === work) pending.delete(workspaceId); }
   };
 }
 
