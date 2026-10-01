@@ -21,6 +21,10 @@
 
 矩阵不模拟智能体转写或代替智能体调用工具。本地 webhook 只调用隔离工作区的测试 URL，定时规则在触发一次后暂停并删除；不向外部渠道发送通知。矩阵验证服务端入口，不代表 Web、桌面、移动端交互及外部聊天渠道都已逐一验收。
 
+`REAL_AGENT_SUITE=quality` 是聚焦蒸馏质量的真实双智能体验证：A 自动归档业务事实及持久代码风格偏好，成员评论把预算从 7600 更新为 8100，同一实体更新后重新晋升，B 在新 issue 中通过共享记忆恢复新预算及其他约定；私聊新会话召回真实周报格式。此套件不主动写入记忆，避免把直接写入当成自动蒸馏的质量证据。先按仓库 README 部署 `deploy/memory-policy.json` 对应的 OpenViking 模板。
+
+所有套件的记忆审计包含 `memories/` 及 `peers/*/memories/`，排除原生 identity/soul 和目录摘要；读取失败或到达遍历上限会标记不完整。已知执行控制、检索结果误写为实体、平台脚手架另列为 `qualityFindings`；该规则检查不能证明没有其他语义污染。`exactDuplicates` 列出原始文件的完全相同内容，原生所有者与 peer 副本保留出处。
+
 使用已迁移的本地开发 Multica（默认 API `http://127.0.0.1:18080`、开发验证码 `888888`）、真实 OpenViking 0.4.22、已安装且在 PATH 中的 OpenCode 1.17.7。Multica 需依序应用 `upstream/multica/` 的三个补丁。CLI 用官方构建规则生成版本号；浅克隆需先取得 release tags，不能以固定的旧版本号构建，否则快速创建会被版本门禁拒绝。模型默认 `openrouter/z-ai/glm-5.3-flash`，通过现有 `OPENROUTER_API_KEY` 环境变量使用；配置文件仅保存环境变量引用。
 
 ```bash
@@ -50,3 +54,5 @@ MULTICA_RUN_REAL_AGENT_SMOKE=1 REAL_AGENT_SUITE=matrix node e2e/real-agent/run.m
 若原矩阵已经完成前三种自动化的调度，收尾诊断可同时设置 `REAL_AGENT_MATRIX_PHASE=finish`：复测快速创建，按平台保存的 webhook run ID 与自动化创建的 issue ID 核对真实任务，再执行并发、共享晋升和归档审计。原失败记录保留在 `results`；`currentResults` 对每个检查取最新结果，明确表示修复后的状态。
 
 若矩阵在旧版共享晋升抽取失败后停止，可用 `REAL_AGENT_MATRIX_PHASE=shared` 重放已失败的原始共享归档，核验队列重驱完成，再让 B 从实际共享记忆召回答案并审计全部样例。保留原模型错误和恢复事件，不重给业务数值。
+
+质量套件在 B 的共享查询遭遇模型错误后，可用 `REAL_AGENT_RESUME_STATE` 指定原状态目录并设置 `REAL_AGENT_QUALITY_PHASE=continue`：沿用原工作区、智能体与记忆，更新该测试工作区的 skill；未观察到有效召回时，在新 issue 中重发原问题，避免 runtime 重跑会话只复述旧答案。已观察到有效召回则保留它，并独立检查最终任务状态，再完成私聊与审计。原失败转写、检查和模型保持不变，查询不重新提供业务答案。`currentResults` 表示按检查 ID 取最新验证，不能把有恢复的执行称为一次全部通过。

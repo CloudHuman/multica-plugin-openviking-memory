@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { auditMemories } from './memory-audit.mjs';
 
 // All task transcripts and tool calls are produced by the official daemon.
 // The harness only sends member input, waits, and inspects persisted evidence.
@@ -298,22 +299,9 @@ export async function auditMatrix({ ov, report, scopes, statuses, canary, step, 
   }
   report.archiveAudit = archiveAudit;
   step('matrix-archive-prompt-hygiene', archiveAudit.length >= taskIds.size && archiveAudit.every(audit => audit.characters > 0 && !audit.containsPlatformCanary && !audit.containsRuntimeBanner), `Inspected ${archiveAudit.length} actual task and delegation archives`);
-  const memoryAudit = [];
-  for (const [scope, rec] of Object.entries(scopes())) {
-    const files = [];
-    async function walk(uri, depth = 0) {
-      if (depth > 8) return;
-      for (const e of await ov.listDir(rec.apiKey, uri)) {
-        const child = e.uri ?? `${uri}/${e.name}`;
-        if (e.isDir) await walk(child, depth + 1);
-        else if (child.endsWith('.md') && !/\.(overview|abstract)\.md$/.test(child) && !/\/memories\/(identity|soul)\.md$/.test(child)) files.push(child);
-      }
-    }
-    await walk(`viking://user/${rec.userId}/memories`);
-    const content = (await Promise.all(files.map(uri => ov.readContent(rec.apiKey, uri).then(r => r.content ?? '')))).join('\n');
-    memoryAudit.push({ scope, files: files.length, uris: files, containsPlatformCanary: content.includes(canary), containsRuntimeBanner: content.includes('# Multica Agent Runtime'), containsPlatformGuidance: /MULTICA_TASK_ID|MULTICA_AGENT_ID|Never background-and-yield|## Background Task Safety/.test(content) });
-  }
+  const memoryAudit = await auditMemories({ ov, scopes: scopes(), canary });
   report.memoryAudit = memoryAudit;
-  step('matrix-prompt-hygiene', memoryAudit.some(audit => audit.files > 0) && memoryAudit.every(audit => !audit.containsPlatformCanary && !audit.containsRuntimeBanner && !audit.containsPlatformGuidance), `Inspected ${memoryAudit.reduce((n, audit) => n + audit.files, 0)} extracted memory files across all matrix scopes`);
+  step('matrix-prompt-hygiene', memoryAudit.some(audit => audit.files > 0) && memoryAudit.every(audit => audit.complete && !audit.containsPlatformCanary && !audit.containsRuntimeBanner && !audit.containsPlatformGuidance), `Inspected ${memoryAudit.reduce((n, audit) => n + audit.files, 0)} extracted memory files including peer namespaces`);
+  step('matrix-memory-quality', memoryAudit.every(audit => audit.complete && !audit.qualityFindings.length), 'Reusable memories checked for known execution controls, search-outcome facts and platform scaffolding (bounded rules, not a semantic zero-contamination proof)');
   save();
 }

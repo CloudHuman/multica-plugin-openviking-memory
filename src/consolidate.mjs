@@ -1,6 +1,8 @@
-import { cap, nowIso, readJsonIfExists, atomicWriteJson, shortHash } from './util.mjs';
+import { nowIso, readJsonIfExists, atomicWriteJson, shortHash } from './util.mjs';
 import { scopeKey } from './scopes.mjs';
 import { join } from 'node:path';
+import { listMemoryFiles } from './memory-inventory.mjs';
+import { memoryFingerprint, promotionQuality } from './memory-quality.mjs';
 
 /**
  * Shared-memory promotion: distil durable knowledge from the workspace's
@@ -24,11 +26,20 @@ export async function consolidateShared({
   const donePath = join(stateDir, 'consolidated.json');
   const done = readJsonIfExists(donePath, { files: {} });
   done.files ??= {};
+  done.fingerprints ??= {};
   // Enqueue is authoritative if writing the separate receipt file failed.
   // Recover its keys before selecting a batch that may now include new files.
   let recovered = false;
   for (const job of queue.jobs.values()) {
     if (job.type !== 'consolidate' || job.payload.workspaceId !== workspaceId) continue;
+    for (const source of job.payload.promotedSources ?? []) {
+      const previous = done.files[source.key];
+      if (previous?.hash !== source.hash && (!previous || String(previous.promoted_at ?? previous) <= job.created_at)) {
+        done.files[source.key] = { hash: source.hash, revision: source.revision ?? 1, promoted_at: job.created_at };
+        done.fingerprints[`${workspaceId}|${source.hash}`] = job.created_at;
+        recovered = true;
+      }
+    }
     for (const key of job.payload.promotedKeys ?? []) if (!done.files[key]) {
       done.files[key] = job.created_at; recovered = true;
     }
@@ -40,6 +51,8 @@ export async function consolidateShared({
   );
 
   const selected = [];
+  const skipped = [];
+  const receipts = [];
   // Promotion copies agent-public and task memories into the space every agent
   // in the workspace reads; the skill tells agents this can happen.
   outer: for (const scopeKeyStr of sourceScopes) {
@@ -47,7 +60,9 @@ export async function consolidateShared({
     if (!rec) continue;
     let files;
     try {
-      files = await walkKinds(ov, rec.apiKey, rec.userId);
+      const inventory = await listMemoryFiles({ ov, key: rec.apiKey, userId: rec.userId, includePeers: false, kinds: PROMOTABLE_KINDS });
+      if (!inventory.complete) throw new Error(`incomplete memory inventory: ${inventory.errors[0]?.reason}`);
+      files = inventory.files;
     } catch (err) {
       log(`consolidate: skip ${scopeKeyStr} (${err.message})`);
       continue;
@@ -62,20 +77,38 @@ export async function consolidateShared({
       // files keyed by basename are still honoured.
       const base = basename(f.uri);
       const doneKey = `${scopeKeyStr}|${f.uri}`;
-      if (done.files[doneKey] || done.files[base] || existingIn(selected, doneKey)) continue;
+      if (existingIn(selected, doneKey)) continue;
       let content;
       try {
         const r = await ov.readContent(rec.apiKey, f.uri, { limit: 400 });
         content = r?.content;
       } catch { continue; }
       if (!content || content.length < contentMinChars) continue;
-      selected.push({ from: scopeKeyStr, file: base, key: doneKey, content });
+      const quality = promotionQuality({ content, uri: f.uri });
+      if (!quality.eligible) { skipped.push({ from: scopeKeyStr, file: base, reasons: quality.reasons }); continue; }
+      const hash = memoryFingerprint(content);
+      const previous = done.files[doneKey] ?? done.files[base];
+      // An old URI-only receipt cannot prove which content was promoted. Admit
+      // its current safe content once, then track the content version normally.
+      if (previous?.hash === hash) continue;
+      const revision = (Number(previous?.revision) || 0) + 1;
+      if ((!previous && done.fingerprints[`${workspaceId}|${hash}`]) || selected.some(s => s.hash === hash)) {
+        receipts.push({ key: doneKey, hash, revision, promoted_at: nowIso() });
+        skipped.push({ from: scopeKeyStr, file: base, reasons: ['duplicate-content'] });
+        continue;
+      }
+      selected.push({ from: scopeKeyStr, file: base, key: doneKey, uri: f.uri, hash, revision, updated: !!previous, content });
       taken++;
     }
   }
 
   if (!selected.length) {
-    return { shared_scope: sharedScope, sources: sourceScopes.length, promoted: [], note: 'nothing new to promote' };
+    for (const receipt of receipts) {
+      done.files[receipt.key] = { hash: receipt.hash, revision: receipt.revision, promoted_at: receipt.promoted_at };
+      done.fingerprints[`${workspaceId}|${receipt.hash}`] = receipt.promoted_at;
+    }
+    if (receipts.length) atomicWriteJson(donePath, done);
+    return { shared_scope: sharedScope, sources: sourceScopes.length, promoted: [], skipped, note: 'nothing new to promote' };
   }
 
   // One session, one message per promoted memory — extraction distils them
@@ -88,24 +121,31 @@ export async function consolidateShared({
     role: 'user',
     message_kind: 'user_query',
     turn_id: `promote-${i}`,
-    content: `【共享记忆晋升 #${i + 1}】来源范围: ${s.from}\n原文件: ${s.file}\n内容:\n${cap(s.content, 3500)}`,
+    content: `【共享记忆晋升 #${i + 1}】来源范围: ${s.from}\n原文件: ${s.file}\n来源 URI: ${s.uri}\n${s.updated ? '来源版本：已有来源文件更新后的当前内容；历史版本保留在原范围。\n' : ''}内容:\n${s.content}`,
   }));
-  const job = enqueuePromotion({ queue, workspaceId, sharedScope, sessionId, messages, promotedKeys: selected.map(s => s.key) });
-  for (const s of selected) done.files[s.key] = nowIso();
+  // Duplicate receipts join the same durable job: a failed receipt write or
+  // process crash cannot cause those copies to be promoted in the next batch.
+  const promotedSources = [...selected, ...receipts].map(({ key, hash, revision }) => ({ key, hash, revision }));
+  const job = enqueuePromotion({ queue, workspaceId, sharedScope, sessionId, messages, promotedKeys: promotedSources.map(s => s.key), promotedSources });
+  for (const source of promotedSources) {
+    done.files[source.key] = { hash: source.hash, revision: source.revision, promoted_at: job.created_at };
+    done.fingerprints[`${workspaceId}|${source.hash}`] = job.created_at;
+  }
   atomicWriteJson(donePath, done);
   log(`consolidate: ${selected.length} memories durably queued for shared-space extraction (${sessionId})`);
   return {
     shared_scope: sharedScope,
     sources: sourceScopes.length,
     promoted: selected.map(({ file, from }) => ({ file, from })),
+    skipped,
     session_id: sessionId,
     status: 'queued', job_id: job.id, extraction_task: null,
   };
 }
 
-function enqueuePromotion({ queue, workspaceId, sharedScope, sessionId, messages, promotedKeys = [] }) {
+function enqueuePromotion({ queue, workspaceId, sharedScope, sessionId, messages, promotedKeys = [], promotedSources = [] }) {
   return queue.enqueue('consolidate', {
-    workspaceId, scopeKey: sharedScope, refId: sessionId, sessionId, messages, promotedKeys,
+    workspaceId, scopeKey: sharedScope, refId: sessionId, sessionId, messages, promotedKeys, promotedSources,
   }, { dedupeKey: `consolidate:${workspaceId}:${sessionId}` });
 }
 
@@ -133,33 +173,6 @@ async function replayFailedPromotion({ ov, shared, queue, workspaceId, sharedSco
   if (!messages.length) reject(400, 'invalid_archive', 'Consolidation archive has no messages');
   const job = enqueuePromotion({ queue, workspaceId, sharedScope, sessionId, messages });
   return { shared_scope: sharedScope, sources: 0, promoted: [], session_id: sessionId, replay_of: sessionId, status: 'queued', job_id: job.id };
-}
-
-async function walkKinds(ov, key, userId) {
-  return walkDirs(ov, key, userId, PROMOTABLE_KINDS);
-}
-
-// OV nests memory files under date subdirectories (memories/<kind>/<date>/…),
-// so descend until files are found (bounded).
-async function walkDirs(ov, key, userId, dirs) {
-  const out = [];
-  const walk = async (uri, depth) => {
-    if (depth > 4) return;
-    let entries;
-    try {
-      entries = await ov.listDir(key, uri);
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (e.isDir) await walk(e.uri, depth + 1);
-      else out.push(e);
-    }
-  };
-  for (const kind of dirs) {
-    await walk(`viking://user/${userId}/memories/${kind}`, 0);
-  }
-  return out;
 }
 
 function existingIn(list, key) {

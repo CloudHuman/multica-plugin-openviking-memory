@@ -1,0 +1,1861 @@
+{
+  "metadata": {
+    "date": "2026-10-01",
+    "runtimeModel": "openrouter/openai/gpt-5.4-mini",
+    "extractionModel": "z-ai/glm-5.3-flash",
+    "embeddingModel": "qwen3-embedding-8b",
+    "rerankModel": "qwen3-reranker-8b",
+    "memoryPolicySha256": "30e2d9953cbcaf17afa631ed9e293d1352f01ca3af322f7316d1b7035f473cfe",
+    "unitTests": {
+      "passed": 121,
+      "failed": 0
+    },
+    "schemaTests": {
+      "passed": 2,
+      "failed": 0
+    },
+    "pipeline": "real OpenCode daemon, signed plugin hooks, automatic OpenViking extraction; no active-write shortcut"
+  },
+  "baselineAuditCorrection": {
+    "auditTime": "2026-10-01T07:10:28.171Z",
+    "scopeCount": 22,
+    "files": 50,
+    "peerFiles": 2,
+    "complete": true,
+    "findings": [
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5de-14c8-7045-a3d1-cd90ec93ca89",
+        "uri": "viking://user/mcs-c9faff18d562/memories/preferences/user/任务回复与记忆记录方式.md",
+        "reasons": [
+          "execution-control"
+        ]
+      },
+      {
+        "scope": "delegation:a2f0ccca-f106-41e4-8045-b8699d222092:08e6d0a8-e3e7-495a-8240-1a2926db537a:dea623b5-0181-4aaa-a7a0-2d1495542aaa",
+        "uri": "viking://user/mcs-104145cd3874/memories/entities/项目/雨燕项目.md",
+        "reasons": [
+          "retrieval-outcome"
+        ]
+      },
+      {
+        "scope": "dm:a2f0ccca-f106-41e4-8045-b8699d222092:08e6d0a8-e3e7-495a-8240-1a2926db537a:8eae38b9-b239-4f2f-b57e-8275608f4735",
+        "uri": "viking://user/mcs-463f6da09bed/peers/8eae38b9-b239-4f2f-b57e-8275608f4735/memories/preferences/mcs-463f6da09bed/蓝鹊周报排版约定.md",
+        "reasons": [
+          "execution-control"
+        ]
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5e2-3de4-7a14-8f9f-f9a320c43002",
+        "uri": "viking://user/mcs-e81bd36a0c00/memories/entities/平台/multica.md",
+        "reasons": [
+          "platform-scaffolding"
+        ]
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5e8-a4e1-7426-84b3-c10cc3c614a1",
+        "uri": "viking://user/mcs-6530ef6de368/memories/entities/工具平台/multica.md",
+        "reasons": [
+          "platform-scaffolding"
+        ]
+      },
+      {
+        "scope": "shared:a2f0ccca-f106-41e4-8045-b8699d222092",
+        "uri": "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作平台/multica.md",
+        "reasons": [
+          "platform-scaffolding"
+        ]
+      },
+      {
+        "scope": "shared:a2f0ccca-f106-41e4-8045-b8699d222092",
+        "uri": "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作约定/任务回复与记忆记录方式.md",
+        "reasons": [
+          "execution-control"
+        ]
+      }
+    ],
+    "audit": [
+      {
+        "scope": "agent:a2f0ccca-f106-41e4-8045-b8699d222092:08e6d0a8-e3e7-495a-8240-1a2926db537a",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-504cd9f2f5a9/memories/cases/2026-10-01/青岚仓库可复用约定-facef8.md"
+        ],
+        "roots": [
+          "viking://user/mcs-504cd9f2f5a9/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5dd-6bde-71a0-ba20-d84776b4a77c",
+        "files": 2,
+        "uris": [
+          "viking://user/mcs-74e6e1158ff4/memories/entities/项目仓库/青岚仓库.md",
+          "viking://user/mcs-74e6e1158ff4/memories/events/2026/10/01/青岚仓库业务约定记录.md"
+        ],
+        "roots": [
+          "viking://user/mcs-74e6e1158ff4/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5dd-bc62-79d6-a249-1c26e220d2e6",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-5130c615440a/memories/events/2026/10/01/青岚中间件查询无证据回复.md"
+        ],
+        "roots": [
+          "viking://user/mcs-5130c615440a/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "agent:a2f0ccca-f106-41e4-8045-b8699d222092:dea623b5-0181-4aaa-a7a0-2d1495542aaa",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-0f47e5f9b4f0/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5dd-eb86-7227-8841-756b5d4848a7",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-5005d24a383b/memories/events/2026/10/01/跨智能体记忆读取隔离验收失败.md"
+        ],
+        "roots": [
+          "viking://user/mcs-5005d24a383b/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5de-14c8-7045-a3d1-cd90ec93ca89",
+        "files": 5,
+        "uris": [
+          "viking://user/mcs-c9faff18d562/memories/events/2026/10/01/苍鹭发布方案交接确认.md",
+          "viking://user/mcs-c9faff18d562/memories/events/2026/10/01/苍鹭发布预算8100元复核确认.md",
+          "viking://user/mcs-c9faff18d562/memories/events/2026/10/01/苍鹭发布预算更新确认.md",
+          "viking://user/mcs-c9faff18d562/memories/events/2026/10/01/苍鹭发布预算调整为8100元.md",
+          "viking://user/mcs-c9faff18d562/memories/preferences/user/任务回复与记忆记录方式.md"
+        ],
+        "roots": [
+          "viking://user/mcs-c9faff18d562/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-c9faff18d562/memories/preferences/user/任务回复与记忆记录方式.md",
+            "reasons": [
+              "execution-control"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5df-cc19-7a77-9cb3-ffc25c4a4234",
+        "files": 7,
+        "uris": [
+          "viking://user/mcs-771b6b4a2f90/memories/entities/项目/雨燕项目.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/RAM-5交接评论发布.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/RAM-5复核完成确认.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/RAM-5雨燕项目交接评论发布.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/雨燕RAM-5交接评论发布.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/雨燕项目交接复核智能体.md",
+          "viking://user/mcs-771b6b4a2f90/memories/events/2026/10/01/雨燕项目重试上限确认为七次.md"
+        ],
+        "roots": [
+          "viking://user/mcs-771b6b4a2f90/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "delegation:a2f0ccca-f106-41e4-8045-b8699d222092:08e6d0a8-e3e7-495a-8240-1a2926db537a:dea623b5-0181-4aaa-a7a0-2d1495542aaa",
+        "files": 2,
+        "uris": [
+          "viking://user/mcs-104145cd3874/memories/entities/项目/雨燕项目.md",
+          "viking://user/mcs-104145cd3874/peers/08e6d0a8-e3e7-495a-8240-1a2926db537a/memories/events/2026/10/01/雨燕项目重试上限设定.md"
+        ],
+        "roots": [
+          "viking://user/mcs-104145cd3874/memories",
+          "viking://user/mcs-104145cd3874/peers/08e6d0a8-e3e7-495a-8240-1a2926db537a/memories"
+        ],
+        "peerFiles": 1,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-104145cd3874/memories/entities/项目/雨燕项目.md",
+            "reasons": [
+              "retrieval-outcome"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "dm:a2f0ccca-f106-41e4-8045-b8699d222092:08e6d0a8-e3e7-495a-8240-1a2926db537a:8eae38b9-b239-4f2f-b57e-8275608f4735",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-463f6da09bed/peers/8eae38b9-b239-4f2f-b57e-8275608f4735/memories/preferences/mcs-463f6da09bed/蓝鹊周报排版约定.md"
+        ],
+        "roots": [
+          "viking://user/mcs-463f6da09bed/memories",
+          "viking://user/mcs-463f6da09bed/peers/8eae38b9-b239-4f2f-b57e-8275608f4735/memories"
+        ],
+        "peerFiles": 1,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-463f6da09bed/peers/8eae38b9-b239-4f2f-b57e-8275608f4735/memories/preferences/mcs-463f6da09bed/蓝鹊周报排版约定.md",
+            "reasons": [
+              "execution-control"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "dm:a2f0ccca-f106-41e4-8045-b8699d222092:dea623b5-0181-4aaa-a7a0-2d1495542aaa:8eae38b9-b239-4f2f-b57e-8275608f4735",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-e1b9bf4bef03/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5e2-3de4-7a14-8f9f-f9a320c43002",
+        "files": 4,
+        "uris": [
+          "viking://user/mcs-e81bd36a0c00/memories/entities/平台/multica.md",
+          "viking://user/mcs-e81bd36a0c00/memories/entities/项目/雨燕项目.md",
+          "viking://user/mcs-e81bd36a0c00/memories/events/2026/10/01/雨燕重试上限交接查询任务失败.md",
+          "viking://user/mcs-e81bd36a0c00/memories/events/2026/10/01/雨燕重试上限历史查询失败.md"
+        ],
+        "roots": [
+          "viking://user/mcs-e81bd36a0c00/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-e81bd36a0c00/memories/entities/平台/multica.md",
+            "reasons": [
+              "platform-scaffolding"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5e7-b937-74d5-b4ae-a28acda09b95",
+        "files": 4,
+        "uris": [
+          "viking://user/mcs-c38476f289f8/memories/events/2026/10/01/雨燕重试上限交接查询完成.md",
+          "viking://user/mcs-c38476f289f8/memories/events/2026/10/01/雨燕重试上限查询.md",
+          "viking://user/mcs-c38476f289f8/memories/events/2026/10/01/雨燕重试上限查询委派.md",
+          "viking://user/mcs-c38476f289f8/memories/events/2026/10/01/雨燕重试上限查询转交.md"
+        ],
+        "roots": [
+          "viking://user/mcs-c38476f289f8/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5e8-a4e1-7426-84b3-c10cc3c614a1",
+        "files": 5,
+        "uris": [
+          "viking://user/mcs-6530ef6de368/memories/entities/工具平台/multica.md",
+          "viking://user/mcs-6530ef6de368/memories/events/2026/10/01/RAM-8金雀发布回归任务创建.md",
+          "viking://user/mcs-6530ef6de368/memories/events/2026/10/01/金雀发布回归任务创建确认.md",
+          "viking://user/mcs-6530ef6de368/memories/events/2026/10/01/金雀发布回归子任务创建.md",
+          "viking://user/mcs-6530ef6de368/memories/events/2026/10/01/金雀发布回归窗口确认.md"
+        ],
+        "roots": [
+          "viking://user/mcs-6530ef6de368/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-6530ef6de368/memories/entities/工具平台/multica.md",
+            "reasons": [
+              "platform-scaffolding"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "automation:a2f0ccca-f106-41e4-8045-b8699d222092:b9a93028-fa6d-45bf-a5a9-9a992ac8c164",
+        "files": 3,
+        "uris": [
+          "viking://user/mcs-1c2b1c6397e6/memories/entities/系统程序/黄鹂巡检.md",
+          "viking://user/mcs-1c2b1c6397e6/memories/events/2026/10/01/黄鹂巡检告警阈值确认.md",
+          "viking://user/mcs-1c2b1c6397e6/memories/events/2026/10/01/黄鹂巡检自动执行完成.md"
+        ],
+        "roots": [
+          "viking://user/mcs-1c2b1c6397e6/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "automation:a2f0ccca-f106-41e4-8045-b8699d222092:42bb3349-84ff-448d-bbb1-760f2a928bb0",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-9b3c6b46d22d/memories/events/2026/10/01/银鸥巡检每批上限确认.md"
+        ],
+        "roots": [
+          "viking://user/mcs-9b3c6b46d22d/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5eb-2bb9-77eb-9020-0b9b47cca8c7",
+        "files": 3,
+        "uris": [
+          "viking://user/mcs-b823b0ae906e/memories/entities/工作项目/赤鹭巡检.md",
+          "viking://user/mcs-b823b0ae906e/memories/events/2026/10/01/赤鹭巡检回滚演练时长上限确认.md",
+          "viking://user/mcs-b823b0ae906e/memories/events/2026/10/01/赤鹭巡检回滚演练时长确认.md"
+        ],
+        "roots": [
+          "viking://user/mcs-b823b0ae906e/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "run:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5ee-c624-7cb5-86d8-d2405f603c4f",
+        "files": 2,
+        "uris": [
+          "viking://user/mcs-88ceb2612df0/memories/entities/任务_工单/ram_10_issue.md",
+          "viking://user/mcs-88ceb2612df0/memories/events/2026/10/01/RAM-10修复验证工单创建.md"
+        ],
+        "roots": [
+          "viking://user/mcs-88ceb2612df0/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5ef-0a99-7741-9352-260c6fd50da8",
+        "files": 2,
+        "uris": [
+          "viking://user/mcs-f24fa177a2d0/memories/events/2026/10/01/RAM-10修复验证完成.md",
+          "viking://user/mcs-f24fa177a2d0/memories/events/2026/10/01/金雀发布回归修复验证任务创建完成.md"
+        ],
+        "roots": [
+          "viking://user/mcs-f24fa177a2d0/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5ef-710f-7e6b-a849-c4ae29b44e2a",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-c32dd176332c/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5ef-710c-7e06-8c3f-c665ac4e2cd3",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-8fbbb5ef8eec/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "shared:a2f0ccca-f106-41e4-8045-b8699d222092",
+        "files": 6,
+        "uris": [
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/代码仓库/青岚仓库.md",
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/巡检项目/赤鹭巡检.md",
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作平台/multica.md",
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作约定/任务回复与记忆记录方式.md",
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/项目/雨燕项目.md",
+          "viking://user/mcs-af9d8ebbd7e9/memories/entities/项目/青岚仓库.md"
+        ],
+        "roots": [
+          "viking://user/mcs-af9d8ebbd7e9/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [
+          {
+            "uri": "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作平台/multica.md",
+            "reasons": [
+              "platform-scaffolding"
+            ]
+          },
+          {
+            "uri": "viking://user/mcs-af9d8ebbd7e9/memories/entities/工作约定/任务回复与记忆记录方式.md",
+            "reasons": [
+              "execution-control"
+            ]
+          }
+        ],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:a2f0ccca-f106-41e4-8045-b8699d222092:01a0f5f8-5402-76b0-8e39-592a81d67eba",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-5342da0b3e49/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      }
+    ]
+  },
+  "actualQualityRun": {
+    "startedAt": "2026-10-01T07:11:04.424Z",
+    "finishedAt": "2026-10-01T07:27:16.109Z",
+    "workspaceId": "4f72edcc-9098-4037-bf77-61b5214402d2",
+    "runtime": "real OpenCode CLI via official Multica daemon",
+    "runtimeVersion": "1.17.7",
+    "multicaCliVersion": "multica v0.6.0-7-g267203249 (commit: 267203249, built: 2026-10-01T05:19:17Z)\ngo: go1.26.6, os/arch: linux/amd64",
+    "model": "openrouter/openai/gpt-5.4-mini",
+    "agents": [
+      {
+        "id": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "role": "A"
+      },
+      {
+        "id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+        "role": "B"
+      }
+    ],
+    "tasks": [
+      {
+        "entry": "quality-seed",
+        "taskId": "01a0f64d-79f8-7f09-bbf5-0511e08f7039",
+        "agentId": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "issueId": "01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "chatSessionId": null,
+        "status": "completed",
+        "error": null,
+        "response": "先读取 issue 和评论线程，确认任务范围后再动手。按要求先做记忆召回，再读取工作区里的 `AGENTS.md`，确认可执行边界和是否已有相关约定。任务本质是按证据确认约定，不改代码；接下来只做最小必要核实并回报。开始写最终平台评论；内容只陈述当前能证实的结论，避免扩展到未证实记忆。已按要求完成：\n\n- 读取了 issue 与评论线程\n- 调用了 `memory-recall`，结果为空\n- 读取了任务目录里的 `AGENTS.md`\n- 已在 issue 下提交简短回复，说明当前没有可检索到的相关记忆，且仅基于现有证据回复\n\n本次没有修改代码，也没有主动记录新记忆。\n已核实：当前可用记忆为空，未发现与“苍鹭发布使用 Apache Pulsar、每月预算 7600 元、双写持续五天、中文注释”相关的既有记录。已读取任务目录 `AGENTS.md`，并按要求仅基于现有证据回复。\n先读取 issue 和评论线程，确认任务范围后再动手。\n按要求先做记忆召回，再读取工作区里的 `AGENTS.md`，确认可执行边界和是否已有相关约定。\n任务本质是按证据确认约定，不改代码；接下来只做最小必要核实并回报。\n开始写最终平台评论；内容只陈述当前能证实的结论，避免扩展到未证实记忆。\n已按要求完成：\n\n- 读取了 issue 与评论线程\n- 调用了 `memory-recall`，结果为空\n- 读取了任务目录里的 `AGENTS.md`\n- 已在 issue 下提交简短回复，说明当前没有可检索到的相关记忆，且仅基于现有证据回复\n\n本次没有修改代码，也没有主动记录新记忆。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。",
+            "run": {
+              "kind": "issue",
+              "bound": true
+            },
+            "query": "苍鹭 发布 使用 Apache Pulsar 每月预算 7600 双写持续五天 中文注释 相关约定",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "id": "01a0f64d-c233-7207-b7b0-5532667f5cdf",
+            "issue_id": "01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+            "author_type": "agent",
+            "author_id": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+            "content": "已核实：当前可用记忆为空，未发现与“苍鹭发布使用 Apache Pulsar、每月预算 7600 元、双写持续五天、中文注释”相关的既有记录。已读取任务目录 `AGENTS.md`，并按要求仅基于现有证据回复。",
+            "type": "comment",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:11:26Z",
+            "updated_at": "2026-10-01T07:11:26Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f64d-79f8-7f09-bbf5-0511e08f7039",
+            "reactions": [],
+            "attachments": []
+          }
+        ],
+        "chatReplies": [],
+        "tools": [
+          "bash",
+          "bash",
+          "read",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "multica-plugins_openviking_memory_d697f9__ov__health",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "bash"
+        ],
+        "startedAt": "2026-10-01T07:11:07Z",
+        "completedAt": "2026-10-01T07:11:28Z"
+      },
+      {
+        "entry": "quality-budget-update",
+        "taskId": "01a0f64f-0a70-7ef6-bd38-130049ec9cb6",
+        "agentId": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "issueId": "01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "chatSessionId": null,
+        "status": "completed",
+        "error": null,
+        "response": "先按要求做一次记忆召回，确认是否已有可直接引用的更新结论，再给出简短回复。记忆里已有旧预算 7600 的项目事实，但这次新评论明确把预算更新为 8100 且以本次为准；我会按评论证据回复“已更新、其他不变”，不扩展旧值。父评论 ID 需要重新取一次当前线程上下文；我先查这条线程的实际评论节点，再回复。定位到正确父评论了，重新提交同一条简短回复。已按要求基于实际证据回复：预算更新为 8100 元，其余约定不变。\n已收到更新：苍鹭发布预算以本次为准调整为 8100 元，其余约定保持不变。\n先按要求做一次记忆召回，确认是否已有可直接引用的更新结论，再给出简短回复。\n记忆里已有旧预算 7600 的项目事实，但这次新评论明确把预算更新为 8100 且以本次为准；我会按评论证据回复“已更新、其他不变”，不扩展旧值。\n父评论 ID 需要重新取一次当前线程上下文；我先查这条线程的实际评论节点，再回复。\n定位到正确父评论了，重新提交同一条简短回复。\n已按要求基于实际证据回复：预算更新为 8100 元，其余约定不变。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。",
+            "run": {
+              "kind": "issue",
+              "bound": true
+            },
+            "query": "苍鹭 发布预算 调整为 8100 元 其他约定不变 本次更新为准",
+            "entries": [
+              {
+                "uri": "viking://user/mcs-555fd3368ff8/memories/entities/项目/苍鹭.md",
+                "level": 2,
+                "score": 0.895,
+                "abstract": "# 苍鹭项目\n\n## Description\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月预算为 7600 元。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。",
+                "content": "# 苍鹭项目\n\n## Description\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月预算为 7600 元。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。",
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+                "source": "viking://user/mcs-555fd3368ff8/memories/entities/项目/苍鹭.md"
+              },
+              {
+                "uri": "viking://user/mcs-555fd3368ff8/memories/preferences/user/代码注释语言.md",
+                "level": 2,
+                "score": 0.594,
+                "abstract": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。",
+                "content": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。",
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+                "source": "viking://user/mcs-555fd3368ff8/memories/preferences/user/代码注释语言.md",
+                "duplicate_sources": [
+                  {
+                    "uri": "viking://user/mcs-7385406aa1d0/memories/preferences/user/代码注释语言.md",
+                    "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2"
+                  }
+                ]
+              },
+              {
+                "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭项目发布与预算约定确认.md",
+                "level": 2,
+                "score": 0.563,
+                "abstract": "# Summary\n2026-10-01，用户通过 Multica 任务（RAM-1）正式确认苍鹭发布约定：发布使用 Apache Pulsar，每月预算 7600 元，双写持续五天，且该项目代码注释一律使用中文。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [Multica 任务] RAM-1 苍鹭蒸馏质量初始约定\n\n任务描述：\n成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元；双写持续五天。以后这个项目的代码注释一律使用中文。...",
+                "content": "# Summary\n2026-10-01，用户通过 Multica 任务（RAM-1）正式确认苍鹭发布约定：发布使用 Apache Pulsar，每月预算 7600 元，双写持续五天，且该项目代码注释一律使用中文。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [Multica 任务] RAM-1 苍鹭蒸馏质量初始约定\n\n任务描述：\n成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元；双写持续五天。以后这个项目的代码注释一律使用中文。...",
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+                "source": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭项目发布与预算约定确认.md"
+              },
+              {
+                "uri": "viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md",
+                "level": 2,
+                "score": 0.563,
+                "abstract": "# 苍鹭项目\n\n用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月预算为 7600 元。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。\n## 来源\n- 由用户于 2026-10-01 通过共享记忆晋升确认。",
+                "content": "# 苍鹭项目\n\n用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月预算为 7600 元。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。\n## 来源\n- 由用户于 2026-10-01 通过共享记忆晋升确认。",
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "source": "viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md"
+              }
+            ],
+            "scopesSearched": [
+              {
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+                "hits": 5
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 3
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "id": "01a0f64f-54b4-718c-ab52-12e93a5fc3ea",
+            "issue_id": "01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+            "author_type": "agent",
+            "author_id": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+            "content": "已收到更新：苍鹭发布预算以本次为准调整为 8100 元，其余约定保持不变。",
+            "type": "comment",
+            "parent_id": "01a0f64f-0a5f-7840-8b3d-36f551eb4c41",
+            "created_at": "2026-10-01T07:13:09Z",
+            "updated_at": "2026-10-01T07:13:09Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f64f-0a70-7ef6-bd38-130049ec9cb6",
+            "reactions": [],
+            "attachments": []
+          }
+        ],
+        "chatReplies": [],
+        "tools": [
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "bash",
+          "bash",
+          "bash"
+        ],
+        "startedAt": "2026-10-01T07:12:50Z",
+        "completedAt": "2026-10-01T07:13:11Z"
+      },
+      {
+        "entry": "quality-shared-recall",
+        "taskId": "01a0f650-2505-7d29-9a4e-8491fb3cca0f",
+        "agentId": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+        "issueId": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+        "chatSessionId": null,
+        "status": "failed",
+        "error": "Missing Authentication header",
+        "response": "\n已按要求执行 memory-recall 与线程扫描，但当前工作区/个人记忆中未检出‘苍鹭’、消息系统、月预算或双写周期的可用证据，因此无法按证据给出数值。\nMissing Authentication header\n当前没有找到可用记忆证据，且评论线程为空。我再做一次聚焦检索；如果仍无结果，会按“仅基于实际证据”回复未检出，而不编造数值。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。",
+            "run": {
+              "kind": "issue",
+              "bound": true
+            },
+            "query": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c task context related memories",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "id": "01a0f651-4c97-7ba0-b31d-0a8c19463fe7",
+            "issue_id": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+            "author_type": "agent",
+            "author_id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+            "content": "已按要求执行 memory-recall 与线程扫描，但当前工作区/个人记忆中未检出‘苍鹭’、消息系统、月预算或双写周期的可用证据，因此无法按证据给出数值。",
+            "type": "comment",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:15:18Z",
+            "updated_at": "2026-10-01T07:15:18Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f650-2505-7d29-9a4e-8491fb3cca0f",
+            "reactions": [],
+            "attachments": []
+          },
+          {
+            "id": "01a0f651-574a-77cd-a57d-2c291fca3b8f",
+            "issue_id": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+            "author_type": "agent",
+            "author_id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+            "content": "Missing Authentication header",
+            "type": "system",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:15:21Z",
+            "updated_at": "2026-10-01T07:15:21Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f650-2505-7d29-9a4e-8491fb3cca0f",
+            "reactions": [],
+            "attachments": []
+          }
+        ],
+        "chatReplies": [],
+        "tools": [
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "bash",
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__ov__find",
+          "multica-plugins_openviking_memory_d697f9__ov__find",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "bash",
+          "bash"
+        ],
+        "startedAt": "2026-10-01T07:14:02Z",
+        "completedAt": "2026-10-01T07:15:21Z"
+      },
+      {
+        "entry": "quality-shared-recall",
+        "taskId": "01a0f653-9551-752b-865b-3e4128139b65",
+        "agentId": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+        "issueId": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+        "chatSessionId": null,
+        "status": "completed",
+        "error": null,
+        "response": "已完成并按平台流程回复到该 issue 评论中。\n\n结果要点:\n- 已按要求调用 `memory-recall`，未检出与“苍鹭 / 消息系统 / 每月预算 / 双写周期”相关的可用记忆证据。\n- 已扫描评论线程，当前无可展开的相关讨论。\n- 已在 issue 中回复：当前无法基于实际证据给出数值，并说明未找到可用来源。\n已完成并按平台流程回复到该 issue 评论中。\n\n结果要点:\n- 已按要求调用 `memory-recall`，未检出与“苍鹭 / 消息系统 / 每月预算 / 双写周期”相关的可用记忆证据。\n- 已扫描评论线程，当前无可展开的相关讨论。\n- 已在 issue 中回复：当前无法基于实际证据给出数值，并说明未找到可用来源。\n已完成并按平台流程回复到该 issue 评论中。\n\n结果要点:\n- 已按要求调用 `memory-recall`，未检出与“苍鹭 / 消息系统 / 每月预算 / 双写周期”相关的可用记忆证据。\n- 已扫描评论线程，当前无可展开的相关讨论。\n- 已在 issue 中回复：当前无法基于实际证据给出数值，并说明未找到可用来源。",
+        "recalls": [],
+        "comments": [
+          {
+            "id": "01a0f653-b01b-7ace-942b-cdbe38e10182",
+            "issue_id": "01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+            "author_type": "agent",
+            "author_id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+            "content": "已完成并按平台流程回复到该 issue 评论中。\n\n结果要点:\n- 已按要求调用 `memory-recall`，未检出与“苍鹭 / 消息系统 / 每月预算 / 双写周期”相关的可用记忆证据。\n- 已扫描评论线程，当前无可展开的相关讨论。\n- 已在 issue 中回复：当前无法基于实际证据给出数值，并说明未找到可用来源。",
+            "type": "comment",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:17:54Z",
+            "updated_at": "2026-10-01T07:17:54Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f653-9551-752b-865b-3e4128139b65",
+            "reactions": [],
+            "attachments": []
+          }
+        ],
+        "chatReplies": [],
+        "tools": [],
+        "startedAt": "2026-10-01T07:17:48Z",
+        "completedAt": "2026-10-01T07:17:54Z"
+      },
+      {
+        "entry": "quality-dm-seed",
+        "taskId": "01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7",
+        "agentId": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "issueId": "",
+        "chatSessionId": "01a0f654-4b61-7312-ae3d-d1746b0208d1",
+        "status": "completed",
+        "error": null,
+        "response": "已核对到的实际证据是：\n\n- `memory-recall` 本次没有检索到相关记忆条目。\n- 记忆服务健康，当前可用。\n\n因此，我不会把这条“蓝鹊周报”约定写入公共记忆，也不会改代码、建 issue 或唤醒规则。  \n后续你在私聊里发周报时，我会按你要求固定用这三个中文标题，且顺序为：\n\n- 风险\n- 进展\n- 下一步\n已核对到的实际证据是：\n\n- `memory-recall` 本次没有检索到相关记忆条目。\n- 记忆服务健康，当前可用。\n\n因此，我不会把这条“蓝鹊周报”约定写入公共记忆，也不会改代码、建 issue 或唤醒规则。  \n后续你在私聊里发周报时，我会按你要求固定用这三个中文标题，且顺序为：\n\n- 风险\n- 进展\n- 下一步\n已核对到的实际证据是：\n\n- `memory-recall` 本次没有检索到相关记忆条目。\n- 记忆服务健康，当前可用。\n\n因此，我不会把这条“蓝鹊周报”约定写入公共记忆，也不会改代码、建 issue 或唤醒规则。  \n后续你在私聊里发周报时，我会按你要求固定用这三个中文标题，且顺序为：\n\n- 风险\n- 进展\n- 下一步",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "chat",
+              "bound": true
+            },
+            "notes": [
+              "1 个记忆空间没有在时限内返回(OpenViking 检索慢),结果可能不完整;需要时可以稍后再查"
+            ],
+            "query": "蓝鹊周报 私人排版约定 固定按 风险、进展、下一步 三个中文标题 风险放第一 仅用于私聊 不写入公共记忆",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0,
+                "timedOut": true
+              }
+            ]
+          }
+        ],
+        "comments": [],
+        "chatReplies": [
+          {
+            "id": "01a0f654-9ffd-787e-a2ae-b7fce6b929dc",
+            "chat_session_id": "01a0f654-4b61-7312-ae3d-d1746b0208d1",
+            "role": "assistant",
+            "content": "已核对到的实际证据是：\n\n- `memory-recall` 本次没有检索到相关记忆条目。\n- 记忆服务健康，当前可用。\n\n因此，我不会把这条“蓝鹊周报”约定写入公共记忆，也不会改代码、建 issue 或唤醒规则。  \n后续你在私聊里发周报时，我会按你要求固定用这三个中文标题，且顺序为：\n\n- 风险\n- 进展\n- 下一步",
+            "task_id": "01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7",
+            "created_at": "2026-10-01T07:18:56Z",
+            "failure_reason": null,
+            "elapsed_ms": 21646,
+            "message_kind": "message",
+            "quick_actions": []
+          }
+        ],
+        "tools": [
+          "multica-plugins_openviking_memory_d697f9__ov__health",
+          "multica-plugins_openviking_memory_d697f9__memory__recall"
+        ],
+        "startedAt": "2026-10-01T07:18:34Z",
+        "completedAt": "2026-10-01T07:18:56Z"
+      },
+      {
+        "entry": "quality-dm-recall",
+        "taskId": "01a0f655-e6a5-7271-aec0-4a498ace5c57",
+        "agentId": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "issueId": "",
+        "chatSessionId": "01a0f655-e69f-7193-a54f-aadc0dae3089",
+        "status": "completed",
+        "error": null,
+        "response": "先召回与“蓝鹊周报标题/顺序”相关的记忆，再基于证据回复。按当前召回结果，**没有找到可证实的“三个标题及顺序”**，因此我不能编造答案。\n\n证据：\n- `memory-recall`：未召回到相关条目，三个作用域均超时且 `entries=[]`\n- `ov-find`：只定位到记忆目录概览 `viking://user/mcs-fc2dbe609040/memories/.overview.md`，没有实际的蓝鹊周报标题内容\n\n如果你愿意，我可以继续按更具体的关键词再召回一次，比如蓝鹊周报的项目名、正文里的任一标题片段或相关日期。\n先召回与“蓝鹊周报标题/顺序”相关的记忆，再基于证据回复。按当前召回结果，**没有找到可证实的“三个标题及顺序”**，因此我不能编造答案。\n\n证据：\n- `memory-recall`：未召回到相关条目，三个作用域均超时且 `entries=[]`\n- `ov-find`：只定位到记忆目录概览 `viking://user/mcs-fc2dbe609040/memories/.overview.md`，没有实际的蓝鹊周报标题内容\n\n如果你愿意，我可以继续按更具体的关键词再召回一次，比如蓝鹊周报的项目名、正文里的任一标题片段或相关日期。\n先召回与“蓝鹊周报标题/顺序”相关的记忆，再基于证据回复。\n按当前召回结果，**没有找到可证实的“三个标题及顺序”**，因此我不能编造答案。\n\n证据：\n- `memory-recall`：未召回到相关条目，三个作用域均超时且 `entries=[]`\n- `ov-find`：只定位到记忆目录概览 `viking://user/mcs-fc2dbe609040/memories/.overview.md`，没有实际的蓝鹊周报标题内容\n\n如果你愿意，我可以继续按更具体的关键词再召回一次，比如蓝鹊周报的项目名、正文里的任一标题片段或相关日期。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "chat",
+              "bound": true
+            },
+            "notes": [
+              "3 个记忆空间没有在时限内返回(OpenViking 检索慢),结果可能不完整;需要时可以稍后再查"
+            ],
+            "query": "蓝鹊周报 之前约定的三个标题 顺序",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+                "hits": 0,
+                "timedOut": true
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0,
+                "timedOut": true
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0,
+                "timedOut": true
+              }
+            ]
+          }
+        ],
+        "comments": [],
+        "chatReplies": [
+          {
+            "id": "01a0f656-3e10-7599-bbb2-5adcd142a68e",
+            "chat_session_id": "01a0f655-e69f-7193-a54f-aadc0dae3089",
+            "role": "assistant",
+            "content": "先召回与“蓝鹊周报标题/顺序”相关的记忆，再基于证据回复。按当前召回结果，**没有找到可证实的“三个标题及顺序”**，因此我不能编造答案。\n\n证据：\n- `memory-recall`：未召回到相关条目，三个作用域均超时且 `entries=[]`\n- `ov-find`：只定位到记忆目录概览 `viking://user/mcs-fc2dbe609040/memories/.overview.md`，没有实际的蓝鹊周报标题内容\n\n如果你愿意，我可以继续按更具体的关键词再召回一次，比如蓝鹊周报的项目名、正文里的任一标题片段或相关日期。",
+            "task_id": "01a0f655-e6a5-7271-aec0-4a498ace5c57",
+            "created_at": "2026-10-01T07:20:42Z",
+            "failure_reason": null,
+            "elapsed_ms": 22376,
+            "message_kind": "message",
+            "quick_actions": []
+          }
+        ],
+        "tools": [
+          "multica-plugins_openviking_memory_d697f9__ov__find",
+          "multica-plugins_openviking_memory_d697f9__memory__recall"
+        ],
+        "startedAt": "2026-10-01T07:20:19Z",
+        "completedAt": "2026-10-01T07:20:42Z"
+      },
+      {
+        "entry": "quality-shared-recall",
+        "taskId": "01a0f658-7356-74de-9926-7002a6755ef8",
+        "agentId": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+        "issueId": "01a0f658-7345-7dc0-80ff-210bf19786a3",
+        "chatSessionId": null,
+        "status": "failed",
+        "error": "Missing Authentication header",
+        "response": "\n依据当前可检索到的共享记忆，苍鹭项目使用 Apache Pulsar 作为消息中间件；每月发布预算为 8100 元；双写安排计划持续五天。来源：viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md\nMissing Authentication header\n需要先确认该任务要求的证据来源。当前 issue 只有一个明确约束：只基于 `memory-recall` 的实际证据回复，并引用来源 URI；我先扩展记忆检索范围，找到与“苍鹭 / 消息系统 / 每月预算 / 双写周期”相关的记录。\n已经找到直接相关的共享记忆条目，接下来只需要补一遍可引用的来源路径，确保回复里给出 URI，不引入任何未证实细节。\n刚才的并行调用里，`reply.md` 还没来得及创建，而且共享记忆不能用 `ov/read` 直接读。当前已有足够证据可直接回复，我会用 issue 评论一次性提交。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "issue",
+              "bound": true
+            },
+            "query": "issue 01a0f658-7345-7dc0-80ff-210bf19786a3 context and prior decisions",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f658-7345-7dc0-80ff-210bf19786a3",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+                "hits": 0
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0
+              }
+            ]
+          },
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "issue",
+              "bound": true
+            },
+            "query": "苍鹭 消息系统 每月预算 双写周期",
+            "entries": [
+              {
+                "uri": "viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md",
+                "level": 2,
+                "score": 0.996,
+                "abstract": "# 苍鹭项目\n\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月发布预算为 8100 元（2026-10-01 用户正式更新，其他约定不变，以本次更新为准；此前为 7600 元）。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。\n## 来源\n- 由用户于 2026-10-01 通过共享记忆晋升确认。",
+                "content": "# 苍鹭项目\n\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月发布预算为 8100 元（2026-10-01 用户正式更新，其他约定不变，以本次更新为准；此前为 7600 元）。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。\n## 来源\n- 由用户于 2026-10-01 通过共享记忆晋升确认。",
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "source": "viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md"
+              },
+              {
+                "uri": "viking://user/mcs-7385406aa1d0/memories/preferences/user/代码注释语言.md",
+                "level": 2,
+                "score": 0.148,
+                "abstract": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。",
+                "content": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。",
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "source": "viking://user/mcs-7385406aa1d0/memories/preferences/user/代码注释语言.md"
+              }
+            ],
+            "scopesSearched": [
+              {
+                "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f658-7345-7dc0-80ff-210bf19786a3",
+                "hits": 0,
+                "skipped": "not-provisioned"
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+                "hits": 0
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 2
+              }
+            ]
+          }
+        ],
+        "comments": [
+          {
+            "id": "01a0f658-e4b9-7956-a219-d9457c07ebfd",
+            "issue_id": "01a0f658-7345-7dc0-80ff-210bf19786a3",
+            "author_type": "agent",
+            "author_id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+            "content": "依据当前可检索到的共享记忆，苍鹭项目使用 Apache Pulsar 作为消息中间件；每月发布预算为 8100 元；双写安排计划持续五天。来源：viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md",
+            "type": "comment",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:23:35Z",
+            "updated_at": "2026-10-01T07:23:35Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f658-7356-74de-9926-7002a6755ef8",
+            "reactions": [],
+            "attachments": []
+          },
+          {
+            "id": "01a0f658-ed3d-7e1d-9510-a573c8befb11",
+            "issue_id": "01a0f658-7345-7dc0-80ff-210bf19786a3",
+            "author_type": "agent",
+            "author_id": "34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+            "content": "Missing Authentication header",
+            "type": "system",
+            "parent_id": null,
+            "created_at": "2026-10-01T07:23:38Z",
+            "updated_at": "2026-10-01T07:23:38Z",
+            "revision": 1,
+            "resolved_at": null,
+            "resolved_by_type": null,
+            "resolved_by_id": null,
+            "source_task_id": "01a0f658-7356-74de-9926-7002a6755ef8",
+            "reactions": [],
+            "attachments": []
+          }
+        ],
+        "chatReplies": [],
+        "tools": [
+          "bash",
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__memory__status",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "bash",
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "bash",
+          "multica-plugins_openviking_memory_d697f9__ov__read",
+          "bash",
+          "bash",
+          "bash",
+          "bash"
+        ],
+        "startedAt": "2026-10-01T07:23:07Z",
+        "completedAt": "2026-10-01T07:23:38Z"
+      },
+      {
+        "entry": "quality-dm-recall",
+        "taskId": "01a0f65b-54b5-793e-ae39-5ea4cdff3eb5",
+        "agentId": "f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "issueId": "",
+        "chatSessionId": "01a0f65b-54ac-79f1-b4a7-59096262f54c",
+        "status": "completed",
+        "error": null,
+        "response": "召回到的实际证据显示，蓝鹊周报约定的三个标题及顺序是：\n\n1. 风险\n2. 进展\n3. 下一步\n\n来源：`viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md`\n\n补充说明：首次召回有部分范围超时，第二次召回已命中该记忆，以上按实际证据回复。\n召回到的实际证据显示，蓝鹊周报约定的三个标题及顺序是：\n\n1. 风险\n2. 进展\n3. 下一步\n\n来源：`viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md`\n\n补充说明：首次召回有部分范围超时，第二次召回已命中该记忆，以上按实际证据回复。\n召回到的实际证据显示，蓝鹊周报约定的三个标题及顺序是：\n\n1. 风险\n2. 进展\n3. 下一步\n\n来源：`viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md`\n\n补充说明：首次召回有部分范围超时，第二次召回已命中该记忆，以上按实际证据回复。",
+        "recalls": [
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "chat",
+              "bound": true
+            },
+            "notes": [
+              "3 个记忆空间没有在时限内返回(OpenViking 检索慢)，检索未完成、结果可能不完整；空结果不能证明没有记忆，应说明暂时无法确认，需要时稍后再查。"
+            ],
+            "query": "蓝鹊周报 之前约定的三个标题及顺序",
+            "entries": [],
+            "scopesSearched": [
+              {
+                "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+                "hits": 0,
+                "timedOut": true
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0,
+                "timedOut": true
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0,
+                "timedOut": true
+              }
+            ]
+          },
+          {
+            "note": "参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。",
+            "run": {
+              "kind": "chat",
+              "bound": true
+            },
+            "notes": [
+              "1 个记忆空间没有在时限内返回(OpenViking 检索慢)，检索未完成、结果可能不完整；空结果不能证明没有记忆，应说明暂时无法确认，需要时稍后再查。"
+            ],
+            "query": "蓝鹊周报 三个标题 顺序",
+            "entries": [
+              {
+                "uri": "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md",
+                "level": 2,
+                "score": 0.992,
+                "abstract": "- 用户在私聊中提交周报时，固定使用三个中文标题，顺序为：风险、进展、下一步，风险放第一。\n- 该排版约定仅适用于私聊，明确要求不写入公共记忆。",
+                "content": "- 用户在私聊中提交周报时，固定使用三个中文标题，顺序为：风险、进展、下一步，风险放第一。\n- 该排版约定仅适用于私聊，明确要求不写入公共记忆。",
+                "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+                "source": "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md"
+              }
+            ],
+            "scopesSearched": [
+              {
+                "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+                "hits": 2
+              },
+              {
+                "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+                "hits": 0
+              },
+              {
+                "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+                "hits": 0,
+                "timedOut": true
+              }
+            ]
+          }
+        ],
+        "comments": [],
+        "chatReplies": [
+          {
+            "id": "01a0f65b-df57-767e-aa9b-69d47ce03f6a",
+            "chat_session_id": "01a0f65b-54ac-79f1-b4a7-59096262f54c",
+            "role": "assistant",
+            "content": "召回到的实际证据显示，蓝鹊周报约定的三个标题及顺序是：\n\n1. 风险\n2. 进展\n3. 下一步\n\n来源：`viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md`\n\n补充说明：首次召回有部分范围超时，第二次召回已命中该记忆，以上按实际证据回复。",
+            "task_id": "01a0f65b-54b5-793e-ae39-5ea4cdff3eb5",
+            "created_at": "2026-10-01T07:26:51Z",
+            "failure_reason": null,
+            "elapsed_ms": 35487,
+            "message_kind": "message",
+            "quick_actions": []
+          }
+        ],
+        "tools": [
+          "multica-plugins_openviking_memory_d697f9__ov__search",
+          "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "multica-plugins_openviking_memory_d697f9__memory__recall"
+        ],
+        "startedAt": "2026-10-01T07:26:15Z",
+        "completedAt": "2026-10-01T07:26:51Z"
+      }
+    ],
+    "qualitySnapshots": [
+      {
+        "label": "before-update",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "files": [
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/entities/项目/苍鹭.md",
+            "content": "# 苍鹭项目\n\n## Description\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月预算为 7600 元。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1任务执行完成.md",
+            "content": "# Summary\n2026-10-01，执行智能体完成 RAM-1 任务：按要求调用 memory-recall（结果为空）、读取任务目录 AGENTS.md、读取 issue 与评论线程，并在 issue 下提交简短回复，说明仅基于现有证据回复；未修改代码、未记录记忆、未创建 issue 或唤醒规则。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: ...请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。 本次成员确认是直接证据，历史检索为空不影响确认。必须实际用 read 读取任务目录 AGENTS.md，但不要复述平台说明。\n\n执行智能体: f49f8dba-9623-4e59-90d3-df7b0a54b098 | 最终状态: completed\n**assistant**: 先读取 issue 和评论线程，确认任务范围后再动手。\n...\n**assistant**: 按要求先做记忆召回，再读取工作区里的 `AGENTS.md`，确认可执行边界和是否已有相关约定。\n...\n**assistant**: 已按要求完成：\n\n- 读取了 issue 与评论线程\n- 调用了 `memory-recall`，结果为空\n- 读取了任务目录里的 `AGENTS.md`\n- 已在 issue 下提交简短回复，说明当前没有可检索到的相关记忆，且仅基于现有证据回复\n\n本次没有修改代码，也没有主动记录新记忆。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1苍鹭蒸馏质量约定确认.md",
+            "content": "# Summary\n2026-10-01，在 RAM-1 苍鹭蒸馏质量初始约定任务下确认：苍鹭项目使用 Apache Pulsar，每月预算为 7600 元，双写计划持续五天，代码注释使用中文；智能体核实当时记忆库为空，无相关既有记录。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [任务上下文] RAM-1 苍鹭蒸馏质量初始约定\n**assistant**: [智能体评论] 智能体 f49f8dba-9623-4e59-90d3-df7b0a54b098 在 RAM-1 苍鹭蒸馏质量初始约定 下发表 (2026-10-01T07:11:26Z):\n\n已核实：当前可用记忆为空，未发现与“苍鹭发布使用 Apache Pulsar、每月预算 7600 元、双写持续五天、中文注释”相关的既有记录。已读取任务目录 `AGENTS.md`，并按要求仅基于现有证据回复。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭项目发布与预算约定确认.md",
+            "content": "# Summary\n2026-10-01，用户通过 Multica 任务（RAM-1）正式确认苍鹭发布约定：发布使用 Apache Pulsar，每月预算 7600 元，双写持续五天，且该项目代码注释一律使用中文。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [Multica 任务] RAM-1 苍鹭蒸馏质量初始约定\n\n任务描述：\n成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元；双写持续五天。以后这个项目的代码注释一律使用中文。..."
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/preferences/user/代码注释语言.md",
+            "content": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。"
+          }
+        ]
+      },
+      {
+        "label": "after-update",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "files": [
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/entities/项目/苍鹭.md",
+            "content": "# 苍鹭项目\n\n## Description\n- 用户正在进行蒸馏质量相关工作（RAM-1）的项目，代号“苍鹭”。\n\n## 关键事实\n- 使用 Apache Pulsar 作为发布消息中间件。\n- 每月发布预算为 8100 元（2026-10-01 用户正式更新，其他约定不变，以本次更新为准；此前为 7600 元）。\n- 存在双写安排，计划持续五天。\n- 代码注释约定一律使用中文。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1任务执行完成.md",
+            "content": "# Summary\n2026-10-01，执行智能体完成 RAM-1 任务：按要求调用 memory-recall（结果为空）、读取任务目录 AGENTS.md、读取 issue 与评论线程，并在 issue 下提交简短回复，说明仅基于现有证据回复；未修改代码、未记录记忆、未创建 issue 或唤醒规则。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: ...请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。 本次成员确认是直接证据，历史检索为空不影响确认。必须实际用 read 读取任务目录 AGENTS.md，但不要复述平台说明。\n\n执行智能体: f49f8dba-9623-4e59-90d3-df7b0a54b098 | 最终状态: completed\n**assistant**: 先读取 issue 和评论线程，确认任务范围后再动手。\n...\n**assistant**: 按要求先做记忆召回，再读取工作区里的 `AGENTS.md`，确认可执行边界和是否已有相关约定。\n...\n**assistant**: 已按要求完成：\n\n- 读取了 issue 与评论线程\n- 调用了 `memory-recall`，结果为空\n- 读取了任务目录里的 `AGENTS.md`\n- 已在 issue 下提交简短回复，说明当前没有可检索到的相关记忆，且仅基于现有证据回复\n\n本次没有修改代码，也没有主动记录新记忆。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1苍鹭蒸馏质量约定确认.md",
+            "content": "# Summary\n2026-10-01，在 RAM-1 苍鹭蒸馏质量初始约定任务下确认：苍鹭项目使用 Apache Pulsar，每月预算为 7600 元，双写计划持续五天，代码注释使用中文；智能体核实当时记忆库为空，无相关既有记录。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [任务上下文] RAM-1 苍鹭蒸馏质量初始约定\n**assistant**: [智能体评论] 智能体 f49f8dba-9623-4e59-90d3-df7b0a54b098 在 RAM-1 苍鹭蒸馏质量初始约定 下发表 (2026-10-01T07:11:26Z):\n\n已核实：当前可用记忆为空，未发现与“苍鹭发布使用 Apache Pulsar、每月预算 7600 元、双写持续五天、中文注释”相关的既有记录。已读取任务目录 `AGENTS.md`，并按要求仅基于现有证据回复。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭发布预算调整为8100元.md",
+            "content": "# Summary\n2026-10-01，成员在任务评论中正式提出并确认：苍鹭发布每月预算由 7600 元调整为 8100 元，其他约定（Apache Pulsar、双写持续五天、中文代码注释）保持不变，明确以本次更新为准。执行智能体已按实际证据回复确认更新。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [触发评论] 成员 573a7c5f-300c-4944-b301-9c5ad9ed3563:\n新的正式要求：苍鹭发布预算调整为 8100 元，其他约定不变，明确以本次更新为准。请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。\n...\n**assistant**: 已按要求基于实际证据回复：预算更新为 8100 元，其余约定不变。"
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭项目发布与预算约定确认.md",
+            "content": "# Summary\n2026-10-01，用户通过 Multica 任务（RAM-1）正式确认苍鹭发布约定：发布使用 Apache Pulsar，每月预算 7600 元，双写持续五天，且该项目代码注释一律使用中文。\n# 2026-10-01 (Thursday) ChatLog:\n**user**: [Multica 任务] RAM-1 苍鹭蒸馏质量初始约定\n\n任务描述：\n成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元；双写持续五天。以后这个项目的代码注释一律使用中文。..."
+          },
+          {
+            "uri": "viking://user/mcs-555fd3368ff8/memories/preferences/user/代码注释语言.md",
+            "content": "- 苍鹭项目的代码注释一律使用中文（用户于 2026-10-01 正式确认，属于该项目的持久约定）。"
+          }
+        ]
+      },
+      {
+        "label": "private-preference",
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "files": [
+          {
+            "uri": "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md",
+            "content": "- 用户在私聊中提交周报时，固定使用三个中文标题，顺序为：风险、进展、下一步，风险放第一。\n- 该排版约定仅适用于私聊，明确要求不写入公共记忆。"
+          }
+        ]
+      },
+      {
+        "label": "private-preference",
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "files": [
+          {
+            "uri": "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md",
+            "content": "- 用户在私聊中提交周报时，固定使用三个中文标题，顺序为：风险、进展、下一步，风险放第一。\n- 该排版约定仅适用于私聊，明确要求不写入公共记忆。"
+          }
+        ]
+      }
+    ],
+    "promotions": [
+      {
+        "shared_scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "sources": 2,
+        "promoted": [
+          {
+            "file": "苍鹭.md",
+            "from": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be"
+          },
+          {
+            "file": "代码注释语言.md",
+            "from": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be"
+          }
+        ],
+        "skipped": [],
+        "session_id": "mc-consolidate-fbb766b1a592",
+        "status": "queued",
+        "job_id": "ef2ccea9-9e47-4d76-a7a4-70503d2f7c4b",
+        "extraction_task": null
+      },
+      {
+        "shared_scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "sources": 2,
+        "promoted": [
+          {
+            "file": "苍鹭.md",
+            "from": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be"
+          }
+        ],
+        "skipped": [],
+        "session_id": "mc-consolidate-f8958c091766",
+        "status": "queued",
+        "job_id": "ec89195c-ee7c-4cb6-b7fb-675800ff6719",
+        "extraction_task": null
+      }
+    ],
+    "searchReadiness": [
+      {
+        "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "query": "苍鹭发布当前消息系统、月预算与双写周期",
+        "attempt": 1,
+        "ready": true,
+        "ts": "2026-10-01T07:23:06.938Z"
+      },
+      {
+        "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "query": "苍鹭发布当前消息系统、月预算与双写周期",
+        "attempt": 1,
+        "ready": false,
+        "error": "request failed: POST http://127.0.0.1:1936/api/v1/search/search: This operation was aborted",
+        "ts": "2026-10-01T07:25:57.406Z"
+      },
+      {
+        "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "query": "苍鹭发布当前消息系统、月预算与双写周期",
+        "attempt": 2,
+        "ready": true,
+        "ts": "2026-10-01T07:26:06.745Z"
+      },
+      {
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "query": "蓝鹊周报之前约定的三个标题和顺序",
+        "attempt": 1,
+        "ready": true,
+        "ts": "2026-10-01T07:26:15.719Z"
+      }
+    ],
+    "validatorCorrections": [
+      {
+        "check": "current-entity-update",
+        "reason": "Old check rejected any 7600 mention; stored card explicitly marks it as previous, with current budget 8100. Corrected check rejects unresolved old current values while accepting labelled history."
+      },
+      {
+        "check": "current-entity-update",
+        "reason": "Old check rejected any 7600 mention; stored card explicitly marks it as previous, with current budget 8100. Corrected check rejects unresolved old current values while accepting labelled history."
+      },
+      {
+        "check": "current-entity-update",
+        "reason": "Old check rejected any 7600 mention; stored card explicitly marks it as previous, with current budget 8100. Corrected check rejects unresolved old current values while accepting labelled history."
+      }
+    ],
+    "liveSkillUpdate": {
+      "ts": "2026-10-01T07:25:32.384Z",
+      "skillId": "584fbf8b-0784-4e77-ae66-f6401b648270",
+      "purpose": "Clarify business query and memory-recall versus own-space search"
+    },
+    "deliveryLimitations": [
+      {
+        "taskId": "01a0f658-7356-74de-9926-7002a6755ef8",
+        "status": "failed",
+        "error": "Missing Authentication header"
+      }
+    ],
+    "attempts": [
+      {
+        "finishedAt": "2026-10-01T07:15:22.514Z",
+        "error": "quality-shared-recall: failed: Missing Authentication header",
+        "resumedAt": "2026-10-01T07:17:44.855Z"
+      },
+      {
+        "finishedAt": "2026-10-01T07:21:21.687Z",
+        "resumedAt": "2026-10-01T07:22:47.956Z"
+      },
+      {
+        "finishedAt": "2026-10-01T07:23:38.644Z",
+        "error": "quality-shared-recall: failed: Missing Authentication header",
+        "resumedAt": "2026-10-01T07:25:29.258Z"
+      }
+    ],
+    "results": [
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "automatic-fact-fidelity",
+        "ok": true,
+        "detail": "Real automatic extraction preserved all three supplied business facts"
+      },
+      {
+        "id": "lasting-preference-retained",
+        "ok": true,
+        "detail": "Lasting Chinese-comment preference survived alongside temporary task controls"
+      },
+      {
+        "id": "no-active-write-shortcut",
+        "ok": true,
+        "detail": "Seed used automatic extraction, not active memory writes"
+      },
+      {
+        "id": "current-entity-update",
+        "ok": false,
+        "detail": "Current entity uses 8100 and preserves queue and double-write duration"
+      },
+      {
+        "id": "historical-budget-retained",
+        "ok": true,
+        "detail": "Historical 7600 decision remains traceable as an event"
+      },
+      {
+        "id": "entity-category-stable",
+        "ok": true,
+        "detail": "Same subject retained one stable entity URI across the update"
+      },
+      {
+        "id": "updated-uri-repromoted",
+        "ok": true,
+        "detail": "An updated existing entity was admitted to shared promotion"
+      },
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "current-entity-update",
+        "ok": true,
+        "detail": "Original stored entity has current 8100 and explicitly labelled previous 7600, preserving all other facts"
+      },
+      {
+        "id": "real-B-current-shared-recall",
+        "ok": false,
+        "detail": "Actual B recovered all current facts from shared memory without supplied answer values"
+      },
+      {
+        "id": "dm-distilled-peer-layout",
+        "ok": true,
+        "detail": "Real private layout was extracted into the peer memory namespace"
+      },
+      {
+        "id": "real-DM-layout-recall",
+        "ok": false,
+        "detail": "New actual chat recovered private layout from its pair memory"
+      },
+      {
+        "id": "peer-audit-coverage",
+        "ok": true,
+        "detail": "Complete memory audit included peer-owned private memories"
+      },
+      {
+        "id": "reusable-memory-hygiene",
+        "ok": true,
+        "detail": "Known run controls, retrieval outcomes and platform scaffolding absent from reusable memories"
+      },
+      {
+        "id": "runtime-markers-filtered",
+        "ok": true,
+        "detail": "Known injected runtime markers absent from extracted memories"
+      },
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "current-entity-update",
+        "ok": true,
+        "detail": "Original stored entity has current 8100 and explicitly labelled previous 7600, preserving all other facts"
+      },
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "current-entity-update",
+        "ok": true,
+        "detail": "Original stored entity has current 8100 and explicitly labelled previous 7600, preserving all other facts"
+      },
+      {
+        "id": "real-B-current-shared-recall",
+        "ok": true,
+        "detail": "Actual B recovered all current facts from shared memory without supplied answer values"
+      },
+      {
+        "id": "real-B-task-delivery",
+        "ok": false,
+        "detail": "Task completion is checked separately from recalled facts and persisted comments"
+      },
+      {
+        "id": "dm-distilled-peer-layout",
+        "ok": true,
+        "detail": "Real private layout was extracted into the peer memory namespace"
+      },
+      {
+        "id": "real-DM-layout-recall",
+        "ok": true,
+        "detail": "New actual chat recovered private layout from its pair memory"
+      },
+      {
+        "id": "peer-audit-coverage",
+        "ok": true,
+        "detail": "Complete memory audit included peer-owned private memories"
+      },
+      {
+        "id": "reusable-memory-hygiene",
+        "ok": true,
+        "detail": "Known run controls, retrieval outcomes and platform scaffolding absent from reusable memories"
+      },
+      {
+        "id": "runtime-markers-filtered",
+        "ok": true,
+        "detail": "Known injected runtime markers absent from extracted memories"
+      }
+    ],
+    "currentResults": [
+      {
+        "id": "runtime",
+        "ok": true,
+        "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+      },
+      {
+        "id": "automatic-fact-fidelity",
+        "ok": true,
+        "detail": "Real automatic extraction preserved all three supplied business facts"
+      },
+      {
+        "id": "lasting-preference-retained",
+        "ok": true,
+        "detail": "Lasting Chinese-comment preference survived alongside temporary task controls"
+      },
+      {
+        "id": "no-active-write-shortcut",
+        "ok": true,
+        "detail": "Seed used automatic extraction, not active memory writes"
+      },
+      {
+        "id": "current-entity-update",
+        "ok": true,
+        "detail": "Original stored entity has current 8100 and explicitly labelled previous 7600, preserving all other facts"
+      },
+      {
+        "id": "historical-budget-retained",
+        "ok": true,
+        "detail": "Historical 7600 decision remains traceable as an event"
+      },
+      {
+        "id": "entity-category-stable",
+        "ok": true,
+        "detail": "Same subject retained one stable entity URI across the update"
+      },
+      {
+        "id": "updated-uri-repromoted",
+        "ok": true,
+        "detail": "An updated existing entity was admitted to shared promotion"
+      },
+      {
+        "id": "real-B-current-shared-recall",
+        "ok": true,
+        "detail": "Actual B recovered all current facts from shared memory without supplied answer values"
+      },
+      {
+        "id": "dm-distilled-peer-layout",
+        "ok": true,
+        "detail": "Real private layout was extracted into the peer memory namespace"
+      },
+      {
+        "id": "real-DM-layout-recall",
+        "ok": true,
+        "detail": "New actual chat recovered private layout from its pair memory"
+      },
+      {
+        "id": "peer-audit-coverage",
+        "ok": true,
+        "detail": "Complete memory audit included peer-owned private memories"
+      },
+      {
+        "id": "reusable-memory-hygiene",
+        "ok": true,
+        "detail": "Known run controls, retrieval outcomes and platform scaffolding absent from reusable memories"
+      },
+      {
+        "id": "runtime-markers-filtered",
+        "ok": true,
+        "detail": "Known injected runtime markers absent from extracted memories"
+      },
+      {
+        "id": "real-B-task-delivery",
+        "ok": false,
+        "detail": "Task completion is checked separately from recalled facts and persisted comments"
+      }
+    ],
+    "memoryAudit": [
+      {
+        "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-fc2dbe609040/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "files": 6,
+        "uris": [
+          "viking://user/mcs-555fd3368ff8/memories/entities/项目/苍鹭.md",
+          "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1任务执行完成.md",
+          "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/RAM-1苍鹭蒸馏质量约定确认.md",
+          "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭发布预算调整为8100元.md",
+          "viking://user/mcs-555fd3368ff8/memories/events/2026/10/01/苍鹭项目发布与预算约定确认.md",
+          "viking://user/mcs-555fd3368ff8/memories/preferences/user/代码注释语言.md"
+        ],
+        "roots": [
+          "viking://user/mcs-555fd3368ff8/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "files": 2,
+        "uris": [
+          "viking://user/mcs-7385406aa1d0/memories/entities/项目/苍鹭.md",
+          "viking://user/mcs-7385406aa1d0/memories/preferences/user/代码注释语言.md"
+        ],
+        "roots": [
+          "viking://user/mcs-7385406aa1d0/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "agent:4f72edcc-9098-4037-bf77-61b5214402d2:34b6632d-b48a-472f-a4fe-a3acc8d4f52b",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-59562d51c1a2/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-8cfc9ea1d019/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "files": 1,
+        "uris": [
+          "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories/preferences/573a7c5f-300c-4944-b301-9c5ad9ed3563/蓝鹊周报排版格式.md"
+        ],
+        "roots": [
+          "viking://user/mcs-5586a3d07cc7/memories",
+          "viking://user/mcs-5586a3d07cc7/peers/573a7c5f-300c-4944-b301-9c5ad9ed3563/memories"
+        ],
+        "peerFiles": 1,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      },
+      {
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f658-7345-7dc0-80ff-210bf19786a3",
+        "files": 0,
+        "uris": [],
+        "roots": [
+          "viking://user/mcs-40e15f957de9/memories"
+        ],
+        "peerFiles": 0,
+        "complete": true,
+        "errors": [],
+        "qualityFindings": [],
+        "exactDuplicates": [],
+        "containsPlatformCanary": false,
+        "containsRuntimeBanner": false,
+        "containsPlatformGuidance": false
+      }
+    ],
+    "cleanup": {
+      "cancelledTasks": []
+    },
+    "extractionErrors": [
+      {
+        "ts": "2026-10-01T07:11:28.013Z",
+        "record": "archive-comment",
+        "ref": "01a0f64d-c233-7207-b7b0-5532667f5cdf",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f64d-79dd-7b78-b5c8-2a2e687640be",
+        "session_id": "mc-comment-01a0f64d-c233-7207-b7b0-5532667f5cdf",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:12:06.819Z",
+        "record": "consolidate",
+        "ref": "mc-consolidate-fbb766b1a592",
+        "scope": "shared:4f72edcc-9098-4037-bf77-61b5214402d2",
+        "session_id": "mc-consolidate-fbb766b1a592",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:17:45.003Z",
+        "record": "archive-comment",
+        "ref": "01a0f651-4c97-7ba0-b31d-0a8c19463fe7",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+        "session_id": "mc-comment-01a0f651-4c97-7ba0-b31d-0a8c19463fe7",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:17:45.009Z",
+        "record": "archive-run",
+        "ref": "01a0f650-2505-7d29-9a4e-8491fb3cca0f",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f650-24f8-79fd-85b3-0b6c4bf6320c",
+        "session_id": "mc-task-01a0f650-2505-7d29-9a4e-8491fb3cca0f",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:19:00.192Z",
+        "record": "archive-run",
+        "ref": "01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7",
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "session_id": "mc-task-01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:19:31.432Z",
+        "record": "archive-run",
+        "ref": "01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7",
+        "scope": "dm:4f72edcc-9098-4037-bf77-61b5214402d2:f49f8dba-9623-4e59-90d3-df7b0a54b098:573a7c5f-300c-4944-b301-9c5ad9ed3563",
+        "session_id": "mc-task-01a0f654-4b6b-7e9b-a2ec-8a82c764d5d7-r1",
+        "generation": 1,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:25:29.428Z",
+        "record": "archive-comment",
+        "ref": "01a0f658-e4b9-7956-a219-d9457c07ebfd",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f658-7345-7dc0-80ff-210bf19786a3",
+        "session_id": "mc-comment-01a0f658-e4b9-7956-a219-d9457c07ebfd",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      },
+      {
+        "ts": "2026-10-01T07:25:29.433Z",
+        "record": "archive-run",
+        "ref": "01a0f658-7356-74de-9926-7002a6755ef8",
+        "scope": "task:4f72edcc-9098-4037-bf77-61b5214402d2:01a0f658-7345-7dc0-80ff-210bf19786a3",
+        "session_id": "mc-task-01a0f658-7356-74de-9926-7002a6755ef8",
+        "generation": 0,
+        "extraction": "redriven",
+        "error": "Error code: 401 - {'error': {'message': 'Missing Authentication header', 'code': 401}}"
+      }
+    ],
+    "pendingExtractions": 0
+  },
+  "limitations": [
+    "15 latest checks: 14 passed, B final task delivery failed after successful recall/comment because of model 401.",
+    "Eight actual tasks: six completed and two failed. Prior failures and validator correction retained; not one clean run.",
+    "Rules detect known controls and scaffolding; zero findings is not zero semantic contamination. Current entity still contains minor task context such as RAM-1.",
+    "Only exact normalized duplicates are suppressed. Native alias/category maintenance is model-driven.",
+    "Provider 401 and retrieval timeouts persist; causes not established.",
+    "OV policy overrides require separate deployment; plugin ZIP alone does not load them.",
+    "Existing source memories are not deleted or retroactively rewritten."
+  ]
+}

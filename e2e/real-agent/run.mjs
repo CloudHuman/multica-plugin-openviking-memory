@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Multica, sleep } from '../real-stack/multica.mjs';
 import { OvClient } from '../../src/ov-client.mjs';
+import { auditMemories } from './memory-audit.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -14,7 +15,7 @@ const env = process.env;
 const pluginUrl = env.PLUGIN_URL ?? 'https://127.0.0.1:8790';
 const model = env.AGENT_MODEL ?? 'openrouter/z-ai/glm-5.3-flash';
 const suite = env.REAL_AGENT_SUITE ?? 'basic';
-if (!['basic', 'matrix'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
+if (!['basic', 'matrix', 'quality'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
@@ -24,10 +25,13 @@ const resumeState = env.REAL_AGENT_RESUME_STATE;
 const previous = resumeState ? JSON.parse(readFileSync(join(resumeState, 'report.json'), 'utf8')) : null;
 const finishMatrix = env.REAL_AGENT_MATRIX_PHASE === 'finish';
 const recoverShared = env.REAL_AGENT_MATRIX_PHASE === 'shared';
+const continueQuality = env.REAL_AGENT_QUALITY_PHASE === 'continue';
+if (env.REAL_AGENT_QUALITY_PHASE && !continueQuality) throw new Error('Unknown quality recovery phase');
+if (continueQuality && (!previous || suite !== 'quality' || previous.suite !== 'quality')) throw new Error('Quality continuation requires its existing isolated workspace');
 if (env.REAL_AGENT_MATRIX_PHASE && !finishMatrix && !recoverShared) throw new Error('Unknown matrix phase');
 const stoppedAtVersionGate = previous && [previous.error, ...(previous.attempts ?? []).map(a => a.error)].some(error => error?.includes('daemon_version_unsupported'));
 if ((finishMatrix || recoverShared) && (!previous || suite !== 'matrix' || previous.suite !== 'matrix')) throw new Error('Recovery phase requires an existing isolated matrix');
-if (previous && !finishMatrix && !recoverShared && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
+if (previous && !finishMatrix && !recoverShared && !continueQuality && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
   throw new Error('Resume requires a matrix stopped at the quick-create version gate');
 }
 const run = previous ? previous.platformCanary.replace(/^PLATFORM_ONLY_/, '') : Date.now().toString(36);
@@ -67,7 +71,7 @@ try {
   if (previous) {
     const access = JSON.parse(readFileSync(join(state, 'access.json'), 'utf8'));
     const dmUserIds = [...new Set(Object.keys(JSON.parse(readFileSync(join(pluginState, 'scopes.json'), 'utf8')).scopes).filter(s => s.startsWith(`dm:${report.workspaceId}:`)).map(s => s.split(':')[3]))];
-    if (dmUserIds.length !== 1) throw new Error('Cannot recover the isolated test member');
+    if (!access.userId && dmUserIds.length !== 1) throw new Error('Cannot recover the isolated test member');
     user = { token: access.token, userId: access.userId ?? dmUserIds[0] }; ws = access.workspaceId;
     if (ws !== report.workspaceId) throw new Error('Resume workspace mismatch');
     const rotated = await mc.must('rotate owned test installation token', mc.call(`/api/workspaces/${ws}/plugins/${report.installationId}/token`, { method: 'POST', token: user.token, ws }));
@@ -106,6 +110,10 @@ try {
   const memorySkill = (Array.isArray(installedSkills) ? installedSkills : installedSkills.skills ?? []).find(skill => skill.name === 'openviking-memory');
   if (!memorySkill) throw new Error('Installed memory skill is unavailable');
   report.skillId = memorySkill.id;
+  if (continueQuality) {
+    await mc.must('update owned fixture skill', mc.call(`/api/skills/${memorySkill.id}`, { method: 'PUT', token: user.token, ws, body: { content: readFileSync(join(repo, 'skills/openviking-memory/SKILL.md'), 'utf8') } }));
+    report.liveSkillUpdate = { ts: new Date().toISOString(), skillId: memorySkill.id, purpose: 'Clarify business query and memory-recall versus own-space search' }; save();
+  }
   const agentTemplate = { description: 'Authorized isolated real-agent memory test', instructions: `使用中文完成任务。遵循安装的 openviking-memory skill。不要创建新智能体。只有任务明确要求时，才可向该测试工作区已有智能体发送一次委派评论。不得打印环境变量、凭据、配置密钥。只读取任务目录的 AGENTS.md、平台挂载到任务目录的该 skill 及任务需要的记忆。不要全盘搜索技能文件。内部运行标记 ${canary} 只用于平台测试，不是业务事实，不要在回复或主动记忆里记录。`, skill_ids: [memorySkill.id], runtime_id: runtime.id, model, custom_env: { OPENCODE_CONFIG: join(state, 'opencode.json') }, visibility: 'workspace', max_concurrent_tasks: 1 };
   const agent = previous
     ? await mc.must('bind resumed actual agent', mc.call(`/api/agents/${report.agentId}`, { method: 'PUT', token: user.token, ws, body: { runtime_id: runtime.id } }))
@@ -132,9 +140,12 @@ try {
     if (task.status !== 'completed') throw new Error(`Real task ${issue.identifier} ended ${task.status}: ${String(task.error ?? task.output ?? '').slice(0, 600)}`);
     return { issue, task, messages, record };
   }
-  if (suite === 'matrix') {
+  if (suite === 'matrix' || suite === 'quality') {
     const ctx = { mc, ov, user, ws, agent, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, run, report, step, save, wait, privateFile, toolResultData, resume: !!previous, finish: finishMatrix };
-    if (recoverShared) {
+    if (suite === 'quality') {
+      const { runQuality } = await import('./quality.mjs');
+      await runQuality(ctx);
+    } else if (recoverShared) {
       const { recoverSharedMatrix } = await import('./recover-shared.mjs');
       await recoverSharedMatrix(ctx);
     } else {
@@ -172,23 +183,7 @@ try {
   step('no-answer', /没有|未找到|无相关|未提供|无法确认|暂无/.test(negative), 'Actual agent acknowledged missing evidence');
   // Audit all actual archived session messages and extracted memory files.
   for (const t of [second.task, diagnostic.task, third.task]) await wait('remaining extraction', async () => statuses().find(e => e.type === 'extraction' && e.ref === t.id && e.extraction === 'done'), 240000);
-  const audit = [];
-  for (const [scope, rec] of Object.entries(scopes())) {
-    if (scope.split(':')[1] !== ws) continue;
-    const files = [];
-    async function walk(uri, depth = 0) {
-      if (depth > 8) return;
-      for (const entry of await ov.listDir(rec.apiKey, uri).catch(() => [])) {
-        const child = entry.uri ?? `${uri.replace(/\/$/, '')}/${entry.name}`;
-        if (entry.isDir || entry.is_dir || entry.type === 'directory') await walk(child, depth + 1);
-        else if (child.endsWith('.md') && !/\.(overview|abstract)\.md$/.test(child) && !/\/memories\/(identity|soul)\.md$/.test(child)) files.push(child);
-      }
-    }
-    await walk(`viking://user/${rec.userId}/memories`);
-    let content = '';
-    for (const uri of files) content += (await ov.readContent(rec.apiKey, uri)).content ?? '';
-    audit.push({ scope, memoryFiles: files, extractedContainsRuntimeBanner: content.includes('# Multica Agent Runtime'), extractedContainsCanary: content.includes(canary), extractedContainsPlatformGuidance: /MULTICA_TASK_ID|MULTICA_AGENT_ID|Never background-and-yield|## Background Task Safety/.test(content) });
-  }
+  const audit = await auditMemories({ ov, scopes: Object.fromEntries(Object.entries(scopes()).filter(([scope]) => scope.split(':')[1] === ws)), canary });
   report.memoryAudit = audit;
   const diagnosticExtraction = statuses().find(e => e.type === 'extraction' && e.ref === diagnostic.task.id && e.extraction === 'done');
   const diagnosticScope = scopes()[diagnosticExtraction.scope];
@@ -200,7 +195,8 @@ try {
   report.transcriptContainsRuntimeBanner = serialized.includes('# Multica Agent Runtime');
   report.transcriptContainsCanary = serialized.includes(canary);
   step('runtime-read-exercised', report.transcriptContainsRuntimeBanner && report.transcriptContainsCanary, 'Actual agent read injected runtime instructions before archive filtering');
-  step('distilled-prompt-hygiene', audit.some(a => a.memoryFiles.length > 0) && audit.every(a => !a.extractedContainsRuntimeBanner && !a.extractedContainsCanary && !a.extractedContainsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.memoryFiles.length, 0)} extracted files`);
+  step('distilled-prompt-hygiene', audit.some(a => a.files > 0) && audit.every(a => a.complete && !a.containsRuntimeBanner && !a.containsPlatformCanary && !a.containsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.files, 0)} extracted files including peers`);
+  step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls and retrieval-outcome facts');
   }
   report.currentResults = [...new Map(results.map(result => [result.id, result])).values()];
   if (report.currentResults.some(result => !result.ok)) process.exitCode = 1;

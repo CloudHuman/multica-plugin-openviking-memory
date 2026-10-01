@@ -79,6 +79,7 @@
     }
   },
   "memory": {
-    "extraction_output_format": "json"
+    "extraction_output_format": "json",
+    "custom_templates_dir": "/app/.openviking/multica-memory-templates"
   }
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmdirSync, writeFileSync } from 'node:fs';
 import { consolidateShared } from '../src/consolidate.mjs';
 import { scopeKey } from '../src/scopes.mjs';
 import { startFakeOv, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B } from './helpers.mjs';
@@ -91,6 +91,89 @@ test('failed queue admission leaves promotion available for retry', async () => 
     const retried = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
     assert.equal(retried.json.result.promoted.length, 1);
     assert.ok(retried.json.result.job_id);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('sharing rejects known run controls, ignores stubs and deduplicates exact content across paths', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    const base = `viking://user/${rec.userId}/memories`;
+    const fact = '# 青岚仓库\n- 采用 NATS JetStream。\n- 每月预算上限 2450 元。';
+    for (const [path, content] of [
+      ['entities/代码仓库/青岚.md', fact], ['entities/项目/青岚.md', fact],
+      ['preferences/任务要求.md', '任务回复须基于 memory-recall 召回的实际证据，并引用来源 URI。未经明确要求不主动记录记忆，不修改代码。'],
+      ['entities/项目/.overview.md', fact],
+    ]) await svc.ovClient.writeContent(rec.apiKey, { uri: `${base}/${path}`, content });
+    const result = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(result.json.result.promoted.length, 1);
+    assert.ok(result.json.result.skipped.some(s => s.reasons.includes('execution-control')));
+    assert.ok(result.json.result.skipped.some(s => s.reasons.includes('duplicate-content')));
+    const retry = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(retry.json.result.promoted.length, 0);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('an explicit update to the same entity URI is promoted once with the new value', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    const uri = `viking://user/${rec.userId}/memories/entities/项目/苍鹭.md`;
+    const write = budget => svc.ovClient.writeContent(rec.apiKey, { uri, content: `# 苍鹭发布\n- 使用 Apache Pulsar。\n- 月度预算 ${budget} 元。\n- 双写持续五天。`, mode: 'overwrite' });
+    await write(7600);
+    const first = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    await write(8100);
+    const second = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(second.json.result.promoted.length, 1);
+    assert.notEqual(second.json.result.session_id, first.json.result.session_id);
+    const job = svc.queue.jobs.get(second.json.result.job_id);
+    assert.match(job.payload.messages[0].content, /8100/);
+    assert.doesNotMatch(job.payload.messages[0].content, /7600/);
+    assert.match(job.payload.messages[0].content, /来源 URI:/);
+    const repeated = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(repeated.json.result.promoted.length, 0);
+    // Reusing a past value is still a new current-version update, not a
+    // duplicate of the old native session or its already-completed queue job.
+    await write(7600);
+    const rollback = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(rollback.json.result.promoted.length, 1);
+    assert.notEqual(rollback.json.result.session_id, first.json.result.session_id);
+    await write(8100);
+    const restored = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(restored.json.result.promoted.length, 1);
+    assert.notEqual(restored.json.result.session_id, second.json.result.session_id);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('legacy URI-only receipts get a safe current-content backfill once', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const scope = scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A);
+    const rec = await svc.registry.ensureScope(scope, { workspaceId: FIXTURE_WS });
+    const uri = `viking://user/${rec.userId}/memories/entities/项目/苍鹭.md`;
+    await svc.ovClient.writeContent(rec.apiKey, { uri, content: '# 苍鹭发布\n- 使用 Apache Pulsar。\n- 月度预算 8100 元。\n- 双写持续五天。' });
+    writeFileSync(`${svc.stateDir}/consolidated.json`, JSON.stringify({ files: { [`${scope}|${uri}`]: '2026-09-30T00:00:00Z' } }));
+    const backfill = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(backfill.json.result.promoted.length, 1);
+    const repeated = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
+    assert.equal(repeated.json.result.promoted.length, 0);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('identical content in two workspaces is promoted independently', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const content = '# 青岚仓库\n- 采用 NATS JetStream。\n- 每月预算上限 2450 元。';
+    for (const workspaceId of [FIXTURE_WS, '99999999-1111-4111-8111-222222222222']) {
+      const rec = await svc.registry.ensureScope(scopeKey('agent', workspaceId, FIXTURE_AGENT_A), { workspaceId });
+      await svc.ovClient.writeContent(rec.apiKey, { uri: `viking://user/${rec.userId}/memories/entities/项目/青岚.md`, content });
+      const result = await consolidateShared({ ov: svc.ovClient, registry: svc.registry, queue: svc.queue, workspaceId, stateDir: svc.stateDir });
+      assert.equal(result.promoted.length, 1, 'another workspace cannot suppress this workspace\'s promotion');
+    }
   } finally { await svc.stop(); await ovF.stop(); }
 });
 

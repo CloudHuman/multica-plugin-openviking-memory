@@ -82,6 +82,21 @@ test('recall answers inside its budget when a space is slow, and says the result
   });
 });
 
+test('bound identifier-only recall uses its own issue goal and never another requested issue', async () => {
+  const taskId = '11111111-2222-4333-8444-555555555555';
+  await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId, issueId: FIXTURE_ISSUE2_ID }) } }, async ({ svc, cb }) => {
+    const query = `${taskId} task context related memories`;
+    const response = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query, issue_id: 'MUL-7' }, cb, { task_id: taskId }));
+    assert.equal(response.json.result.query_rewritten_from, query);
+    assert.match(response.json.result.query, /另一个任务/);
+    assert.ok(response.json.result.query.startsWith('另一个任务'));
+    assert.ok(response.json.result.scopesSearched.every(s => s.scope !== scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID)));
+    const explicit = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '指定业务问题' }, cb, { task_id: taskId }));
+    assert.equal(explicit.json.result.query, '指定业务问题');
+    assert.equal(explicit.json.result.query_rewritten_from, undefined);
+  });
+});
+
 test('tool failures come back as a readable 200 payload, not a bare 500', async () => {
   await withStack({}, async ({ svc, cb }) => {
     const empty = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '' }, cb));

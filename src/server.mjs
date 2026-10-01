@@ -31,7 +31,7 @@ import { loadConfig, validateStartupConfig, mergeCallConfig, archiveSettings } f
 import { OvClient, isAlreadyExists } from './ov-client.mjs';
 import { MulticaClient, isNotFound } from './multica-client.mjs';
 import { ScopeRegistry, resolveReadScopes, resolveArchiveScope, scopeKey, runScopes } from './scopes.mjs';
-import { recallFromScopes, renderRecallBlock } from './recall.mjs';
+import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery, issueMemoryQuery } from './recall.mjs';
 import { buildJobMessages } from './pipeline.mjs';
 import { createArchiveProcessing } from './processing.mjs';
 import { Ledger, ArchiveStatusLog } from './ledger.mjs';
@@ -366,6 +366,16 @@ export function makeMemoryRecallHandler(deps) {
     const mc = callbackClient(deps, ctx, body, 8_000);
     const run = await resolveRun({ mc, body, ws, agentId });
     const notes = [];
+    let effectiveQuery = query;
+    if (run.bound && run.kind === 'issue' && run.issueId && isOpaqueMemoryQuery(query)) {
+      try {
+        const contextual = issueMemoryQuery(await mc.getIssue(run.issueId));
+        if (contextual) {
+          effectiveQuery = contextual;
+          notes.push('原 query 只有任务标识和通用查询词，已使用当前绑定 issue 的业务目标查询；召回范围保持不变。');
+        }
+      } catch { /* keep the original query if the callback can't read its issue */ }
+    }
     let scopeKeys = run.readScopes;
     if (input.issue_id) {
       // Keys like MUL-123 and UUIDs name the same issue; scopes are keyed by UUID.
@@ -379,19 +389,20 @@ export function makeMemoryRecallHandler(deps) {
       }
     }
     const result = await recallFromScopes({
-      ov, registry, scopeKeys, query,
+      ov, registry, scopeKeys, query: effectiveQuery,
       entries: Math.min(10, Math.max(1, Number(input.top_k) || merged.recallEntries)),
       perScopeLimit: merged.recallPerScopeLimit,
       contentMaxChars: merged.recallContentMaxChars,
       deadline,
     });
     const late = result.scopesSearched.filter((s) => s.timedOut).length;
-    if (late) notes.push(`${late} 个记忆空间没有在时限内返回(OpenViking 检索慢),结果可能不完整;需要时可以稍后再查`);
+    if (late) notes.push(`${late} 个记忆空间没有在时限内返回(OpenViking 检索慢)，检索未完成、结果可能不完整；空结果不能证明没有记忆，应说明暂时无法确认，需要时稍后再查。`);
     const failed = result.scopesSearched.filter((s) => s.error && !s.timedOut).length;
     if (failed) notes.push(`${failed} 个记忆空间检索失败，本次结果不完整；空结果不能证明没有记忆，请如实说明检索未完成，稍后可重试。`);
     return {
-      note: '参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。',
+      note: '参考证据：当前请求与实际执行结果优先；无相关内容时不要编造记忆。query 应使用项目名和业务问题，不能只用任务 UUID。需调整查询时继续调用 memory-recall；ov-search/ov-find 只搜索你自己的公共空间，不能代替任务、私聊、委派或共享范围的召回。',
       run: { kind: run.kind, bound: run.bound },
+      ...(effectiveQuery !== query ? { query_rewritten_from: query } : {}),
       ...(notes.length ? { notes } : {}),
       ...result,
     };

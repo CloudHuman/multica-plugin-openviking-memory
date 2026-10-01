@@ -2273,5 +2273,15 @@
     "testPendingExtractions": 0,
     "originalServicesRestored": true,
     "activeActualTasks": 0
+  },
+  "auditCoverageCorrection": {
+    "auditedAt": "2026-10-01T07:10:28.171Z",
+    "originalOwnMemoryFiles": 48,
+    "correctedMemoryFiles": 50,
+    "additionalPeerFiles": 2,
+    "complete": true,
+    "knownQualityFindingFiles": 7,
+    "report": "reports/distillation-quality-2026-10-01.json",
+    "note": "Original regex audit omitted peers/*/memories. All 50 files lack checked runtime markers, but seven reusable files carry known semantic-quality findings; no zero-contamination claim."
   }
 }

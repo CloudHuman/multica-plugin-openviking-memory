@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recallFromScopes, renderRecallBlock } from '../src/recall.mjs';
+import { recallFromScopes, renderRecallBlock, isOpaqueMemoryQuery } from '../src/recall.mjs';
 import { OvClient } from '../src/ov-client.mjs';
 import { ScopeRegistry, scopeKey } from '../src/scopes.mjs';
 import { startFakeOv, tempStateDir, FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A } from './helpers.mjs';
@@ -15,6 +15,15 @@ async function bootRegistry(ov) {
 
 // Memories live under each space's own user root, as OV writes them.
 const memUri = (rec, path) => `viking://user/${rec.userId}/memories/${path}`;
+
+test('only identifier-only queries are eligible for business-context recovery', () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  assert.equal(isOpaqueMemoryQuery(`${id} task context related memories`), true);
+  assert.equal(isOpaqueMemoryQuery(`issue ${id} context and prior decisions`), true);
+  assert.equal(isOpaqueMemoryQuery('MUL-123'), true);
+  assert.equal(isOpaqueMemoryQuery(`${id} 原先的负责人是谁`), false);
+  assert.equal(isOpaqueMemoryQuery('苍鹭项目的预算与双写周期'), false);
+});
 
 test('recall merges scopes, drops stubs, ranks and caps, and reads each hit from its first line', async () => {
   const ov = await startFakeOv();
@@ -137,6 +146,27 @@ test('recall reports unprovisioned scopes as skipped, never fails', async () => 
   } finally {
     await ov.stop();
   }
+});
+
+test('recall fills slots after filtering controls and exact copies, keeping current and historical budgets', async () => {
+  const scope = scopeKey('shared', FIXTURE_WS);
+  const base = 'viking://user/u/memories';
+  const files = [
+    [`${base}/preferences/临时要求.md`, '未经明确要求不主动记录记忆，不修改代码；任务回复须基于 memory-recall 召回的实际证据，并引用来源 URI。'],
+    [`${base}/entities/项目/苍鹭.md`, '# 苍鹭发布\n- 使用 Apache Pulsar。\n- 月度预算 8100 元。\n- 双写持续五天。'],
+    [`${base}/entities/仓库/苍鹭.md`, '# 苍鹭发布\n- 使用 Apache Pulsar。\n- 月度预算 8100 元。\n- 双写持续五天。'],
+    [`${base}/cases/历史决定.md`, '# 苍鹭发布历史决定\n- 2026-09-30 月度预算 7600 元，2026-10-01 正式调整为 8100 元。'],
+  ];
+  const ov = {
+    search: async () => ({ memories: files.map(([uri], i) => ({ uri, context_type: 'memory', score: 1 - i / 10 })) }),
+    readContent: async (_key, uri) => ({ content: files.find(f => f[0] === uri)[1] }),
+  };
+  const result = await recallFromScopes({ ov, registry: { get: () => ({ apiKey: 'key' }) }, scopeKeys: [scope], query: '苍鹭预算', entries: 2 });
+  assert.equal(result.entries.length, 2);
+  assert.equal(result.entries[0].duplicate_sources.length, 1);
+  assert.match(result.entries[0].content, /8100/);
+  assert.match(result.entries[1].content, /7600/);
+  assert.ok(result.entries.every(e => !/未经明确要求|memory-recall/.test(e.content)));
 });
 
 test('renderRecallBlock produces a bounded injected-context block', async () => {

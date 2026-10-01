@@ -181,11 +181,11 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 
 1. 归档作业指数退避重试（默认 8 次；OV 以 4xx 拒绝的请求不重试，直接标记失败）。提交响应丢失时从 OV 找回提交任务，不重复提交。
 2. 抽取监视器在队列之外轮询 OV 的提交任务（任务记录过期后看归档目录的 `.done` / `.failed.json`）；失败就把记录作为下一代（会话 `…-r1`、`…-r2`）重新归档，默认最多 2 次。
-3. 手动兜底：`POST /admin/redrive {"job_id":"…"}` 或 `{"session_id":"…"}`；共享晋升被打断时 `rm state/consolidated.json` 后重跑 `POST /admin/consolidate`。
+3. 手动兜底：`POST /admin/redrive {"job_id":"…"}` 或 `{"session_id":"…"}`；共享晋升也使用同一持久化队列和抽取监视，不需要删除晋升回执。旧版失败晋升按下文的 `replay_session_id` 恢复。
 
 multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`，一条记录只对应一个作业。
 
-**共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间（保留来源范围，按"范围 + URI"幂等）。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
+**共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间。跳过命中的临时执行控制、检索失败结论、平台脚手架和目录摘要；`skipped` 返回原因。保留来源范围与完整 URI，按内容版本幂等：同文件内容更新后可再次晋升，明确回滚到旧值也作为新版本处理；完全相同内容的副本不重复晋升。旧版 URI 回执会对当前安全内容补晋升一次。筛选规则是有限的防护，不是通用语义分类器；超过 3500 字符的候选暂不自动晋升，避免截掉事实。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
 
 晋升先返回 `status: queued`、`job_id` 与 `session_id`，表示持久化受理，抽取结果通过同一归档状态接口查看。队列和抽取监视在重启后恢复，失败时在新会话重驱；超过重驱预算后可用 `/admin/redrive {job_id}` 再试。旧版本未经监视的失败晋升可通过 `/admin/consolidate {workspace_id, replay_session_id}` 从原归档恢复，须提供 `mc-consolidate-*` 会话且有失败记录；只读取该工作区的共享空间，成功或尚未完成的会话不能重放。
 
@@ -194,7 +194,10 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 ## 与功能规格的对照与已知边界
 
 - **历史运行时记录（本轮未复验）**：OpenCode 全工具；kimi 需直连条目解锁（机制待查）；pi 无 MCP（上游 #8961）；并发投递、跨运行时交接（oc→kimi / oc→pi）、小队分派-汇总。本轮真实智能体验证使用 OpenCode，其他运行时与客户端的验收不能从这些历史记录推定。
-- **蒸馏质量**：抽取器正确区分"谁登记的知识 / 谁执行 / 谁主张"（盲测实证）；commit 元数据带 `agent=` 归属标签；冲突记忆并存靠出处追溯，不自动裁决。
+- **蒸馏质量**：归档保留业务原话及出处；抽取规则区分持久偏好、业务事实与临时执行指令。召回会过滤已知执行控制，并合并完全相同内容的副本，返回 `content_filtered` 和 `duplicate_sources` 标记；仍保留不同数值、日期和条件的证据。真实模型的分类与实体维护不是确定性保证，未解决的冲突需按出处核实。
+- **业务查询兜底**：绑定 issue 的运行若只用 UUID / issue 编号加通用词查询，使用该绑定 issue 的业务目标补全查询，并返回 `query_rewritten_from` 及说明；明确业务查询保持原样，不扩大任何读取范围。超时与错误表示检索未完成，空结果不能证明没有记忆。
+
+OpenViking 的抽取模板单独部署。使用运行 OpenViking 的同一 Python 环境执行 `python3 scripts/install-memory-policy.py --output /app/.openviking/multica-memory-templates`，然后在 OV 配置中设置 `memory.custom_templates_dir` 为该目录并重启 OV。脚本从已安装版本的原生模板生成覆盖文件，保留字段、路径与合并格式；不修改原生文件，也不删除已有记忆。规则见 `deploy/memory-policy.json`，推荐配置已包含此路径。容器部署时将脚本和规则文件带入 OV 容器，或挂载生成后的目录；只部署插件 ZIP 不会自动改变 OV 的抽取规则。运行 `python3 scripts/test-memory-policy.py` 可核验原生结构保留。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。

@@ -1,4 +1,5 @@
 import { beforeDeadline } from './util.mjs';
+import { memoryExcerpt, memoryFingerprint, promotionQuality } from './memory-quality.mjs';
 
 /**
  * Multi-scope recall: fan out one search per authorized space key, then merge,
@@ -40,6 +41,19 @@ const SCOPE_PRIORITY = {
 
 export function recallPriority(scopeKeyStr) {
   return SCOPE_PRIORITY[String(scopeKeyStr).split(':')[0]] ?? 9;
+}
+
+/** A UUID plus generic search boilerplate contains no business search intent. */
+export function isOpaqueMemoryQuery(query) {
+  const text = String(query ?? '');
+  const withoutIds = text.replace(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi, '').replace(/\b[A-Z]{2,12}-\d+\b/g, '');
+  return withoutIds !== text && !withoutIds.replace(/\b(?:task|issue|id|context|related|memories|memory|and|prior|previous|decisions)\b/gi, '').replace(/[\s:,_\-.]+/g, '');
+}
+
+export function issueMemoryQuery(issue) {
+  const title = typeof issue?.title === 'string' ? issue.title.trim() : '';
+  const description = typeof issue?.description === 'string' ? memoryExcerpt(issue.description).content : '';
+  return [title, description].filter(Boolean).join('\n').slice(0, 600);
 }
 
 export async function recallFromScopes({
@@ -91,26 +105,53 @@ export async function recallFromScopes({
     }
   }
 
-  const ranked = [...merged.values()].sort((a, b) => b.score - a.score || a.priority - b.priority).slice(0, entries);
+  // Read a bounded reserve so filtered controls/copies don't use up all slots.
+  const candidates = [...merged.values()].sort((a, b) => b.score - a.score || a.priority - b.priority).slice(0, Math.min(30, entries * 3));
 
   // Attach L2 content for the survivors (best effort, per-own-space key).
   await Promise.all(
-    ranked.map(async (entry) => {
+    candidates.map(async (entry) => {
       const rec = registry.get(entry.scope);
       if (!rec) return;
       try {
         const r = await beforeDeadline(ov.readContent(rec.apiKey, entry.uri, { limit: 400, deadline }), deadline);
         const content = typeof r?.content === 'string' ? r.content : undefined;
-        if (content) entry.content = content.length > contentMaxChars ? content.slice(0, contentMaxChars) : content;
+        if (content) entry.content = content;
       } catch {
         /* content is an enrichment, never a failure */
       }
     }),
   );
 
+  const ranked = [];
+  const byContent = new Map();
+  for (const entry of candidates) {
+    const evidence = entry.content ?? entry.abstract;
+    if (entry.scope.startsWith('shared:') && !promotionQuality({ content: evidence, uri: entry.uri, maxContentChars: Infinity }).eligible) continue;
+    const excerpt = memoryExcerpt(evidence, { uri: entry.uri });
+    if (evidence && !excerpt.content) continue;
+    if (entry.content) entry.content = excerpt.content;
+    const abstract = memoryExcerpt(entry.abstract, { uri: entry.uri });
+    entry.abstract = abstract.content;
+    entry.contentFiltered = excerpt.filtered || abstract.filtered;
+    // Tiny fallback summaries (or a failed read) are not sufficient evidence
+    // that two files are the same. Keep such candidates separate.
+    const fingerprint = entry.content?.length >= 30 ? memoryFingerprint(entry.content) : null;
+    const previous = fingerprint && byContent.get(fingerprint);
+    if (previous) {
+      previous.duplicateSources ??= [];
+      previous.duplicateSources.push({ uri: entry.uri, scope: entry.scope });
+      continue;
+    }
+    if (ranked.length >= entries) continue;
+    if (fingerprint) byContent.set(fingerprint, entry);
+    if (entry.content?.length > contentMaxChars) entry.content = entry.content.slice(0, contentMaxChars);
+    ranked.push(entry);
+  }
+
   return {
     query,
-    entries: ranked.map(({ uri, level, score, abstract, scope, content }) => ({
+    entries: ranked.map(({ uri, level, score, abstract, scope, content, contentFiltered, duplicateSources }) => ({
       uri,
       level,
       score: Math.round(score * 1000) / 1000,
@@ -118,6 +159,8 @@ export async function recallFromScopes({
       content: content ?? null,
       scope,
       source: uri,
+      ...(contentFiltered ? { content_filtered: true } : {}),
+      ...(duplicateSources ? { duplicate_sources: duplicateSources } : {}),
     })),
     scopesSearched: searches.map((s) => ({ scope: s.scopeKeyStr, hits: s.hits.length, skipped: s.skipped, error: s.error, timedOut: s.timedOut })),
   };
