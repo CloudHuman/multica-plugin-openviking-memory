@@ -171,10 +171,14 @@ export async function runQuality(ctx) {
   }
 }
 
+// 7600 must read as superseded: a marker shortly before it, or "已被取代" style wording after it.
+const HISTORY_BEFORE_7600 = /(?:此前|原先|原预算|历史|取代|替代|较早|早先|previous|historical|supersed|replac|earlier|former).{0,20}7600/i;
+const HISTORY_AFTER_7600 = /7600.{0,20}(?:已?被(?:取代|替代)|superseded|replaced)/i;
+
 export function hasCurrentBudget(content) {
   const current = /^\s*-.*(?:预算|budget).{0,25}8100\s*元/im.test(content);
   const oldMentions = String(content).split('\n').filter(line => /7600/.test(line));
-  return current && oldMentions.every(line => /(?:此前|原先|原预算|历史|previous|historical).{0,20}7600/i.test(line))
+  return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line))
     && /Pulsar/.test(content) && /五天|5\s*天/.test(content);
 }
 

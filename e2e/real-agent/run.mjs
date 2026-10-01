@@ -186,9 +186,10 @@ try {
   report.firstArchive = archive;
   const second = await execute('新任务查询海棠既有方案', '海棠迁移项目之前已经确定哪些消息队列、预算、双写周期和死信告警约定？请按 openviking-memory skill 召回，在回复里列出四项约定，附上记忆来源 URI。这里没有重新提供那些数值，请以实际召回证据为准；没有证据的项如实说明。不必记录新记忆，不要修改代码。');
   const reply = [second.record.output, ...second.record.comments.map(c => c.content), ...second.messages.filter(m => m.type === 'text').map(m => m.content)].join('\n');
-  const recallResult = second.messages.filter(m => m.type === 'tool_result' && /memory.*recall/.test(m.tool ?? '')).map(toolResultData).find(data => data?.status === 'ok');
-  step('recall-bound-to-run', recallResult?.result?.run?.bound === true, 'Memory recall was bound to the actual new task');
-  step('cross-task-recall', /RocketMQ/i.test(reply) && /3800/.test(reply) && /两周|2\s*周|two weeks|14\s*天/.test(reply) && /10000|10,000|1\s*万/.test(reply) && recallResult?.result?.entries?.some(entry => second.record.comments.some(comment => comment.content.includes(entry.uri))), 'New real task recovered all four facts and cited a Viking URI');
+  // An agent may refine its query after an empty first recall; any of its recalls can supply the cited source.
+  const recallResults = second.messages.filter(m => m.type === 'tool_result' && /memory.*recall/.test(m.tool ?? '')).map(toolResultData).filter(data => data?.status === 'ok');
+  step('recall-bound-to-run', recallResults.length > 0 && recallResults.every(data => data.result?.run?.bound === true), 'Every memory recall was bound to the actual new task');
+  step('cross-task-recall', /RocketMQ/i.test(reply) && /3800/.test(reply) && /两周|2\s*周|two weeks|14\s*天/.test(reply) && /10000|10,000|1\s*万/.test(reply) && recallResults.some(data => data.result?.entries?.some(entry => second.record.comments.some(comment => comment.content.includes(entry.uri)))), 'New real task recovered all four facts and cited a URI from any of its recalls');
   const diagnostic = await execute('实际读取平台说明的归档隔离诊断', '这是明确授权的隔离诊断任务。必须实际调用 read 工具读取当前任务工作目录的 AGENTS.md，这一步是验收要求。即使平台已在上下文提供该文件，也仍需要本次 read 工具的实际读取记录。不要复述文件内容或内部运行标记，不要记录任何记忆，不要搜索其他目录。读取后通过平台流程提交简短最终回复“平台说明读取诊断完成”。不需要其他业务工作或代码修改。');
   const third = await execute('无答案问题', '梧桐项目的值班负责人和预定上线日期分别是什么？请先调用 memory-recall 搜索，再根据证据回答。这是一个独立项目，没有与海棠有关联；如果没有记忆，明确说明，不要编造人员或日期。不必记录新记忆，不要修改代码。');
   const negative = [third.record.output, ...third.record.comments.map(c => c.content), ...third.messages.filter(m => m.type === 'text').map(m => m.content)].join('\n');

@@ -55,6 +55,12 @@ test('current-budget verification accepts labelled history and rejects an unreso
   assert.equal(hasCurrentBudget(facts + '- 每月发布预算为 8100 元（此前为 7600 元）。'), true);
   assert.equal(hasCurrentBudget(facts + '- 每月预算为 7600 元。\n- 另有 8100 元预算说法。'), false);
   assert.equal(hasCurrentBudget(facts + '- 每月预算为 8100 元。\n- 每月预算为 7600 元。'), false);
+  // Wording seen from a real extraction model: 7600 is explicitly superseded.
+  assert.equal(hasCurrentBudget(facts + '- 发布预算为 8100 元（成员于 2026-10-01 正式更新，取代同日较早确认的每月 7600 元）。'), true);
+  assert.equal(hasCurrentBudget(facts + '- 每月预算为 8100 元。\n- 7600 元的预算已被取代。'), true);
+  assert.equal(hasCurrentBudget(facts + '- Monthly budget is 8100 元 (supersedes the earlier 7600).'), true);
+  // An old value still presented as current does not pass, whatever the wording around 8100.
+  assert.equal(hasCurrentBudget(facts + '- 每月预算为 8100 元。\n- 7600 元取代了 8100 元的提案。'), false);
 });
 
 test('inventory covers own and peer memories, omits bootstrap/stubs, and reports incomplete reads', async () => {
