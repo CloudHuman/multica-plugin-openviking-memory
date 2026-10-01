@@ -1,0 +1,381 @@
+{
+  "date": "2026-10-01",
+  "branchHead": "9cc7a9a",
+  "environment": {
+    "multica": "43b0571 + upstream/multica/0001-0004 (d061e93)",
+    "multicaCli": "v0.6.0-11-gd061e93",
+    "openviking": "0.4.22",
+    "opencode": "1.17.7",
+    "node": "v22.22.0",
+    "python_openai": "2.54.0",
+    "agentModel": "openrouter/openai/gpt-5.4-mini",
+    "ovModels": {
+      "vlm": "z-ai/glm-5.3-flash",
+      "embedding": "qwen/qwen3-embedding-8b",
+      "rerank": "qwen/qwen3-reranker-8b"
+    },
+    "observers": {
+      "openviking": "deploy/observers (PYTHONPATH, OVMEM_PROVIDER_DIAGNOSTICS=1)",
+      "opencode": "deploy/observers/opencode.mjs loaded locally for basic/quality via an uncommitted temporary change"
+    }
+  },
+  "keyCheck": {
+    "present": true,
+    "length": 73,
+    "keyEndpointStatus": 200
+  },
+  "controlledExperiment": {
+    "python": {
+      "via": "HTTPS_PROXY",
+      "elapsed_s": 378.6,
+      "status": {
+        "embeddings:200": 200,
+        "chat_stream:200": 20,
+        "chat:200": 20
+      },
+      "errors": {},
+      "usage": {
+        "prompt_tokens": 1350,
+        "completion_tokens": 20
+      },
+      "plan": {
+        "embeddings": {
+          "sequential": 100,
+          "concurrent8": 100
+        },
+        "chat": {
+          "sequential": 20,
+          "concurrent8": 20,
+          "stream": 20,
+          "nonStream": 20,
+          "max_tokens": 1
+        }
+      }
+    },
+    "node": {
+      "via": "NODE_USE_ENV_PROXY=1",
+      "elapsed_s": 105.79,
+      "status": {
+        "embeddings:200": 50,
+        "chat:200": 50
+      },
+      "errors": {},
+      "usage": {
+        "prompt_tokens": 895,
+        "completion_tokens": 50
+      },
+      "plan": {
+        "sequential": 50,
+        "concurrent8": 50
+      }
+    },
+    "http401": 0,
+    "estimatedCostUsd": "<0.001"
+  },
+  "suites": {
+    "basic": {
+      "startedAt": "2026-10-01T15:49:50.870Z",
+      "finishedAt": "2026-10-01T15:53:23.562Z",
+      "error": null,
+      "passed": 12,
+      "total": 13,
+      "results": [
+        {
+          "id": "runtime",
+          "result": "PASS",
+          "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+        },
+        {
+          "id": "actual-tools",
+          "result": "PASS",
+          "detail": "Actual tool calls: bash, bash, read, multica-plugins_openviking_memory_d697f9__memory__recall, bash, multica-plugins_openviking_memory_d697f9__memory__remember, apply_patch, bash"
+        },
+        {
+          "id": "successful-memory-tools",
+          "result": "PASS",
+          "detail": "Actual agent memory calls completed through the signed hook proxy"
+        },
+        {
+          "id": "automatic-extraction",
+          "result": "PASS",
+          "detail": "Actual completed task automatically archived and extracted"
+        },
+        {
+          "id": "archive-prompt-hygiene",
+          "result": "PASS",
+          "detail": "Checked actual OpenViking archive for runtime prompt contamination"
+        },
+        {
+          "id": "active-memory-index",
+          "result": "PASS",
+          "detail": "Real agent public memory was indexed asynchronously"
+        },
+        {
+          "id": "recall-bound-to-run",
+          "result": "PASS",
+          "detail": "Memory recall was bound to the actual new task"
+        },
+        {
+          "id": "cross-task-recall",
+          "result": "FAIL",
+          "detail": "New real task recovered all four facts and cited a Viking URI"
+        },
+        {
+          "id": "no-answer",
+          "result": "PASS",
+          "detail": "Actual agent acknowledged missing evidence"
+        },
+        {
+          "id": "runtime-read-archive-hygiene",
+          "result": "PASS",
+          "detail": "Actual platform-file read was filtered from the OpenViking archive"
+        },
+        {
+          "id": "runtime-read-exercised",
+          "result": "PASS",
+          "detail": "Actual agent read injected runtime instructions before archive filtering"
+        },
+        {
+          "id": "distilled-prompt-hygiene",
+          "result": "PASS",
+          "detail": "Transcript runtime banner: true; inspected 3 extracted files including peers"
+        },
+        {
+          "id": "memory-quality",
+          "result": "PASS",
+          "detail": "Checked reusable memories for known execution controls and retrieval-outcome facts"
+        }
+      ],
+      "tasks": [
+        {
+          "task": "RAM-1",
+          "status": "completed",
+          "runSeconds": 31
+        },
+        {
+          "task": "RAM-2",
+          "status": "completed",
+          "runSeconds": 32
+        },
+        {
+          "task": "RAM-3",
+          "status": "completed",
+          "runSeconds": 16
+        },
+        {
+          "task": "RAM-4",
+          "status": "completed",
+          "runSeconds": 27
+        }
+      ]
+    },
+    "quality": {
+      "startedAt": "2026-10-01T15:54:12.529Z",
+      "finishedAt": "2026-10-01T16:00:04.391Z",
+      "error": "Readiness search unavailable after three bounded attempts: dm:c7ec789e-148d-4ea5-9c59-0573a412b928:0e8469f8-a392-4378-a715-524a7c4c382b:d142d628-00c9-44e2-aa7e-ced97d250e15",
+      "passed": 9,
+      "total": 11,
+      "results": [
+        {
+          "id": "runtime",
+          "result": "PASS",
+          "detail": "Official daemon discovered and registered OpenCode 1.17.7"
+        },
+        {
+          "id": "automatic-fact-fidelity",
+          "result": "PASS",
+          "detail": "Real automatic extraction preserved all three supplied business facts"
+        },
+        {
+          "id": "lasting-preference-retained",
+          "result": "PASS",
+          "detail": "Lasting Chinese-comment preference survived alongside temporary task controls"
+        },
+        {
+          "id": "no-active-write-shortcut",
+          "result": "PASS",
+          "detail": "Seed used automatic extraction, not active memory writes"
+        },
+        {
+          "id": "current-entity-update",
+          "result": "FAIL",
+          "detail": "Current entity uses 8100, marks any 7600 mention as historical, and preserves queue and double-write duration"
+        },
+        {
+          "id": "historical-budget-retained",
+          "result": "PASS",
+          "detail": "Historical 7600 decision remains traceable as an event"
+        },
+        {
+          "id": "entity-category-stable",
+          "result": "PASS",
+          "detail": "Same subject retained one stable entity URI across the update"
+        },
+        {
+          "id": "updated-uri-repromoted",
+          "result": "PASS",
+          "detail": "An updated existing entity was admitted to shared promotion"
+        },
+        {
+          "id": "real-B-current-shared-recall",
+          "result": "PASS",
+          "detail": "Actual B recovered all current facts from shared memory without supplied answer values"
+        },
+        {
+          "id": "real-B-task-delivery",
+          "result": "PASS",
+          "detail": "Task completion is checked separately from recalled facts and persisted comments"
+        },
+        {
+          "id": "dm-distilled-peer-layout",
+          "result": "FAIL",
+          "detail": "Real private layout was extracted into the peer memory namespace"
+        }
+      ],
+      "tasks": [
+        {
+          "task": "quality-seed",
+          "status": "completed",
+          "runSeconds": 18
+        },
+        {
+          "task": "quality-budget-update",
+          "status": "completed",
+          "runSeconds": 17
+        },
+        {
+          "task": "quality-shared-recall",
+          "status": "completed",
+          "runSeconds": 35
+        },
+        {
+          "task": "quality-dm-seed",
+          "status": "completed",
+          "runSeconds": 23
+        }
+      ],
+      "notExecuted": [
+        "dm new-session recall (suite aborted after readiness failed)"
+      ]
+    }
+  },
+  "failureAnalysis": [
+    {
+      "suite": "basic",
+      "check": "cross-task-recall",
+      "classification": "validator false negative",
+      "evidence": "first ok recall used task UUID and returned 0 entries; second recall hit the case memory (score 0.996) and the final comment cites that URI with all four facts; run.mjs:190 uses .find on the first ok recall"
+    },
+    {
+      "suite": "quality",
+      "check": "current-entity-update",
+      "classification": "validator pattern too narrow; minor distillation drift",
+      "evidence": "entity card: 发布预算为 8100 元（…取代同日较早确认的每月 7600 元）; Pulsar and 五天 retained; hasCurrentBudget accepts only 此前/原先/原预算/历史/previous/historical; '每月' qualifier dropped"
+    },
+    {
+      "suite": "quality",
+      "check": "dm-distilled-peer-layout",
+      "classification": "real extraction quality failure",
+      "evidence": "session_commit completed (26.5 s) with memory_diff adds/updates/deletes all 0; readiness attempt 1 aborted during a 36 s embedding slow call, attempts 2-3 found no facts"
+    }
+  ],
+  "providerAuth": {
+    "openviking": {
+      "basic": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 20
+        },
+        {
+          "endpoint": "/api/v1/embeddings",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 130
+        }
+      ],
+      "quality": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 24
+        },
+        {
+          "endpoint": "/api/v1/embeddings",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 129
+        }
+      ],
+      "rerank": {
+        "endpoint": "/api/v1/rerank",
+        "http503": 5,
+        "http401": 0,
+        "observed": false,
+        "note": "rerank uses requests, outside the HTTPX observer; counted from OV log"
+      },
+      "sessionCommits": {
+        "total": 18,
+        "completed": 18,
+        "stuckPending": 0,
+        "restartRequired": false
+      }
+    },
+    "opencode": {
+      "basic": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 23
+        }
+      ],
+      "quality": [
+        {
+          "endpoint": "/api/v1/chat/completions",
+          "http_status": 200,
+          "authorization_scheme": "bearer",
+          "authorization_token_present": true,
+          "provider_auth_reason": null,
+          "count": 15
+        }
+      ]
+    },
+    "pluginProviderAuthReason": [],
+    "logMatches401Texts": 0
+  },
+  "cost": {
+    "agentTokens": {
+      "input": 179888,
+      "output": 5399,
+      "cacheRead": 437760,
+      "estimatedUsd": 0.19
+    },
+    "ovExtractionTokens": {
+      "prompt": 244856,
+      "completion": 18835,
+      "estimatedUsd": 0.046
+    },
+    "ovEmbeddingCommitTokens": 8953,
+    "controlledExperimentUsd": "<0.001",
+    "openrouterUsageDailyUsd": 0.249
+  },
+  "conclusion": {
+    "reproduced401": false,
+    "emptyTokenObserved": false,
+    "authenticatedRequests": 688,
+    "summary": "With the key correctly injected, OV, OpenCode, proxy and SDK paths sent bearer + token on every observed request; no 401 in 688 requests. Earlier Missing Authentication header remains most consistent with an empty OPENROUTER_API_KEY in the failing process; not provable from this environment."
+  }
+}
