@@ -18,9 +18,9 @@
  *
  * Every hook delivery is authenticated against the installation it names and
  * the workspace that installation is bound to (installations.mjs). After that,
- * hooks always answer 200: a failure is returned as {status:"error"} so an agent
- * reads the reason, and so a handler-side problem can never trip multica's
- * per-hook circuit breaker and take every other delivery down with it.
+ * agent tools return failures as readable 200 results. Archive events are ACKed
+ * only after durable enqueue (or an intentional skip); failures return 503 so
+ * multica can redeliver them.
  *
  * Everything long-running goes through the durable queue; hook handlers ACK
  * fast after fetching callback ingredients while the callback token is alive.
@@ -32,9 +32,8 @@ import { OvClient, isAlreadyExists } from './ov-client.mjs';
 import { MulticaClient, isNotFound } from './multica-client.mjs';
 import { ScopeRegistry, resolveReadScopes, resolveArchiveScope, scopeKey, runScopes } from './scopes.mjs';
 import { recallFromScopes, renderRecallBlock } from './recall.mjs';
-import { JobQueue } from './queue.mjs';
-import { makeArchiveHandler } from './pipeline.mjs';
-import { ExtractionWatcher } from './extraction-watch.mjs';
+import { buildJobMessages } from './pipeline.mjs';
+import { createArchiveProcessing } from './processing.mjs';
 import { Ledger, ArchiveStatusLog } from './ledger.mjs';
 import { InstallationRegistry } from './installations.mjs';
 import { buildRememberFile } from './archive.mjs';
@@ -122,7 +121,7 @@ export function makeMemoryArchiveHandler(deps) {
     if (eventType === 'task.completed' || eventType === 'task.failed') {
       outcome = await archiveTaskEvent({ ...deps, body, input, ws, ctx, mc, settings, eventType, skip });
     } else if (eventType === 'comment.created') {
-      outcome = await archiveCommentEvent({ ...deps, body, input, ws, ctx, mc, skip });
+      outcome = await archiveCommentEvent({ ...deps, body, input, ws, ctx, mc, settings, skip });
     } else {
       outcome = skip(`event ${eventType || '(none)'} is not archived`);
     }
@@ -131,7 +130,7 @@ export function makeMemoryArchiveHandler(deps) {
   };
 }
 
-async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, eventType, skip }) {
+async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, eventType, skip, prefetchedTask }) {
   const taskId = input.task_id || body.task_id;
   if (!taskId) return skip('task event without task_id');
   if (eventType === 'task.failed' && input.retry_pending === true) {
@@ -142,9 +141,9 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
 
   // 1. The run itself. Multica builds with the task read API describe it;
   //    stock builds answer 404 and only the event payload is known.
-  let task = null;
+  let task = prefetchedTask ?? null;
   try {
-    task = await mc.getTask(taskId);
+    task ??= await mc.getTask(taskId);
     taskApi.set(ctx.installationId, true);
   } catch (err) {
     if (isNotFound(err)) taskApi.set(ctx.installationId, false);
@@ -210,8 +209,6 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
   };
   const enq = queue.enqueue('archive-run', payload, { dedupeKey: `archive-run:${ws}:${taskId}` });
   // multica retries a delivery under a new invocation id: same record, same job.
-  if (enq.reused) return { status: 'duplicate', job: enq.id };
-
   // A delegated run also records its handoff in the channel between the two agents.
   const handoff = task?.input?.find((i) => i.source === 'handoff' && i.content);
   if (scopes.delegationScope && handoff) {
@@ -221,6 +218,7 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
       scopeKey: scopes.delegationScope, completeness: 'complete',
     }, { dedupeKey: `archive-deleg:${ws}:${taskId}` });
   }
+  if (enq.reused) return { status: 'duplicate', job: enq.id };
   statusLog.append({ type: 'accepted', event: eventType, ref: taskId, kind, scope: scopes.archiveScope, job: enq.id, completeness, workspace: ws });
   return { status: 'queued', job: enq.id, kind, scope: scopes.archiveScope, completeness };
 }
@@ -240,31 +238,39 @@ function pickTask(task) {
   };
 }
 
-async function archiveCommentEvent({ queue, statusLog, taskApi, body, input, ws, ctx, mc, skip }) {
+async function archiveCommentEvent(deps) {
+  const { cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, skip } = deps;
   const comment = input.comment;
   if (!comment?.id) return skip('comment event without comment.id');
   const authorType = comment.author_type ?? 'member';
   if (authorType === 'system') return skip('system notice, not a person or an agent', comment.id);
   if (comment.deleted_at) return skip('deleted comment', comment.id);
   if (!String(comment.content ?? '').trim()) return skip('empty comment', comment.id);
-  // An agent's comment posted from a run is already in that run's transcript
-  // whenever multica can hand the transcript over. A run's closing comment and
-  // its task.completed are emitted together, so the comment may be the first
-  // thing this installation delivers: then ask once. Only a 200 decides — a
-  // 404 may just mean the run is outside this token's scope.
-  if (authorType === 'agent' && comment.source_task_id) {
-    let covered = taskApi.get(ctx.installationId) === true;
-    if (!covered && !taskApi.has(ctx.installationId)) {
-      try {
-        await mc.getTask(comment.source_task_id);
-        taskApi.set(ctx.installationId, true);
-        covered = true;
-      } catch { /* unknown: archive the comment */ }
-    }
-    if (covered) return skip('agent comment covered by its run archive', comment.id);
-  }
   const issueRef = comment.issue_id || body.issue_id;
   if (!issueRef) return skip('comment without an issue', comment.id);
+  // A source_task_id alone does not prove that the conclusion was preserved.
+  // When the closing comment arrives first, durably archive the terminal run
+  // before testing its sanitized output. Partial/missing output keeps a comment
+  // fallback, including when another run proved that the task API exists.
+  if (authorType === 'agent' && comment.source_task_id) {
+    const dedupeKey = `archive-run:${ws}:${comment.source_task_id}`;
+    let run = queue.findByDedupeKey(dedupeKey);
+    if (!run && taskApi.get(ctx.installationId) !== false) {
+      let task = null;
+      try {
+        task = await mc.getTask(comment.source_task_id);
+        taskApi.set(ctx.installationId, true);
+      } catch { /* unknown: archive the comment */ }
+      if (task && ['completed', 'failed'].includes(task.status) && task.agent_id === comment.author_id && task.issue_id === issueRef) {
+        await archiveTaskEvent({ ...deps, prefetchedTask: task,
+          input: { task_id: task.id, agent_id: task.agent_id, issue_id: task.issue_id, status: task.status },
+          eventType: task.status === 'failed' ? 'task.failed' : 'task.completed',
+        });
+        run = queue.findByDedupeKey(dedupeKey);
+      }
+    }
+    if (runCoversComment(run, comment, issueRef, cfg)) return skip('agent comment covered by its run archive', comment.id);
+  }
   let issue;
   try {
     issue = await mc.getIssue(issueRef);
@@ -291,6 +297,15 @@ async function archiveCommentEvent({ queue, statusLog, taskApi, body, input, ws,
   if (enq.reused) return { status: 'duplicate', job: enq.id };
   statusLog.append({ type: 'accepted', event: 'comment.created', ref: comment.id, author: authorType, scope: payload.scopeKey, job: enq.id, workspace: ws });
   return { status: 'queued', job: enq.id, author_type: authorType };
+}
+
+function runCoversComment(job, comment, issueId, cfg) {
+  if (!job || job.status === 'failed' || job.payload.completeness !== 'complete' ||
+      job.payload.agentId !== comment.author_id || job.payload.issue?.id !== issueId) return false;
+  const normalize = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
+  const wanted = normalize(comment.content);
+  return buildJobMessages(job, cfg).messages.some((m) => m.role === 'assistant' &&
+    (m.parts ?? []).some((part) => part.type === 'text' && normalize(part.text).includes(wanted)));
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +392,7 @@ export function makeMemoryRecallHandler(deps) {
   };
 }
 
-export function makeMemoryRememberHandler({ ov, registry }) {
+export function makeMemoryRememberHandler({ ov, registry, queue, extractions }) {
   return async function memoryRemember(body, ctx) {
     const input = body.input ?? {};
     const content = typeof input.content === 'string' ? input.content.trim() : '';
@@ -392,25 +407,41 @@ export function makeMemoryRememberHandler({ ov, registry }) {
     const file = buildRememberFile({ title: input.title, content, kind: input.kind, agentId: actor.id });
     // Content-plane URIs must be absolute viking:// paths rooted in this user space.
     const fullUri = `viking://user/${rec.userId}/${file.uri}`;
+    let status = 'remembered';
     try {
       await ov.writeContent(rec.apiKey, { uri: fullUri, content: file.content, mode: 'create' });
     } catch (err) {
       // Same title + content on the same day is the same file: remembering it
       // again is already done, not an error.
-      if (isAlreadyExists(err)) return { status: 'already_remembered', uri: fullUri, scope: key };
-      throw err;
+      if (isAlreadyExists(err)) status = 'already_remembered';
+      else throw err;
     }
-    // With a reranker configured, OV's search reaches a file only through a
-    // directory that has a semantic record, and a directly written file's new
-    // folder has none: rebuild that folder's summary in the background.
+    // Submit one recursive folder rebuild through the durable queue. Separate
+    // leaf/folder tasks contend for OV's locks, and accepted tasks can fail
+    // later: the watcher must follow completion and re-drive failures.
+    let indexJob;
     try {
-      await ov.reindex(rec.apiKey, fullUri.slice(0, fullUri.lastIndexOf('/')), { mode: 'semantic_and_vectors', recursive: false, wait: false });
-    } catch { /* enrichment: the file is written and readable either way */ }
+      const dedupeKey = `index-memory:${key}:${fullUri}`;
+      const existing = queue.findByDedupeKey(dedupeKey);
+      if (existing?.status === 'done' && !extractions.isPinned(existing.id)) {
+        // A repeat after settlement also repairs a previously failed index.
+        indexJob = queue.requeue(existing.id, { reason: 'memory-remember requested reindex' });
+      } else {
+        const enqueued = queue.enqueue('index-memory', {
+          workspaceId: ws, installationId: ctx.installationId, scopeKey: key, refId: fullUri,
+          uri: fullUri.slice(0, fullUri.lastIndexOf('/')), completeness: 'complete',
+        }, { dedupeKey });
+        indexJob = { id: enqueued.id };
+      }
+    } catch (err) {
+      throw toolError(`记忆已写入 ${fullUri}，索引任务未能持久化，请重试 memory-remember：${errText(err)}`, 'index_unavailable');
+    }
     return {
-      status: 'remembered',
+      status,
       uri: fullUri,
       scope: key,
-      note: '已写入该智能体公共记忆，约半分钟后可被检索；请保持内容简洁、可复用、无敏感信息。',
+      index_job: indexJob.id,
+      note: '已写入该智能体公共记忆，索引正在后台构建，完成后可被检索；请保持内容简洁、可复用、无敏感信息。',
     };
   };
 }
@@ -660,11 +691,11 @@ async function route({ req, rawBody, cfg, app }) {
       if (hookKey === 'memory-archive') {
         app.statusLog.append({ type: 'error', event: body.event_type, workspace: ctx.workspaceId, error: String(err.message ?? err).slice(0, 300) });
       }
-      // 200 on purpose: the agent reads the reason as a tool result, and a
-      // plugin-side failure never counts toward multica's circuit breaker.
+      // Event delivery must retry when durable acceptance failed. Agent tools
+      // still expose failures as readable results.
       const payload = errorBody(err);
       if (hookKey.startsWith('ov-')) payload.tool = hookKey.replace(/^ov-/, '').replace(/-/g, '_');
-      return { status: 200, body: payload };
+      return { status: hookKey === 'memory-archive' ? 503 : 200, body: payload };
     }
   }
 
@@ -740,16 +771,7 @@ export async function main() {
   const installations = new InstallationRegistry({ stateDir: cfg.stateDir, cfg, log });
   const ledger = new Ledger({ stateDir: cfg.stateDir });
   const statusLog = new ArchiveStatusLog({ stateDir: cfg.stateDir, maxBytes: cfg.statusLogMaxBytes });
-  let extractions = null;
-  const queue = new JobQueue({
-    stateDir: cfg.stateDir,
-    handler: makeArchiveHandler({ ov, registry, statusLog, extractions: { watch: (e) => extractions.watch(e) }, cfg, log }),
-    maxAttempts: cfg.queueMaxAttempts,
-    baseDelayMs: cfg.queueBaseDelayMs,
-    isPinned: (id) => extractions?.isPinned(id) ?? false,
-    log,
-  });
-  extractions = new ExtractionWatcher({ ov, registry, queue, statusLog, stateDir: cfg.stateDir, cfg, log });
+  const { queue, extractions } = createArchiveProcessing({ ov, registry, statusLog, cfg, log });
   queue.start();
   extractions.start();
   const app = createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions });

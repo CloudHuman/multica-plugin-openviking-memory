@@ -129,9 +129,11 @@ export class JobQueue {
       created_at: nowIso(),
       updated_at: nowIso(),
     };
+    this.#append({ t: 'add', job });
+    // A failed journal write must not leave a volatile dedupe entry that a
+    // redelivery mistakes for durable acceptance.
     this.jobs.set(job.id, job);
     this.order.push(job.id);
-    this.#append({ t: 'add', job });
     this.#kick();
     return { id: job.id, reused: false };
   }
@@ -145,14 +147,13 @@ export class JobQueue {
     const job = this.jobs.get(id);
     if (!job || job.status === 'running' || job.status === 'queued') return null;
     const generation = (job.payload?.generation ?? 0) + 1;
-    job.payload = { ...(payload ?? job.payload), generation };
-    job.cp = {};
-    job.attempts = 0;
-    job.status = 'queued';
-    job.next_run_at = Date.now() + delayMs;
-    job.last_error = reason ? `requeued: ${reason}` : null;
-    job.updated_at = nowIso();
-    this.#append({ t: 'update', job });
+    const updated = {
+      ...job, payload: { ...(payload ?? job.payload), generation }, cp: {}, attempts: 0,
+      status: 'queued', next_run_at: Date.now() + delayMs,
+      last_error: reason ? `requeued: ${reason}` : null, updated_at: nowIso(),
+    };
+    this.#append({ t: 'update', job: updated });
+    Object.assign(job, updated);
     this.#kick();
     return job;
   }

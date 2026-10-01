@@ -17,7 +17,8 @@ export class Ledger {
     this.path = `${stateDir}/ledger.json`;
     this.maxKeys = maxKeys;
     const data = readJsonIfExists(this.path, { keys: {} });
-    this.keys = data.keys ?? {};
+    // Older versions wrote the bare map; retain those delivery IDs on upgrade.
+    this.keys = data.keys ?? data;
   }
 
   has(key) {
@@ -25,13 +26,14 @@ export class Ledger {
   }
 
   add(key) {
-    this.keys[key] = new Date().toISOString();
-    const entries = Object.entries(this.keys);
+    const keys = { ...this.keys, [key]: new Date().toISOString() };
+    const entries = Object.entries(keys);
     if (entries.length > this.maxKeys) {
       entries.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
-      for (const [k] of entries.slice(0, entries.length - this.maxKeys)) delete this.keys[k];
+      for (const [k] of entries.slice(0, entries.length - this.maxKeys)) delete keys[k];
     }
-    atomicWriteJson(this.path, this.keys);
+    atomicWriteJson(this.path, { keys });
+    this.keys = keys;
   }
 }
 

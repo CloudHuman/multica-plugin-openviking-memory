@@ -201,3 +201,21 @@ test('compaction never drops a done job that is still pinned (its extraction is 
   assert.ok(q2.jobs.has(ids[3]), 'newest done job kept (keepDone = 1)');
   assert.equal(q2.jobs.has(ids[1]) || q2.jobs.has(ids[2]), false, 'older unpinned done jobs compacted away');
 });
+
+test('a failed requeue journal write preserves the failed job so redelivery can retry durably', async () => {
+  const stateDir = tempStateDir();
+  const queue = new JobQueue({ stateDir, handler: async () => {} });
+  const { id } = queue.enqueue('archive', { completeness: 'complete' }, { dedupeKey: 'record' });
+  const job = queue.jobs.get(id);
+  job.status = 'failed';
+  const original = structuredClone(job);
+  const journal = queue.path;
+  queue.path = stateDir;
+  assert.throws(() => queue.enqueue('archive', { completeness: 'complete' }, { dedupeKey: 'record' }), /EISDIR/);
+  assert.deepEqual(job, original, 'failed append cannot publish a queued generation');
+  queue.path = journal;
+  assert.equal(queue.enqueue('archive', { completeness: 'complete' }, { dedupeKey: 'record' }).requeued, true);
+  const replayed = new JobQueue({ stateDir, handler: async () => {} });
+  assert.equal(replayed.jobs.get(id).payload.generation, 1);
+  await queue.stop();
+});

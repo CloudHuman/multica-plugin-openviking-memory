@@ -10,10 +10,10 @@ import { bootService, waitFor } from './harness.mjs';
 // Archiving paths end to end over realistic doubles. "Stock" multica is v0.6 as
 // released (no task read API); "patched" carries GET /v1/tasks/{id}[/messages].
 
-async function withStack({ taskApi = false, tasks = {}, transcript = [], ovOpts = {}, cfg = {} } = {}, fn) {
+async function withStack({ taskApi = false, tasks = {}, transcript = [], ovOpts = {}, cfg = {}, fetchImpl } = {}, fn) {
   const ov = await startFakeOv(ovOpts);
   const multica = await startFakeMultica({ issue: fixtureIssue(), tasks, transcript, taskApi });
-  const svc = await bootService({ ov, cfg });
+  const svc = await bootService({ ov, cfg, fetchImpl });
   try {
     await fn({ ov, multica, svc, cb: multica.baseUrl + '/v1' });
   } finally {
@@ -88,13 +88,15 @@ test('patched multica: a run\'s closing comment that arrives before its task eve
   await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId }) }, transcript: fixtureTranscript({ taskId }) }, async ({ svc, cb, multica }) => {
     // Fresh service: nothing has told it yet whether this multica has the task API.
     const closing = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
-      commentEvent({ id: 'cm-closing', content: '最终结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
+      commentEvent({ id: 'cm-closing', content: '结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
     assert.equal(closing.json.result.status, 'skipped', closing.text);
     assert.match(closing.json.result.reason, /covered by its run archive/);
     assert.ok(multica.requests.some((r) => r.path === `/v1/tasks/${taskId}`), 'asked multica once');
 
     const run = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId })));
-    assert.equal(run.json.result.status, 'queued', 'the run itself is archived');
+    assert.equal(run.json.result.status, 'duplicate', 'the comment already durably queued the full run');
+    const job = svc.queue.findByDedupeKey(`archive-run:${FIXTURE_WS}:${taskId}`);
+    assert.ok(job.payload.transcript.some((m) => m.content?.includes('结论:推荐 RocketMQ。')));
   });
 });
 
@@ -123,12 +125,57 @@ test('patched multica: issue run archives the real transcript with the installat
     assert.equal(flat.includes('Multica Agent Runtime'), false, 'runtime brief stripped');
     assert.equal(flat.includes('internal reasoning'), false, 'thinking excluded');
 
-    // once multica has shown it hands transcripts over, the agent's own comment
-    // from that run is covered by the run archive
+    // Only a conclusion actually retained in this run is covered.
     const again = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
-      commentEvent({ id: 'cm-dup', content: '最终结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
+      commentEvent({ id: 'cm-dup', content: '结论:推荐 RocketMQ。', authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
     assert.equal(again.json.result.status, 'skipped');
     assert.match(again.json.result.reason, /covered by its run archive/);
+  });
+});
+
+for (const scenario of ['transcript outage', 'missing conclusion', 'truncated transcript', 'capped output']) {
+  test(`closing comment survives a ${scenario} even when the task API is known to exist`, async () => {
+    const taskId = `run-${scenario.replaceAll(' ', '-')}`;
+    const conclusion = '唯一收尾结论：退款必须在三个工作日内到账。';
+    const transcript = [
+      { seq: 1, type: 'text', content: '正在比较方案。' },
+      { seq: 2, type: 'text', content: scenario === 'missing conclusion' ? '分析结束。' : '前置背景。'.repeat(8) + conclusion },
+    ];
+    const fetchImpl = scenario === 'transcript outage' ? (url, opts) =>
+      String(url).includes('/messages') ? Promise.resolve(new Response('{"error":{"message":"temporary outage"}}', { status: 503 })) : fetch(url, opts) : undefined;
+    const cfg = scenario === 'truncated transcript' ? { transcriptMaxMessages: 1 } : scenario === 'capped output' ? { textPartMaxChars: 20 } : {};
+    await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId,
+      input: [{ source: 'comment', author_type: 'member', content: '请分析退款方案。' }] }) }, transcript, cfg, fetchImpl }, async ({ ov, svc, cb }) => {
+      await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId })));
+      const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created',
+        commentEvent({ id: `cm-${taskId}`, content: conclusion, authorType: 'agent', authorId: FIXTURE_AGENT_A, sourceTaskId: taskId })));
+      assert.equal(r.status, 200);
+      assert.equal(r.json.result.status, 'queued', r.text);
+      const rec = await waitFor(() => svc.registry.get(taskScope));
+      await waitFor(() => ov.archivedOf(rec.apiKey, `mc-comment-cm-${taskId}`).length);
+      assert.ok(archivedText(ov, rec, `mc-comment-cm-${taskId}`).includes(conclusion));
+    });
+  });
+}
+
+test('archive delivery returns 503 after a journal write failure and accepts the same invocation on retry', async () => {
+  await withStack({}, async ({ svc, cb }) => {
+    const body = archiveBody(cb, 'comment.created', commentEvent({ id: 'cm-durable', content: '发布前要完成回滚演练。' }));
+    const journal = svc.queue.path;
+    svc.queue.path = svc.stateDir; // A directory makes the actual append fail.
+    try {
+      const failed = await svc.signedPost('/hooks/memory-archive', body);
+      assert.equal(failed.status, 503, failed.text);
+      assert.equal(failed.json.status, 'error');
+      assert.equal(svc.queue.findByDedupeKey(`archive-comment:${FIXTURE_WS}:cm-durable`), null);
+    } finally {
+      svc.queue.path = journal;
+    }
+    const retry = await svc.signedPost('/hooks/memory-archive', body);
+    assert.equal(retry.status, 200, retry.text);
+    assert.equal(retry.json.result.status, 'queued');
+    const repeated = await svc.signedPost('/hooks/memory-archive', body);
+    assert.equal(repeated.json.result.status, 'duplicate');
   });
 });
 

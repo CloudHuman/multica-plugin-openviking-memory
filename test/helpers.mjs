@@ -68,7 +68,7 @@ export function tempStateDir() {
  * taskBehavior: 'succeed' | 'fail-first' (the first commit task in a space
  * fails, later ones succeed) | 'fail-always'.
  */
-export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 } = {}) {
+export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1, requireReindex = false, reindexBehavior = 'succeed' } = {}) {
   const spaces = new Map(); // apiKey -> space
   const calls = [];
   const searchDelayMs = new Map(); // apiKey -> ms a search in that space takes (a slow model provider)
@@ -76,9 +76,10 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
   let taskSeq = 0;
   const taskStates = new Map(); // taskId -> {status, polls, sid, space, archive}
   let failuresLeft = taskBehavior === 'fail-first' ? 1 : taskBehavior === 'fail-always' ? Infinity : 0;
+  let reindexFailuresLeft = reindexBehavior === 'fail-first' ? 1 : reindexBehavior === 'fail-always' ? Infinity : 0;
 
   function newSpace(accountId, userId) {
-    return { accountId, userId, sessions: new Map(), files: new Map(), extracts: [], searches: [] };
+    return { accountId, userId, sessions: new Map(), files: new Map(), indexedFiles: new Set(), indexedFolders: new Set(), extracts: [], searches: [] };
   }
   function spaceOf(key) {
     if (!spaces.has(key)) spaces.set(key, newSpace(null, null));
@@ -91,6 +92,13 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
     if (!u.startsWith('viking://')) return null;
     return u.startsWith('viking://~') ? userRoot(space) + u.slice('viking://~'.length) : u;
   };
+  function applyReindex(space, body) {
+    if (space.files.has(body.uri)) space.indexedFiles.add(body.uri);
+    else {
+      space.indexedFolders.add(body.uri);
+      if (body.recursive) for (const uri of space.files.keys()) if (uri.startsWith(body.uri + '/')) space.indexedFiles.add(uri);
+    }
+  }
 
   const server = createServer(async (req, res) => {
     const chunks = [];
@@ -207,7 +215,7 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
         const rid = url.searchParams.get('resource_id');
         const list = [...taskStates.entries()]
           .filter(([, t]) => t.space === key && (!rid || t.sid === rid))
-          .map(([id, t]) => ({ task_id: id, status: t.status, resource_id: t.sid, created_at: t.createdAt, result: { archive_uri: t.archive.uri } }));
+          .map(([id, t]) => ({ task_id: id, status: t.status, resource_id: t.sid, created_at: t.createdAt, result: t.archive ? { archive_uri: t.archive.uri } : null }));
         return ok(list);
       }
       m = path.match(/^\/api\/v1\/tasks\/([^/]+)$/);
@@ -217,7 +225,10 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
         t.polls++;
         if (t.status === 'pending' && t.polls >= pollsToFinish) {
           t.status = t.fails ? 'failed' : 'completed';
-          if (t.fails) {
+          if (t.reindex) {
+            if (t.fails) t.error = 'Error code: 429 - rate limited';
+            else applyReindex(spaceOf(t.space), t.reindex);
+          } else if (t.fails) {
             t.error = 'Error code: 429 - rate limited';
             spaceOf(t.space).files.set(`${t.archive.uri}/.failed.json`, JSON.stringify({ error: t.error }));
           } else {
@@ -227,7 +238,10 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
               .map((msg) => msg.content ?? (msg.parts ?? []).map((p) => p.text ?? p.tool_output ?? '').join(' '))
               .filter(Boolean)
               .join('\n');
-            sp.files.set(`${userRoot(sp)}/memories/events/${t.sid}.md`, text);
+            const memoryUri = `${userRoot(sp)}/memories/events/${t.sid}.md`;
+            sp.files.set(memoryUri, text);
+            sp.indexedFiles.add(memoryUri);
+            sp.indexedFolders.add(memoryUri.slice(0, memoryUri.lastIndexOf('/')));
             sp.files.set(`${t.archive.uri}/.done`, '{}');
           }
         }
@@ -240,6 +254,7 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
         const hits = [];
         for (const [uri, file] of space.files) {
           if (!uri.includes('/memories/')) continue;
+          if (requireReindex && (!space.indexedFiles.has(uri) || !space.indexedFolders.has(uri.slice(0, uri.lastIndexOf('/'))))) continue;
           const text = `${uri}\n${file}`;
           // deterministic pseudo-relevance: substring boost + stable base score
           let score = 0.3 + ((uri.length * 13) % 40) / 200;
@@ -277,8 +292,15 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1 
         return ok(entries);
       }
       if (path === '/api/v1/content/reindex' && req.method === 'POST') {
+        if ([...taskStates.values()].some((t) => t.space === key && t.status === 'pending' && t.reindex?.uri === body.uri)) {
+          return err(409, 'CONFLICT', 'URI already has a reindex in progress');
+        }
         space.reindexes = [...(space.reindexes ?? []), body];
-        return ok({ status: body.wait === false ? 'accepted' : 'completed', uri: body.uri, mode: body.mode ?? 'vectors_only' });
+        const taskId = `reindex-${++taskSeq}`;
+        const fails = reindexFailuresLeft > 0;
+        if (fails) reindexFailuresLeft--;
+        taskStates.set(taskId, { status: 'pending', polls: 0, space: key, sid: body.uri, createdAt: Date.now(), reindex: body, fails });
+        return ok({ status: 'accepted', task_id: taskId, uri: body.uri, mode: body.mode ?? 'vectors_only' });
       }
       return err(404, 'NOT_FOUND', `fake OV has no ${path}`);
     } catch (e) {

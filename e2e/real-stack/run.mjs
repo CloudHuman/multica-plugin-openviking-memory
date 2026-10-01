@@ -204,6 +204,16 @@ async function main() {
       const r = await jfetch(`${cfg.ovBase}/api/v1/search/search`, { method: 'POST', headers: { Authorization: `Bearer ${rec.apiKey}` }, body: { query, mode: 'list', limit: 10 } });
       return (r.json?.result?.memories ?? []).filter((m) => m.context_type === 'memory' && !/\.(overview|abstract)\.md$/.test(m.uri));
     };
+    const hitContent = async (scopeKey, hits) => {
+      const rec = scopes()[scopeKey];
+      const files = await Promise.all(hits.map(async (hit) => {
+        const r = await jfetch(`${cfg.ovBase}/api/v1/content/read?offset=0&limit=400&uri=${encodeURIComponent(hit.uri)}`,
+          { headers: { Authorization: `Bearer ${rec.apiKey}` } });
+        return typeof r.json?.result === 'string' ? r.json.result : r.json?.result?.content ?? '';
+      }));
+      return files.join('\n');
+    };
+    const realModel = !cfg.mockLlm;
     const extracted = (ref) => waitFor(`extraction of ${ref}`, async () => entry((e) => e.type === 'extraction' && e.ref === ref && e.extraction === 'done'), { timeoutMs: 180_000 });
 
     // ---------------------------------------------------------------- workspace 1
@@ -220,9 +230,13 @@ async function main() {
     const c1 = await mc.comment(u1.token, ws1, issueX.id, '死信队列的监控告警要求补充进方案,峰值堆积阈值 1 万条。');
     const acc1 = await waitFor('comment accepted', async () => entry((e) => e.ref === c1.id && e.type === 'accepted'));
     await extracted(c1.id);
-    const r1hits = await waitFor('comment memory searchable', async () => { const h = await ovSearch(taskScopeX, '死信队列 告警 阈值'); return h.length ? h : null; });
+    const r1hits = await waitFor('comment memory preserves the alarm threshold', async () => {
+      const h = await ovSearch(taskScopeX, '死信队列 告警 阈值');
+      const text = h.length ? await hitContent(taskScopeX, h) : '';
+      return h.length && (!realModel || /1\s*万|一万|10[,.]?000/.test(text)) ? h : null;
+    });
     step('R1', 'member comment → comment.created → archived as human feedback → extracted → searchable', acc1.author === 'member' && r1hits.length > 0,
-      `author=${acc1.author} scope=task memories=${r1hits.length}`);
+      `author=${acc1.author} scope=task memories=${r1hits.length} ${realModel ? 'threshold 10000 preserved' : 'mock plumbing'}`);
 
     // R2 — an issue run: agent tools in the run, then task.completed
     await mc.assign(u1.token, ws1, issueX.id, agentA.id);
@@ -236,6 +250,7 @@ async function main() {
     const recallA = await d1.hook(runA.id, inst1.installationId, 'memory-recall',
       { query: '死信队列 告警 阈值', ...(flavor === 'stock' ? { issue_id: issueX.identifier } : {}) });
     const recallOk = recallA.status === 'ok' && recallA.result.entries.some((e) => e.scope === taskScopeX)
+      && (!realModel || recallA.result.entries.some((e) => /1\s*万|一万|10[,.]?000/.test(e.content ?? '')))
       && recallA.result.run.bound === (flavor === 'patched') && (flavor === 'stock' || recallA.result.run.kind === 'issue');
     step('R2a', `in-run memory-recall finds the issue's collaboration memory (${flavor === 'patched' ? 'bound to the calling run' : 'issue named by the agent'})`, recallOk,
       `bound=${recallA.result?.run?.bound} kind=${recallA.result?.run?.kind} entries=${recallA.result?.entries?.length} ${recallA.error ? JSON.stringify(recallA.error) : ''}`);
@@ -245,14 +260,24 @@ async function main() {
     step('R2b', 'memory-remember writes the agent\'s public memory, and a repeat is idempotent',
       rem1.result?.status === 'remembered' && rem2.status === 'ok' && rem2.result?.status === 'already_remembered',
       `first=${rem1.result?.status} second=${rem2.result?.status ?? JSON.stringify(rem2.error)}`);
+    const remembered = await waitFor('active memory recalled with its original content', async () => {
+      const recalled = await d1.hook(runA.id, inst1.installationId, 'memory-recall', { query: '中间件选型 五维对比 模板 灰度 回滚方案' });
+      return recalled.result?.entries?.find((e) => e.uri === rem1.result?.uri && e.content?.includes(rem.content));
+    });
+    step('R2b-recall', 'memory-remember → background index → in-run memory-recall returns the exact file and original five-dimension template',
+      Boolean(remembered), `scope=${remembered.scope.split(':')[0]} original content preserved`);
     await d1.complete(runA.id, '最终结论:推荐 RocketMQ。');
     if (flavor === 'patched') {
       const accRun = await waitFor('run accepted', async () => entry((e) => e.ref === runA.id && (e.type === 'accepted' || e.type === 'skipped')));
       if (accRun.type === 'accepted') await extracted(runA.id);
-      const runHits = accRun.type === 'accepted' ? await waitFor('run memory', async () => { const h = await ovSearch(taskScopeX, '队列级顺序 事务消息 灰度 双写'); return h.length ? h : null; }).catch(() => []) : [];
+      const runHits = accRun.type === 'accepted' ? await waitFor('run memory preserves the decision, budget and rollout', async () => {
+        const h = await ovSearch(taskScopeX, 'RocketMQ 预算 灰度 双写');
+        const text = h.length ? await hitContent(taskScopeX, h) : '';
+        return h.length && (!realModel || (/RocketMQ/.test(text) && /3[,.]?800/.test(text) && /两周|2\s*周|二周/.test(text))) ? h : null;
+      }).catch(() => []) : [];
       step('R2c', 'task.completed → run transcript read from the task API → archived complete → extracted → searchable',
         accRun.type === 'accepted' && accRun.kind === 'issue' && accRun.completeness === 'complete' && runHits.length > 0,
-        `${accRun.type} kind=${accRun.kind} completeness=${accRun.completeness ?? accRun.reason} memories=${runHits.length}`);
+        `${accRun.type} kind=${accRun.kind} completeness=${accRun.completeness ?? accRun.reason} memories=${runHits.length} ${realModel ? 'RocketMQ/3800/two-week dual-write preserved' : 'mock plumbing'}`);
     } else {
       const skipped = await waitFor('run event handled', async () => entry((e) => e.ref === runA.id));
       step('R2c', 'stock multica: task.completed without a task API is skipped with 200 (no noise archive, no breaker strike)',
@@ -298,17 +323,21 @@ async function main() {
     if (flavor === 'patched') {
       // What the plugin controls: the member's own words (read through chats:read)
       // archived in the pair scope, attributed to that member, then extracted.
-      await extracted(chatTasks[0]);
+      await Promise.all(chatTasks.map(extracted));
       const archived = entry((e) => e.type === 'archive-run' && e.ref === chatTasks[0]);
       const dmRec = scopes()[dmScope];
       const read = await jfetch(`${cfg.ovBase}/api/v1/content/read?offset=0&limit=200&uri=${encodeURIComponent(`viking://user/${dmRec.userId}/sessions/${archived.session_id}/history/archive_001/messages.jsonl`)}`,
         { headers: { Authorization: `Bearer ${dmRec.apiKey}` } });
       const messages = String(read.json?.result ?? '').split('\n').filter(Boolean).map((l) => JSON.parse(l));
       const memberWords = messages.find((m) => m.role === 'user' && JSON.stringify(m.parts ?? m.content).includes('代码注释一律用中文'));
-      const leakedToTask = (await ovSearch(taskScopeX, '代码注释 中文')).some((m) => /代码注释/.test(m.abstract ?? ''));
-      // Which line a (mock) extractor distils is not the plugin's call; report it only.
-      const dmHits = await ovSearch(dmScope, '代码注释 中文 接口命名 驼峰 约定');
-      step('R3b', 'chat runs archive the member\'s words (chats:read) into the private agent×member scope, attributed, and nowhere else',
+      const taskText = await hitContent(taskScopeX, await ovSearch(taskScopeX, '代码注释 中文 接口命名 驼峰'));
+      const leakedToTask = /代码注释|驼峰/.test(taskText);
+      const dmHits = await waitFor('DM preferences remain retrievable', async () => {
+        const h = await ovSearch(dmScope, '代码注释 中文 接口命名 驼峰 约定');
+        const text = h.length ? await hitContent(dmScope, h) : '';
+        return h.length && (!realModel || (/中文/.test(text) && /驼峰|camelCase/.test(text))) ? h : null;
+      });
+      step('R3b', 'chat runs preserve attributed member input and retrievable preferences in the private agent×member scope',
         chatOutcomes.every((e) => e.type === 'accepted' && e.scope === dmScope) && memberWords?.peer_id === u1.userId && !leakedToTask,
         `scopes=${[...new Set(chatOutcomes.map((e) => e.scope?.split(':')[0]))].join(',')} member peer_id=${memberWords?.peer_id === u1.userId} dm memories=${dmHits.length}`);
     } else {
@@ -400,7 +429,7 @@ async function main() {
   console.log(`\nREAL-STACK RESULT (${flavor} multica): ${results.length - failed.length}/${results.length} steps passed`);
   if (cfg.report) {
     mkdirSync(dirname(cfg.report), { recursive: true });
-    writeFileSync(cfg.report, JSON.stringify({ flavor, run: RUN, finished_at: new Date().toISOString(), results }, null, 2) + '\n');
+    writeFileSync(cfg.report, JSON.stringify({ flavor, model_mode: cfg.mockLlm ? 'mock' : 'real', run: RUN, finished_at: new Date().toISOString(), results }, null, 2) + '\n');
   }
   process.exit(failed.length ? 1 : 0);
 }

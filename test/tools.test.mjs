@@ -13,8 +13,8 @@ const toolBody = (hookKey, input, cb, extra = {}) => hookBody({
   hookKey, trigger: 'agent', actor: { type: 'agent', id: FIXTURE_AGENT_A }, callbackUrl: cb, input, extra,
 });
 
-async function withStack({ taskApi = false, tasks = {}, cfg } = {}, fn) {
-  const ov = await startFakeOv();
+async function withStack({ taskApi = false, tasks = {}, cfg, ovOpts = {} } = {}, fn) {
+  const ov = await startFakeOv({ requireReindex: true, ...ovOpts });
   const multica = await startFakeMultica({
     issue: fixtureIssue(),
     issues: [fixtureIssue({ id: FIXTURE_ISSUE2_ID, identifier: 'MUL-8', title: '另一个任务' })],
@@ -106,11 +106,108 @@ test('remembering the same thing twice is idempotent, not an error', async () =>
     assert.equal(second.json.result.uri, first.json.result.uri);
     assert.match(first.json.result.uri, /^viking:\/\/user\/[^/]+\/memories\/preferences\//);
 
-    // The new memory's folder gets a semantic record, in the background, so a
-    // reranked OV search can reach it.
+    assert.equal(second.json.result.index_job, first.json.result.index_job);
+    await waitFor(async () => {
+      const recalled = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '发布窗口' }, cb));
+      return recalled.json.result.entries.some((e) => e.uri === first.json.result.uri && e.content.includes(input.content));
+    });
     const rec = svc.registry.get(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A));
-    const folder = first.json.result.uri.slice(0, first.json.result.uri.lastIndexOf('/'));
-    assert.deepEqual(ov.spaces.get(rec.apiKey).reindexes, [{ uri: folder, mode: 'semantic_and_vectors', recursive: false, wait: false }]);
+    assert.equal(ov.spaces.get(rec.apiKey).reindexes.length, 1, 'in-flight duplicates share one index task');
+  });
+});
+
+for (const failure of ['request', 'background task']) {
+  test(`remember automatically recovers an indexing ${failure} failure`, async () => {
+    await withStack({ ovOpts: { reindexBehavior: failure === 'background task' ? 'fail-first' : 'succeed' } }, async ({ svc, cb }) => {
+      const reindex = svc.ovClient.reindex.bind(svc.ovClient);
+      let calls = 0;
+      svc.ovClient.reindex = async (...args) => {
+        if (++calls === 1 && failure === 'request') throw new Error('temporary index outage');
+        return reindex(...args);
+      };
+      const input = { title: '灰度验收', content: '灰度验收必须核对退款到账时间。', kind: 'experiences' };
+      const first = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+      assert.equal(first.status, 200);
+      assert.equal(first.json.result.status, 'remembered', first.text);
+      const before = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '退款到账时间' }, cb));
+      assert.equal(before.json.result.entries.some((e) => e.content?.includes(input.content)), false, 'unindexed file cannot be recalled');
+      const retry = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+      assert.equal(retry.json.result.status, 'already_remembered', retry.text);
+      await waitFor(async () => {
+        const after = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '退款到账时间' }, cb));
+        return after.json.result.entries.some((e) => e.uri === retry.json.result.uri && e.content.includes(input.content));
+      });
+      assert.ok(calls >= 2, 'failure retried without another agent call');
+      if (failure === 'background task') assert.equal(svc.queue.jobs.get(first.json.result.index_job).payload.generation, 1);
+    });
+  });
+}
+
+test('remember reports a failed durable index enqueue and can repair it with the same content', async () => {
+  await withStack({}, async ({ svc, cb }) => {
+    const input = { title: '发布清单', content: '发布前核对回滚负责人。' };
+    const journal = svc.queue.path;
+    svc.queue.path = svc.stateDir;
+    let first;
+    try {
+      first = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+      assert.equal(first.json.error?.code, 'index_unavailable', first.text);
+      assert.match(first.json.error.message, /已写入.*未能持久化/);
+    } finally { svc.queue.path = journal; }
+    const duplicate = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+    assert.equal(duplicate.json.result?.status, 'already_remembered', duplicate.text);
+    await waitFor(async () => {
+      const recall = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '回滚负责人' }, cb));
+      return recall.json.result.entries.some((e) => e.uri === duplicate.json.result.uri && e.content.includes(input.content));
+    });
+  });
+});
+
+test('two memories in one folder survive a reindex conflict without blocking another archive', async () => {
+  await withStack({ ovOpts: { pollsToFinish: 3 }, cfg: { queueMaxAttempts: 8 } }, async ({ ov, svc, cb }) => {
+    const inputs = [
+      { title: '回滚流程', content: '回滚前必须确认数据库迁移可逆。', kind: 'experiences' },
+      { title: '上线流程', content: '上线前必须通知值班负责人。', kind: 'experiences' },
+    ];
+    const remembered = [];
+    for (const input of inputs) remembered.push((await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb))).json.result);
+    const comment = await svc.signedPost('/hooks/memory-archive', hookBody({ eventType: 'comment.created', callbackUrl: cb,
+      input: commentEvent({ id: 'cm-during-index', content: '故障演练安排在周三。' }) }));
+    assert.equal(comment.json.result.status, 'queued');
+    const rec = svc.registry.get(scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID));
+    await waitFor(() => ov.archivedOf(rec.apiKey, 'mc-comment-cm-during-index').length);
+    const first = svc.queue.jobs.get(remembered[0].index_job);
+    assert.equal(ov.taskStates.get(first.cp.indexTaskId).status, 'pending', 'slow indexing does not hold up archive submission');
+    await waitFor(async () => {
+      const recalled = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '回滚 上线 流程' }, cb));
+      return remembered.every((r, i) => recalled.json.result.entries.some((e) => e.uri === r.uri && e.content.includes(inputs[i].content)));
+    });
+    await waitFor(() => remembered.every((r) => !svc.extractions.isPinned(r.index_job)));
+    assert.ok(svc.queue.jobs.get(remembered[1].index_job).attempts > 0, 'folder conflict was retried');
+  });
+});
+
+test('remember can repair an index after the automatic redrive budget is exhausted', async () => {
+  await withStack({ cfg: { extractMaxRedrives: 0 } }, async ({ svc, cb }) => {
+    const reindex = svc.ovClient.reindex.bind(svc.ovClient);
+    const getTask = svc.ovClient.getTask.bind(svc.ovClient);
+    let failedTask;
+    svc.ovClient.reindex = async (...args) => { const result = await reindex(...args); failedTask = result.task_id; return result; };
+    svc.ovClient.getTask = async (key, id) => id === failedTask ? { status: 'failed', error: 'index provider unavailable' } : getTask(key, id);
+    const input = { title: '验收要求', content: '验收必须包含支付失败场景。' };
+    const first = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+    const id = first.json.result.index_job;
+    await waitFor(() => svc.statusLog.recent({ limit: 50 }).some((e) => e.type === 'extraction' && e.record === 'index-memory' && e.extraction === 'failed'));
+    // The fake keeps its first task pending until polled; finish it so the next
+    // request models a settled OV task rather than a resource-lock conflict.
+    await getTask(svc.registry.get(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A)).apiKey, failedTask);
+    svc.ovClient.getTask = getTask;
+    svc.ovClient.reindex = reindex;
+    const repair = await svc.signedPost('/hooks/memory-remember', toolBody('memory-remember', input, cb));
+    assert.equal(repair.json.result.status, 'already_remembered');
+    assert.equal(repair.json.result.index_job, id);
+    assert.equal(svc.queue.jobs.get(id).payload.generation, 1);
+    await waitFor(() => !svc.extractions.isPinned(id) && svc.queue.jobs.get(id).status === 'done');
   });
 });
 

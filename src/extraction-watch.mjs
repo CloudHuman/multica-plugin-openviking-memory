@@ -1,8 +1,8 @@
 import { atomicWriteJson, readJsonIfExists, nowIso } from './util.mjs';
 
 /**
- * Extraction watcher: follows each commit's background extraction to its end,
- * beside the archive queue rather than inside a job.
+ * Follows each commit's extraction or active-memory reindex to its end, beside
+ * the archive queue rather than inside a job.
  *
  * States are reported as the spec asks — archived ≠ extracted ≠ retrievable:
  *   pending   → OV's commit task is still running
@@ -39,7 +39,7 @@ export class ExtractionWatcher {
   }
 
   watch({ jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation = 0 }) {
-    if (!taskId) return;
+    if (!taskId && !archiveUri) throw new Error('extraction watch requires a task or archive URI');
     this.pending[sessionId] = {
       jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation,
       startedAt: Date.now(), checks: 0, nextCheckAt: Date.now() + this.cfg.extractPollIntervalMs,
@@ -99,8 +99,9 @@ export class ExtractionWatcher {
     if (!rec) return this.#settle(entry, 'failed', 'scope key missing from registry');
     let state = null;
     let error = null;
+    let checkMarkers = !entry.taskId;
     try {
-      const task = await this.ov.getTask(rec.apiKey, entry.taskId);
+      const task = entry.taskId ? await this.ov.getTask(rec.apiKey, entry.taskId) : null;
       const status = task?.status ?? task?.state;
       if (status === 'completed' || status === 'succeeded' || status === 'done') state = 'done';
       else if (status === 'failed' || status === 'cancelled') {
@@ -108,14 +109,21 @@ export class ExtractionWatcher {
         error = String(task?.error ?? status).slice(0, 300);
       }
     } catch (err) {
-      if (err.status === 404 && entry.archiveUri) {
-        if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.done`)) state = 'done';
-        else if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.failed.json`)) {
-          state = 'failed';
-          error = 'archive marked .failed.json';
-        }
-      } else if (err.status !== 404) {
+      if (err.status === 404 && entry.type === 'index-memory') {
+        // Reindex tasks have no durable archive markers. Rebuilding their
+        // vectors/summaries is idempotent, so recover an expired task by retry.
+        state = 'failed';
+        error = 'reindex task unavailable';
+      } else if (err.status === 404) checkMarkers = true;
+      else {
         this.log(`extraction watch ${entry.sessionId}: ${err.message}`);
+      }
+    }
+    if (checkMarkers && entry.archiveUri) {
+      if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.done`)) state = 'done';
+      else if (await this.#exists(rec.apiKey, `${entry.archiveUri}/.failed.json`)) {
+        state = 'failed';
+        error = 'archive marked .failed.json';
       }
     }
 

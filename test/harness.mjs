@@ -2,9 +2,7 @@ import { createServer } from 'node:http';
 import { loadConfig, parseSigningSecrets } from '../src/config.mjs';
 import { OvClient } from '../src/ov-client.mjs';
 import { ScopeRegistry } from '../src/scopes.mjs';
-import { JobQueue } from '../src/queue.mjs';
-import { makeArchiveHandler } from '../src/pipeline.mjs';
-import { ExtractionWatcher } from '../src/extraction-watch.mjs';
+import { createArchiveProcessing } from '../src/processing.mjs';
 import { Ledger, ArchiveStatusLog } from '../src/ledger.mjs';
 import { InstallationRegistry } from '../src/installations.mjs';
 import { createApp, buildRequestListener } from '../src/server.mjs';
@@ -55,14 +53,10 @@ export async function bootService({ ov, stateDir = tempStateDir(), cfg: override
   const installations = new InstallationRegistry({ stateDir, cfg, fetchImpl, log });
   const ledger = new Ledger({ stateDir });
   const statusLog = new ArchiveStatusLog({ stateDir });
-  let extractions = null;
-  const queue = new JobQueue({
-    stateDir,
-    handler: makeArchiveHandler({ ov: ovClient, registry, statusLog, extractions: { watch: (e) => extractions.watch(e) }, cfg, log }),
-    maxAttempts: 3, baseDelayMs: 5, pollMs: 10, log,
-    isPinned: (id) => extractions?.isPinned(id) ?? false,
+  const { queue, extractions } = createArchiveProcessing({
+    ov: ovClient, registry, statusLog, cfg, log,
+    queueOptions: { maxAttempts: overrides.queueMaxAttempts ?? 3, baseDelayMs: 5, pollMs: 10 },
   });
-  extractions = new ExtractionWatcher({ ov: ovClient, registry, queue, statusLog, stateDir, cfg, log });
   queue.start();
   extractions.start();
   const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog, installations, extractions, fetchImpl });

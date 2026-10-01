@@ -326,22 +326,24 @@ async function main() {
         : s3detail);
 
     // ---- S4: agent remember tool → own public space, searchable
-    const rem = await signAndPost('/hooks/memory-remember', {
+    const rememberBody = {
       version: 1, invocation_id: 'e2e-rem-1', attempt: 1, occurred_at: new Date().toISOString(),
       hook_key: 'memory-remember', trigger: 'agent', workspace_id: WS, installation_id: 'inst-e2e',
       actor: { type: 'agent', id: AGENT_A },
       callback_token: 'mpc_e2e', callback_url: `http://127.0.0.1:${MC_PORT}/v1`,
       input: { title: '选型对比模板', content: '做中间件选型时,按 顺序性/事务/死信/生态/成本 五维对比,并给出灰度与回滚方案。', kind: 'experiences' },
       config: {},
-    });
+    };
+    const rem = await signAndPost('/hooks/memory-remember', rememberBody);
     if (rem.status !== 200) throw new Error(`remember failed: ${rem.text}`);
-    await waitFor('remember searchable in agent space', async () => {
-      const key = keyOf(agentScopeA);
-      if (!key) return null;
-      const hits = await ovSearch(key, '中间件选型 对比 模板');
-      return hits.length ? hits : null;
+    await waitFor('remember recalled with original content in agent space', async () => {
+      const recalled = await signAndPost('/hooks/memory-recall', {
+        ...rememberBody, invocation_id: 'e2e-rem-recall', hook_key: 'memory-recall',
+        input: { query: '中间件选型 五维对比 模板 灰度 回滚方案' },
+      });
+      return recalled.json?.result?.entries?.find((e) => e.uri === rem.json?.result?.uri && e.content?.includes(rememberBody.input.content));
     }, { timeoutMs: 120_000 });
-    step('S4 memory-remember lands in THIS agent public space', !keyOf(`agent:${WS}:${AGENT_B}`),
+    step('S4 memory-remember recalls its original content in THIS agent public space', !keyOf(`agent:${WS}:${AGENT_B}`),
       'agent-B space not provisioned (no path to it)');
 
     // ---- S5: comment.created → attributed feedback archived

@@ -9,7 +9,8 @@ import { resolveArchiveScope } from './scopes.mjs';
  * scope's OV space: provision → session → messages → commit. That is all a job
  * does; watching the commit's extraction happens beside the queue (see
  * extraction-watch.mjs), so one slow LLM extraction never holds up the next
- * archive.
+ * archive. Active-memory indexing uses the same durable queue and watcher:
+ * submit a recursive reindex, then track it without waiting for model work.
  *
  * Every step is resumable from what OpenViking itself reports, not from
  * checkpoints alone: a request whose response was lost may still have landed,
@@ -66,6 +67,20 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
     };
     try {
       const rec = await registry.ensureForArchive(scopeKey, p.workspaceId);
+      if (job.type === 'index-memory') {
+        if (!job.cp.indexTaskId) {
+          const indexed = await ov.reindex(rec.apiKey, p.uri, { mode: 'semantic_and_vectors', recursive: true, wait: false });
+          if (!indexed?.task_id) throw new Error('reindex returned no background task ID');
+          job.cp.indexTaskId = indexed.task_id;
+        }
+        const watchId = `memory-index-${job.id}-r${generation}`;
+        extractions.watch({
+          jobId: job.id, workspaceId: p.workspaceId, scopeKey, sessionId: watchId, ref: p.refId,
+          type: job.type, taskId: job.cp.indexTaskId, generation,
+        });
+        statusLog.append({ ...base, extraction: 'pending', extraction_task: job.cp.indexTaskId });
+        return;
+      }
       const built = buildJobMessages(job, cfg);
       if (!built.messages.length) {
         statusLog.append({ ...base, extraction: 'skipped', skipReason: 'no messages to archive' });
@@ -74,17 +89,18 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
       const sessionId = generation ? `${built.sessionId}-r${generation}` : built.sessionId;
       job.cp.sessionId = sessionId;
 
-      if (!job.cp.commitTaskId) {
+      if (!job.cp.commitTaskId && !job.cp.archiveUri) {
         const session = await readSession(ov, rec.apiKey, sessionId);
         if (!session) {
           await ov.createSession(rec.apiKey, { sessionId, autoCommitPolicy: null });
         }
         if ((session?.commit_count ?? 0) > 0) {
-          // The commit landed but its response did not: recover its task.
+          // Tasks expire, but the numbered archive and its markers persist.
           const tasks = await ov.listTasks(rec.apiKey, { resourceId: sessionId, taskType: 'session_commit' });
           const latest = [...tasks].sort((a, b) => Number(b.created_at ?? 0) - Number(a.created_at ?? 0))[0];
           job.cp.commitTaskId = latest?.task_id ?? null;
-          job.cp.archiveUri = latest?.result?.archive_uri ?? null;
+          job.cp.archiveUri = latest?.result?.archive_uri ??
+            `viking://user/${rec.userId}/sessions/${sessionId}/history/archive_${String(session.commit_count).padStart(3, '0')}`;
         } else {
           const live = Math.max(0, Number(session?.message_count ?? 0));
           for (const chunk of chunkMessages(built.messages.slice(live))) {

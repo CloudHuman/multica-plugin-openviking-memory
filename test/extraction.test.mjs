@@ -2,7 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scopeKey } from '../src/scopes.mjs';
 import { ExtractionWatcher } from '../src/extraction-watch.mjs';
+import { makeArchiveHandler } from '../src/pipeline.mjs';
+import { createArchiveProcessing } from '../src/processing.mjs';
 import { ArchiveStatusLog } from '../src/ledger.mjs';
+import { atomicWriteJson } from '../src/util.mjs';
+import { writeFileSync } from 'node:fs';
 import {
   startFakeOv, startFakeMultica, fixtureIssue, hookBody, commentEvent, tempStateDir,
   FIXTURE_WS, FIXTURE_ISSUE_ID,
@@ -122,5 +126,68 @@ test('a lost commit response is recovered from OV, not committed twice', async (
     assert.equal(ov.archivedOf(rec.apiKey, 'mc-comment-cm-x').length, 1, 'no duplicated messages');
   } finally {
     await run.stop();
+  }
+});
+
+for (const outcome of ['done', 'failed', 'pending']) {
+  test(`lost commit response with an expired task recovers ${outcome} from the durable archive`, async () => {
+    const stateDir = tempStateDir();
+    const statusLog = new ArchiveStatusLog({ stateDir });
+    const rec = { apiKey: 'k', userId: 'u' };
+    const uri = 'viking://user/u/sessions/mc-comment-expired/history/archive_002';
+    let redrives = 0;
+    const ov = {
+      async getSession() { return { commit_count: 2, message_count: 0 }; },
+      async listTasks() { return []; },
+      async getTask() { assert.fail('there is no task ID to poll'); },
+      async readContent(key, path) {
+        if (path === `${uri}/.${outcome === 'done' ? 'done' : 'failed.json'}` && outcome !== 'pending') return { content: '{}' };
+        const err = new Error('not found'); err.status = 404; throw err;
+      },
+    };
+    const registry = { ensureForArchive: async () => rec, get: () => rec };
+    const cfg = { extractPollIntervalMs: 1, extractPollMaxIntervalMs: 2, extractMaxWatchMs: 1000, extractMaxRedrives: 1, extractRedriveDelayMs: 0 };
+    const queue = { requeue: () => { redrives++; return { payload: { generation: 1 } }; } };
+    const watcher = new ExtractionWatcher({ ov, registry, queue, statusLog, stateDir, cfg });
+    const job = { id: 'expired-job', type: 'archive-comment', cp: {}, payload: {
+      workspaceId: FIXTURE_WS, scopeKey: taskScope, refId: 'expired',
+      comment: { id: 'expired', author_type: 'member', content: '退款必须在三个工作日内到账。' },
+    } };
+    try {
+      await makeArchiveHandler({ ov, registry, statusLog, extractions: watcher, cfg })(job);
+      assert.equal(job.cp.archiveUri, uri, 'recover the latest numbered archive even after task TTL');
+      assert.equal(watcher.stats().pending, 1, 'pending means a persisted watch exists');
+      const entry = Object.values(watcher.pending)[0];
+      entry.nextCheckAt = 0;
+      if (outcome === 'pending') entry.startedAt = Date.now() - 2000;
+      await watcher.tick();
+      const settled = statusLog.recent({ limit: 10 }).find((e) => e.type === 'extraction');
+      assert.equal(settled.extraction, outcome === 'failed' ? 'redriven' : outcome === 'pending' ? 'timeout' : 'done');
+      assert.equal(redrives, outcome === 'failed' ? 1 : 0);
+      assert.equal(watcher.stats().pending, 0);
+    } finally {
+      watcher.stop();
+    }
+  });
+}
+
+test('restart replay loads extraction pins before compacting more than 500 completed jobs', async () => {
+  const stateDir = tempStateDir();
+  const jobs = Array.from({ length: 511 }, (_, i) => ({
+    id: `j${i}`, type: 'archive-comment', cp: {}, status: i === 510 ? 'running' : 'done',
+    payload: { generation: 0, workspaceId: FIXTURE_WS, refId: `r${i}` },
+    created_at: new Date(i * 1000).toISOString(),
+  }));
+  writeFileSync(`${stateDir}/queue.ndjson`, JSON.stringify({ t: 'compact-base', jobs }) + '\n');
+  atomicWriteJson(`${stateDir}/extractions.json`, { pending: { s0: { jobId: 'j0', sessionId: 's0', nextCheckAt: Date.now() + 60_000 } } });
+  const { queue, extractions } = createArchiveProcessing({ ov: {}, registry: {}, statusLog: new ArchiveStatusLog({ stateDir }), cfg: { stateDir } });
+  try {
+    assert.ok(queue.jobs.has('j0'), 'oldest pending extraction retains its redrive payload');
+    assert.equal(queue.jobs.get('j510').status, 'queued', 'in-flight job is recovered too');
+    assert.equal(queue.jobs.size, 502, '500 unpinned completed jobs plus one pinned and one recovered job');
+    assert.equal(queue.requeue('j0', { reason: 'recovered extraction failed' }).payload.generation, 1);
+  } finally {
+    extractions.stop();
+    await queue.stop();
   }
 });

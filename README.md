@@ -66,6 +66,10 @@
 
 原生 `ov-remember` 走真实的"会话 + 提交 + 抽取"管道（异步生效），与 `memory-remember` 的直写通道互通——同一空间，检索都可见。门面由 `scripts/gen-ov-hooks.mjs` 按部署实例的实际工具清单生成（`add_skill` 写账号共享的 `viking://agent/skills`，不提供）。
 
+`memory-remember` 写入后持久化索引任务，在后台递归建立文件向量和目录摘要，并监视完成状态；请求失败或索引失败会自动重试。索引完成后才可召回。无法持久化索引任务时返回可重试的工具错误，重复调用也会补建索引。运行收尾评论只有在完整、持久化的运行归档确实包含其原文时才去重；取材失败或截断时，评论单独归档兜底。
+
+事件钩子 `memory-archive` 在持久化接收或明确跳过后返回 200，接收失败返回 503，供 multica 重试；智能体工具错误仍以可读的 200 结果返回。重启时先恢复抽取监视，再回放队列，保留仍需重驱的归档内容。提交响应丢失且任务过期时，通过持久化归档的完成/失败标记继续监视。
+
 > 为什么要门面限制：一个工作区对应一个 OV 账号，账号内的 `viking://resources` / `viking://agent` 对所有用户共享。只靠"每个智能体一把 key"，智能体仍能读写彼此放在共享命名空间里的内容。
 
 **运行时差异（实测）**：OpenCode 系开箱即获得全部工具；kimi 等 ACP 运行时需先给该智能体登记一条指向其空间 key 的 workspace MCP 直连条目（workaround 手册：`docs/setup-ov-mcp.md`；直连绕过门面的空间限制，登记前先读手册里的警告）；pi 运行时当前完全不下发 MCP（multica 适配器缺失，已提 [multica#8961](https://github.com/multica-ai/multica/issues/8961)）。工具调用链路的 daemon 凭据修复见 [multica#8960](https://github.com/multica-ai/multica/pull/8960)。
@@ -211,16 +215,17 @@ scripts/                  package.sh · gen-ov-hooks · validate-manifest
 ## 验证
 
 ```bash
-node --test test/*.test.mjs                       # 76/76
+node --test test/*.test.mjs                       # 94/94
 node scripts/validate-manifest.mjs multica.plugin.json
-OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica：patched 13/13，E2E_MULTICA=stock 14/14
-node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV：补丁版 12/12，stock 12/12
+OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica；E2E_MULTICA=stock 切换合约
+node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV；R7 故障注入需 MOCK_LLM_URL
 ```
 
-最近的记录：[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
+最近的记录：[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
 
 ## 变更记录
 
+- **2026-10-01 评审补修**：主动记忆持久化递归索引并监视失败重驱；归档持久化失败返回 503 供重投；按实际归档内容去重收尾评论；重启压缩保留待抽取任务；提交任务过期后从归档标记恢复；账本兼容旧格式并保留重启去重；端到端核验原文、预算、阈值和私聊偏好。
 - **0.3.0**（评审修复）：安装绑定唯一工作区，跨租户读取与状态泄露关闭；按运行类型归档（需任务读取 API，stock multica 以 200 跳过、不再触发熔断）；评论按作者类型如实归属；抽取监视移出队列，失败在新会话代际重驱（`POST /extract` 在提交后是空操作）；提交响应丢失可找回；`memory-recall` 绑定调用它的运行，issue 编号解析为 UUID；工具错误以可读的 200 返回；`memory-remember` 幂等；`ov-*` 门面限制在调用者自己的空间；状态目录心跳租约；清单描述与行为一致、校验器按 multica 的字节限制；真实栈端到端与 multica 补丁；真实模型验证后：`memory-remember` 写入后在后台重建所在目录的语义记录（配了重排时才能被检索到），召回合并同一记忆的自有/peer 两份副本，运行归档只保留一个归属方（避免 OpenViking 因归属不唯一丢弃记忆），私聊运行不再发匿名上下文头；`memory-recall` 与 `ov-*` 门面在钩子超时之前作答（模型服务慢时返回已完成的部分并注明，而不是让 multica 报"hook endpoint did not answer"）
 - **0.2.x**：`ov-*` 原生工具门面（schema 实例镜像 + actor.id 注入 key）；共享记忆晋升（原生抽取管道 + 夜间定时）；多工作区签名密钥；`agent=` 归属标签；队列快照重放修复；partial→complete 自动升级；`/admin/redrive`；单写者锁；抽取监视 120s
 - **0.1.0**：初始实现——七类范围引擎、归档管道、持久化队列、3 个编排工具、companion API、skill、E2E 12/12
