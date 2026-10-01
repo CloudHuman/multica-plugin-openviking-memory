@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT_POLICY_TYPES, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, loadMemoryPolicy, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
+import { ACCOUNT_POLICY_TYPES, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, loadMemoryPolicy, prepareTestAccount, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
 import { accountIdFor, adminUserIdFor } from '../src/scopes.mjs';
 
 const policy = loadMemoryPolicy();
@@ -76,4 +76,28 @@ test('setup fails when OpenViking does not keep an account template', async () =
   // An existing account is used as is: no account is created without a workspace.
   assert.ok(ov.calls.every(([method]) => method !== 'create'));
   await assert.rejects(applyAccountMemoryPolicy({ ov, rootKey: 'root', policy }), /workspace or account ID/);
+});
+
+test('native and account runs start from the same pre-created account', async () => {
+  const nativeRun = fakeOv();
+  assert.deepEqual(await prepareTestAccount({ ov: nativeRun, rootKey: 'root', workspaceId: 'ws-2', mode: 'native', policy }), { scope: 'native', accountId: accountIdFor('ws-2') });
+  assert.deepEqual(nativeRun.calls[0], ['create', 'root', { accountId: accountIdFor('ws-2'), adminUserId: adminUserIdFor('ws-2') }]);
+  assert.ok(nativeRun.calls.slice(1).every(([method]) => method === 'GET'));
+  assert.deepEqual(nativeRun.custom, {});
+  const accountRun = fakeOv();
+  assert.equal((await prepareTestAccount({ ov: accountRun, rootKey: 'root', workspaceId: 'ws-3', mode: 'account', policy })).scope, 'account');
+  assert.deepEqual(accountRun.calls[0][0], 'create');
+  assert.deepEqual(Object.keys(accountRun.custom).sort(), [...ACCOUNT_POLICY_TYPES].sort());
+});
+
+test('a leftover instance-level policy stops the run before any model call', async () => {
+  const ov = fakeOv();
+  const leftover = { ...ov, call: async (path, options = {}) => {
+    const result = await ov.call(path, options);
+    return { ...result, defaults: { ...result.defaults, description: `${result.defaults.description}\n\n${POLICY_HEADING}\n- old rule` } };
+  } };
+  for (const mode of ['native', 'account']) {
+    await assert.rejects(prepareTestAccount({ ov: leftover, rootKey: 'root', workspaceId: 'ws-4', mode, policy }), /remove memory\.custom_templates_dir/);
+  }
+  assert.deepEqual(ov.custom, {});
 });

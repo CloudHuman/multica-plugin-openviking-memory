@@ -8,7 +8,7 @@ import { Multica, sleep } from '../real-stack/multica.mjs';
 import { OvClient } from '../../src/ov-client.mjs';
 import { auditMemories } from './memory-audit.mjs';
 import { assessNoAnswer } from './answer-checks.mjs';
-import { applyAccountMemoryPolicy } from './memory-policy.mjs';
+import { prepareTestAccount } from './memory-policy.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -90,8 +90,8 @@ try {
   } else {
     user = await mc.login(`ovmem-real-agent-${run}@example.com`);
     ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: ISSUE_PREFIX });
-    // Before the plugin first sees the workspace, so every extraction in the run uses the same templates.
-    report.memoryPolicy = memoryPolicy === 'account' ? await applyAccountMemoryPolicy({ ov, rootKey: env.OV_ROOT_KEY, workspaceId: ws }) : { scope: 'native' };
+    // Both modes create the OV account before the plugin first sees the workspace; only its templates differ.
+    report.memoryPolicy = await prepareTestAccount({ ov, rootKey: env.OV_ROOT_KEY, workspaceId: ws, mode: memoryPolicy });
     const pat = await mc.must('PAT', mc.call('/api/tokens', { method: 'POST', token: user.token, body: { name: `real-agent-${run}`, expires_in_days: 1 } }));
     const zipped = execFileSync('bash', ['scripts/package.sh', '--url', pluginUrl, '--with-chats-read'], { cwd: repo, encoding: 'utf8' }).match(/packaged: (\S+\.zip)/)[1];
     const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));

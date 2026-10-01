@@ -55,6 +55,25 @@ export async function applyAccountMemoryPolicy({ ov, rootKey, workspaceId, accou
   return { scope: 'account', accountId, memoryTypes: ACCOUNT_POLICY_TYPES, digest };
 }
 
+/**
+ * Create a test workspace's OV account before the plugin first sees it, in
+ * either mode, so native and account runs reach extraction the same way and
+ * differ only in templates. Fails before any model call when the instance
+ * defaults already carry this policy (a leftover memory.custom_templates_dir),
+ * since a native run would then not be native.
+ */
+export async function prepareTestAccount({ ov, rootKey, workspaceId, mode, policy = loadMemoryPolicy() }) {
+  const accountId = accountIdFor(workspaceId);
+  await ov.createAccount(rootKey, { accountId, adminUserId: adminUserIdFor(workspaceId) });
+  for (const kind of ACCOUNT_POLICY_TYPES) {
+    const { defaults } = await ov.call(templatePath(accountId, kind), { key: rootKey });
+    if (JSON.stringify(defaults).includes(POLICY_HEADING)) {
+      throw new Error(`OpenViking's instance templates already carry the Multica policy (${kind}); remove memory.custom_templates_dir and restart OV`);
+    }
+  }
+  return mode === 'account' ? applyAccountMemoryPolicy({ ov, rootKey, accountId, policy }) : { scope: 'native', accountId };
+}
+
 /** Remove the overrides. Memories already extracted are not rewritten. */
 export async function resetAccountMemoryPolicy({ ov, rootKey, accountId }) {
   for (const kind of ACCOUNT_POLICY_TYPES) await ov.call(templatePath(accountId, kind), { method: 'DELETE', key: rootKey });
