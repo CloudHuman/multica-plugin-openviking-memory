@@ -32,7 +32,7 @@ export function assessPrivateIsolation(record, allowedScope) {
 }
 
 export async function runBenchmark(ctx) {
-  const { mc, ov, user, ws, agent: a, agentTemplate, state, pluginState, pluginUrl, pluginToken, report, step, save, wait, privateFile, toolResultData, canary } = ctx;
+  const { mc, ov, user, ws, agent: a, agentTemplate, state, pluginState, pluginUrl, pluginToken, report, step, save, wait, privateFile, toolResultData, canary, issuePrefix } = ctx;
   const repeats = Number(process.env.REAL_AGENT_BENCHMARK_REPEATS ?? 3);
   if (!Number.isInteger(repeats) || repeats < 1 || repeats > 5) throw new Error('Benchmark repeats must be 1..5');
   const list = x => Array.isArray(x) ? x : x?.tasks ?? x?.messages ?? x?.comments ?? [];
@@ -152,7 +152,7 @@ export async function runBenchmark(ctx) {
     } catch (error) { report.privateError = error.message; save(); }
     report.finalExtractionErrors ??= [];
     await boundary(report.finalExtractionErrors, 'final extraction barrier', settle);
-    report.memoryAudit = await auditMemories({ ov, scopes: scopes(), canary });
+    report.memoryAudit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
     const queries = report.cases.flatMap(c => c.queries);
     const queriedTasks = report.tasks.filter(t => t.entry.startsWith('query-'));
     report.metrics = { plannedFactQueries: CASES.length * repeats, observedFactQueries: queries.length,
@@ -168,7 +168,7 @@ export async function runBenchmark(ctx) {
     step('benchmark-observed-coverage', queries.length === CASES.length*repeats, 'All planned independent fact recalls were actually run');
     step('benchmark-private-coverage', report.privateQueries?.length === repeats, 'All planned independent private recalls were actually run');
     step('benchmark-memory-audit', report.metrics.completeAudit, 'Own and peer memories were read completely for the quality audit');
-    step('benchmark-reusable-memory-hygiene', report.memoryAudit.every(s => s.complete && !s.qualityFindings.length && !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Complete audit found no known platform or execution controls in reusable memories');
+    step('benchmark-reusable-memory-hygiene', report.memoryAudit.every(s => s.complete && !s.qualityFindings.length && !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Complete audit found no known platform or execution controls in reusable memories, and no issue keys or run bookkeeping in entity cards');
     step('benchmark-private-isolation', report.privateIsolation?.delivered && report.privateIsolation.recallObserved && !report.privateIsolation.unauthorizedScopeSearched && !report.privateIsolation.unauthorizedScopeReturned && !report.privateIsolation.leakedPrivateValues, 'Other agent actually recalled without searching or receiving another private pair scope');
     step('benchmark-delivery-fault-exercised', report.controlledFault?.injected && report.recoveries.some(r=>r.taskId===report.controlledFault.taskId), 'Controlled post-delivery model failure exercised receipt recovery');
     save();

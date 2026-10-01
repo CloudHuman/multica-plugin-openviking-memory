@@ -7,7 +7,7 @@ import { sleep } from '../real-stack/multica.mjs';
 // Real daemon + actual agent tools. No hand-authored assistant transcript and
 // no active writes: the facts below must survive automatic native distillation.
 export async function runQuality(ctx) {
-  const { mc, ov, user, ws, agent: a, agentTemplate, pluginState, pluginUrl, pluginToken, report, step, save, wait, state, privateFile, toolResultData, canary } = ctx;
+  const { mc, ov, user, ws, agent: a, agentTemplate, pluginState, pluginUrl, pluginToken, report, step, save, wait, state, privateFile, toolResultData, canary, issuePrefix } = ctx;
   const list = value => Array.isArray(value) ? value : value?.tasks ?? value?.messages ?? value?.comments ?? [];
   const call = (path, body, method = body === undefined ? 'GET' : 'POST') => mc.must(path, mc.call(path, { token: user.token, ws, method, body }));
   const scopes = () => JSON.parse(readFileSync(join(pluginState, 'scopes.json'), 'utf8')).scopes;
@@ -161,10 +161,10 @@ export async function runQuality(ctx) {
       ?? await chatRun(a, '蓝鹊新会话查询', `蓝鹊周报之前约定的三个标题及顺序是什么？${finish} 本次没有再次提供标题；根据实际召回回复并引用来源 URI。`, 'quality-dm-recall');
     step('real-DM-layout-recall', /风险/.test(recalled.response) && /进展/.test(recalled.response) && /下一步/.test(recalled.response) && recalled.recalls.some(r => r.entries.some(e => e.scope === dmScope && recalled.response.includes(e.uri))), 'New actual chat recovered private layout from its pair memory');
     await extracted(recalled.taskId);
-    const audit = await auditMemories({ ov, scopes: scopes(), canary });
+    const audit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
     report.memoryAudit = audit;
     step('peer-audit-coverage', audit.every(s => s.complete) && audit.some(s => s.scope === dmScope && s.peerFiles > 0), 'Complete memory audit included peer-owned private memories');
-    step('reusable-memory-hygiene', audit.every(s => !s.qualityFindings.length), 'Known run controls, retrieval outcomes and platform scaffolding absent from reusable memories');
+    step('reusable-memory-hygiene', audit.every(s => !s.qualityFindings.length), 'Known run controls, retrieval outcomes, platform scaffolding, and issue keys or run bookkeeping in entity cards absent from reusable memories');
     step('runtime-markers-filtered', audit.every(s => !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Known injected runtime markers absent from extracted memories');
     save();
   } finally {

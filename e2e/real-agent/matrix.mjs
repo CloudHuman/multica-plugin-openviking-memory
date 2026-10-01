@@ -6,7 +6,7 @@ import { auditMemories } from './memory-audit.mjs';
 // All task transcripts and tool calls are produced by the official daemon.
 // The harness only sends member input, waits, and inspects persisted evidence.
 export async function runMatrix(ctx) {
-  const { mc, ov, user, ws, agent: a, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, run, report, step, save, wait, privateFile, toolResultData } = ctx;
+  const { mc, ov, user, ws, agent: a, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, issuePrefix, run, report, step, save, wait, privateFile, toolResultData } = ctx;
   const list = data => Array.isArray(data) ? data : data?.tasks ?? data?.messages ?? data?.comments ?? data?.issues ?? data?.runs ?? data?.autopilots ?? [];
   const call = (path, body, method = body === undefined ? 'GET' : 'POST') => mc.must(path, mc.call(path, { token: user.token, ws, method, body }));
   const b = ctx.resume
@@ -299,9 +299,9 @@ export async function auditMatrix({ ov, report, scopes, statuses, canary, step, 
   }
   report.archiveAudit = archiveAudit;
   step('matrix-archive-prompt-hygiene', archiveAudit.length >= taskIds.size && archiveAudit.every(audit => audit.characters > 0 && !audit.containsPlatformCanary && !audit.containsRuntimeBanner), `Inspected ${archiveAudit.length} actual task and delegation archives`);
-  const memoryAudit = await auditMemories({ ov, scopes: scopes(), canary });
+  const memoryAudit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
   report.memoryAudit = memoryAudit;
   step('matrix-prompt-hygiene', memoryAudit.some(audit => audit.files > 0) && memoryAudit.every(audit => audit.complete && !audit.containsPlatformCanary && !audit.containsRuntimeBanner && !audit.containsPlatformGuidance), `Inspected ${memoryAudit.reduce((n, audit) => n + audit.files, 0)} extracted memory files including peer namespaces`);
-  step('matrix-memory-quality', memoryAudit.every(audit => audit.complete && !audit.qualityFindings.length), 'Reusable memories checked for known execution controls, search-outcome facts and platform scaffolding (bounded rules, not a semantic zero-contamination proof)');
+  step('matrix-memory-quality', memoryAudit.every(audit => audit.complete && !audit.qualityFindings.length), 'Reusable memories checked for known execution controls, search-outcome facts, platform scaffolding, and issue keys or run bookkeeping in entity cards (bounded rules, not a semantic zero-contamination proof)');
   save();
 }

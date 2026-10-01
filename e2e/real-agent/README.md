@@ -2,7 +2,7 @@
 
 `run.mjs` 启动正式 Multica daemon，由实际 OpenCode CLI 和模型执行四个任务。脚本只创建工作区、安装插件、绑定 skill、分配任务与读取结果；转写和记忆工具调用均由真实智能体产生。
 
-场景覆盖业务约定的主动记忆、自动归档与抽取、新任务召回四项原有约定并引用 URI、无答案时如实说明，以及专门读取平台 `AGENTS.md` 后的提示词过滤。检查直接读取 OpenViking 的归档和抽取文件。任何检查失败，脚本退出码为非零。
+场景覆盖业务约定的主动记忆、自动归档与抽取、新任务召回四项原有约定并引用 URI、无答案时如实说明（必须实际召回过；召回有空间超时或失败时，回复须说明检索不完整，否则判为不确定），以及专门读取平台 `AGENTS.md` 后的提示词过滤。检查直接读取 OpenViking 的归档和抽取文件。任何检查失败，脚本退出码为非零。
 
 `REAL_AGENT_SUITE=matrix` 使用同一正式 daemon 和两个实际智能体，覆盖以下入口和边界：
 
@@ -36,7 +36,7 @@ MULTICA_RUN_REAL_AGENT_SMOKE=1 REAL_AGENT_SUITE=benchmark \
   AGENT_MODEL=openrouter/openai/gpt-5.4-mini node e2e/real-agent/run.mjs
 ```
 
-所有套件的记忆审计包含 `memories/` 及 `peers/*/memories/`，排除原生 identity/soul 和目录摘要；读取失败或到达遍历上限会标记不完整。已知执行控制、检索结果误写为实体、平台脚手架另列为 `qualityFindings`；该规则检查不能证明没有其他语义污染。`exactDuplicates` 列出原始文件的完全相同内容，原生所有者与 peer 副本保留出处。
+所有套件的记忆审计包含 `memories/` 及 `peers/*/memories/`，排除原生 identity/soul 和目录摘要；读取失败或到达遍历上限会标记不完整。已知执行控制、检索结果误写为实体、平台脚手架，以及实体卡里本工作区的 issue 编号（`entity-issue-key`）和运行过程记录（`entity-run-bookkeeping`）另列为 `qualityFindings`。实体卡这两项只用于审计，不影响共享晋升和召回过滤；该规则检查不能证明没有其他语义污染。`exactDuplicates` 列出原始文件的完全相同内容，原生所有者与 peer 副本保留出处。
 
 使用已迁移的本地开发 Multica（默认 API `http://127.0.0.1:18080`、开发验证码 `888888`）、真实 OpenViking 0.4.22、已安装且在 PATH 中的 OpenCode 1.17.7。Multica 需依序应用 `upstream/multica/` 的三个运行上下文补丁；benchmark 另需 `0004` 交付恢复补丁。CLI 用官方构建规则生成版本号；浅克隆需先取得 release tags，不能以固定的旧版本号构建，否则快速创建会被版本门禁拒绝。模型默认 `openrouter/z-ai/glm-5.3-flash`，通过现有 `OPENROUTER_API_KEY` 环境变量使用；配置文件仅保存环境变量引用。
 

@@ -1,0 +1,63 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { assessNoAnswer } from '../e2e/real-agent/answer-checks.mjs';
+import { auditMemories, entityAuditIssues } from '../e2e/real-agent/memory-audit.mjs';
+
+const recall = (scopesSearched) => ({ status: 'ok', result: { entries: [], scopesSearched } });
+const complete = recall([{ scope: 'task:w:i', hits: 0 }, { scope: 'agent:w:a', hits: 0 }]);
+const timedOut = recall([{ scope: 'task:w:i', hits: 0 }, { scope: 'agent:w:a', hits: 0, timedOut: true }]);
+
+test('no-answer passes only when the empty answer follows a complete recall', () => {
+  assert.equal(assessNoAnswer({ reply: '没有找到梧桐项目的相关记忆，无法确认负责人和日期。', recalls: [complete] }).verdict, 'no-evidence');
+  // A timed-out scope makes "nothing found" unsupported: the real RAM-4 shape.
+  const flat = assessNoAnswer({ reply: '没有找到梧桐项目的相关记忆，无法确认负责人和日期。', recalls: [timedOut] });
+  assert.equal(flat.ok, false);
+  assert.equal(flat.verdict, 'inconclusive');
+  const honest = assessNoAnswer({ reply: '本次记忆检索超时，结果不完整，暂时无法确认负责人和日期，稍后再查。', recalls: [complete, timedOut] });
+  assert.equal(honest.ok, true);
+  assert.equal(honest.verdict, 'incomplete-acknowledged');
+  assert.equal(assessNoAnswer({ reply: '没有相关记忆。', recalls: [] }).verdict, 'no-recall');
+  assert.equal(assessNoAnswer({ reply: '没有相关记忆。', recalls: [{ status: 'error' }] }).verdict, 'no-recall');
+  assert.equal(assessNoAnswer({ reply: '负责人是张三，10 月 8 日上线。', recalls: [complete] }).verdict, 'unsupported-answer');
+  const failed = recall([{ scope: 'agent:w:a', hits: 0, error: 'HTTP 500' }]);
+  assert.equal(assessNoAnswer({ reply: '没有相关记忆。', recalls: [failed] }).verdict, 'inconclusive');
+});
+
+const entityUri = 'viking://user/u/memories/entities/项目/海棠迁移.md';
+
+test('entity cards are flagged for this workspace\'s issue keys and run bookkeeping', () => {
+  // Lines from real extractions on 2026-10-01.
+  const progress = '# 海棠迁移\n## 进度\n- 方案于 2026-10-01 在任务 RAM-1 下确认。\n- 该任务为隔离联调任务，无代码变更。';
+  assert.deepEqual(entityAuditIssues(progress, { uri: entityUri, issuePrefix: 'RAM' }), ['entity-issue-key', 'entity-run-bookkeeping']);
+  const relation = '## Relations\n- 2026-10-01 用户通过 RAM-2 任务查询苍鹭的最新业务约定，执行智能体依据 memory-recall 证据回复并引用来源 URI。';
+  assert.deepEqual(entityAuditIssues(relation, { uri: entityUri, issuePrefix: 'RAM' }), ['entity-issue-key', 'entity-run-bookkeeping']);
+  const clean = '# 苍鹭\n- 苍鹭项目发布使用 Apache Pulsar。\n- 项目每月预算为 8100 元（2026-10-01 更新）。\n- 模型选型参考 GPT-5 与 ISO-9001 流程。\n<!-- MEMORY_FIELDS {"source": "RAM-1 该任务为"} -->';
+  assert.deepEqual(entityAuditIssues(clean, { uri: entityUri, issuePrefix: 'RAM' }), []);
+  // Events legitimately record what happened in a run; only entity cards are checked.
+  assert.deepEqual(entityAuditIssues(progress, { uri: 'viking://user/u/memories/events/2026-10-01/确认.md', issuePrefix: 'RAM' }), []);
+  // Without a known prefix only the bookkeeping rule applies.
+  assert.deepEqual(entityAuditIssues(progress, { uri: entityUri }), ['entity-run-bookkeeping']);
+});
+
+test('the memory audit reports entity bookkeeping alongside the existing findings', async () => {
+  const root = 'viking://user/u';
+  const files = {
+    [`${root}/memories/entities/项目/海棠迁移.md`]: '# 海棠迁移\n- 使用 RocketMQ。\n- 方案于 2026-10-01 在任务 RAM-1 下确认。',
+    [`${root}/memories/entities/项目/苍鹭.md`]: '# 苍鹭\n- 苍鹭项目发布使用 Apache Pulsar。',
+  };
+  const directories = {
+    [`${root}/memories`]: [{ name: 'entities', isDir: true }],
+    [`${root}/memories/entities`]: [{ name: '项目', isDir: true }],
+    [`${root}/memories/entities/项目`]: [{ name: '海棠迁移.md' }, { name: '苍鹭.md' }],
+  };
+  const ov = {
+    listDir: async (_key, uri) => {
+      if (!(uri in directories)) throw Object.assign(new Error('missing'), { status: 404 });
+      return directories[uri];
+    },
+    readContent: async (_key, uri) => ({ content: files[uri] }),
+  };
+  const [audit] = await auditMemories({ ov, scopes: { 'task:ws:i': { userId: 'u', apiKey: 'key' } }, canary: 'canary', issuePrefix: 'RAM' });
+  assert.equal(audit.complete, true);
+  assert.deepEqual(audit.qualityFindings, [{ uri: `${root}/memories/entities/项目/海棠迁移.md`, reasons: ['entity-issue-key'] }]);
+});

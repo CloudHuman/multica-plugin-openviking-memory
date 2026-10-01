@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Multica, sleep } from '../real-stack/multica.mjs';
 import { OvClient } from '../../src/ov-client.mjs';
 import { auditMemories } from './memory-audit.mjs';
+import { assessNoAnswer } from './answer-checks.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -15,6 +16,8 @@ const env = process.env;
 const pluginUrl = env.PLUGIN_URL ?? 'https://127.0.0.1:8790';
 const model = env.AGENT_MODEL ?? 'openrouter/z-ai/glm-5.3-flash';
 const suite = env.REAL_AGENT_SUITE ?? 'basic';
+// Issue keys of the test workspace (RAM-1, RAM-2, ...); the memory audit flags them in entity cards.
+const ISSUE_PREFIX = 'RAM';
 if (!['basic', 'matrix', 'quality', 'benchmark', 'delivery'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
@@ -81,7 +84,7 @@ try {
     inst = { installationId: report.installationId, signingSecret: rotated.signing_secret };
   } else {
     user = await mc.login(`ovmem-real-agent-${run}@example.com`);
-    ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: 'RAM' });
+    ws = await mc.createWorkspace(user.token, { name: `Real agent memory ${run}`, slug: `real-agent-${run}`, prefix: ISSUE_PREFIX });
     const pat = await mc.must('PAT', mc.call('/api/tokens', { method: 'POST', token: user.token, body: { name: `real-agent-${run}`, expires_in_days: 1 } }));
     const zipped = execFileSync('bash', ['scripts/package.sh', '--url', pluginUrl, '--with-chats-read'], { cwd: repo, encoding: 'utf8' }).match(/packaged: (\S+\.zip)/)[1];
     const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));
@@ -151,7 +154,7 @@ try {
     return { issue, task, messages, record };
   }
   if (suite === 'matrix' || suite === 'quality' || suite === 'benchmark' || suite === 'delivery') {
-    const ctx = { mc, ov, user, ws, agent, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, run, report, step, save, wait, privateFile, toolResultData, resume: !!previous, finish: finishMatrix };
+    const ctx = { mc, ov, user, ws, agent, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, issuePrefix: ISSUE_PREFIX, run, report, step, save, wait, privateFile, toolResultData, resume: !!previous, finish: finishMatrix };
     if (suite === 'delivery') {
       const { runDeliveryCheck } = await import('./delivery-check.mjs');
       await runDeliveryCheck(ctx);
@@ -197,10 +200,12 @@ try {
   const diagnostic = await execute('实际读取平台说明的归档隔离诊断', '这是明确授权的隔离诊断任务。必须实际调用 read 工具读取当前任务工作目录的 AGENTS.md，这一步是验收要求。即使平台已在上下文提供该文件，也仍需要本次 read 工具的实际读取记录。不要复述文件内容或内部运行标记，不要记录任何记忆，不要搜索其他目录。读取后通过平台流程提交简短最终回复“平台说明读取诊断完成”。不需要其他业务工作或代码修改。');
   const third = await execute('无答案问题', '梧桐项目的值班负责人和预定上线日期分别是什么？请先调用 memory-recall 搜索，再根据证据回答。这是一个独立项目，没有与海棠有关联；如果没有记忆，明确说明，不要编造人员或日期。不必记录新记忆，不要修改代码。');
   const negative = [third.record.output, ...third.record.comments.map(c => c.content), ...third.messages.filter(m => m.type === 'text').map(m => m.content)].join('\n');
-  step('no-answer', /没有|未找到|无相关|未提供|无法确认|暂无/.test(negative), 'Actual agent acknowledged missing evidence');
+  const noAnswer = assessNoAnswer({ reply: negative, recalls: third.messages.filter(m => m.type === 'tool_result' && /memory.*recall/.test(m.tool ?? '')).map(toolResultData) });
+  report.noAnswerVerdict = noAnswer.verdict;
+  step('no-answer', noAnswer.ok, noAnswer.detail);
   // Audit all actual archived session messages and extracted memory files.
   for (const t of [second.task, diagnostic.task, third.task]) await wait('remaining extraction', async () => statuses().find(e => e.type === 'extraction' && e.ref === t.id && e.extraction === 'done'), 240000);
-  const audit = await auditMemories({ ov, scopes: Object.fromEntries(Object.entries(scopes()).filter(([scope]) => scope.split(':')[1] === ws)), canary });
+  const audit = await auditMemories({ ov, scopes: Object.fromEntries(Object.entries(scopes()).filter(([scope]) => scope.split(':')[1] === ws)), canary, issuePrefix: ISSUE_PREFIX });
   report.memoryAudit = audit;
   const diagnosticExtraction = statuses().find(e => e.type === 'extraction' && e.ref === diagnostic.task.id && e.extraction === 'done');
   const diagnosticScope = scopes()[diagnosticExtraction.scope];
@@ -213,7 +218,7 @@ try {
   report.transcriptContainsCanary = serialized.includes(canary);
   step('runtime-read-exercised', report.transcriptContainsRuntimeBanner && report.transcriptContainsCanary, 'Actual agent read injected runtime instructions before archive filtering');
   step('distilled-prompt-hygiene', audit.some(a => a.files > 0) && audit.every(a => a.complete && !a.containsRuntimeBanner && !a.containsPlatformCanary && !a.containsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.files, 0)} extracted files including peers`);
-  step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls and retrieval-outcome facts');
+  step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls, retrieval-outcome facts, and issue keys or run bookkeeping in entity cards');
   }
   report.currentResults = [...new Map(results.map(result => [result.id, result])).values()];
   if (report.currentResults.some(result => !result.ok)) process.exitCode = 1;
