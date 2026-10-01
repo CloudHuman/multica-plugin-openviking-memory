@@ -147,3 +147,12 @@ basic 和 quality 默认不加载 OpenCode 观测。本轮为了采集数据，�
 3. 私聊偏好抽取产出为 0：建议调整用例措辞，或调整 memory-policy，让"仅用于私聊、不写入公共记忆"在私聊范围内仍被记为 peer 偏好。这涉及模板策略，未改动。
 4. OV 重排不在观测范围内：如果需要完整的 401 归因，建议把 `requests` 边界也纳入 `ovmem_httpx` 观测。
 5. 本环境无法复现 401：建议在原出错环境部署 9cc7a9a 的观测字段。只要出现 `provider_auth_reason=empty_bearer_token`，就能确认是空密钥注入。
+
+## 8. 后续跟进（同日）
+
+- **`cross-task-recall` 的更正。** 这项失败不只是验证器问题。RAM-2 第一次召回的查询是 `issue <本 issue UUID> context or related decisions for ovmem-real-agent-muppmufp`，没有任何业务词。插件的业务查询兜底本应改用 issue 的业务目标，但它只认一组固定的英文通用词，这里多出的 "or"、"for" 和工作区名让它没有触发，返回里也没有 `query_rewritten_from`。现已修复：查询里出现本运行自己的 issue UUID、编号或任务 UUID 时，在原措辞前补入该 issue 的业务目标；通用词表也加入了常见英文虚词和中文通用词。`run.mjs` 改为在全部成功的召回里查找被引用的 URI，并要求每次召回都绑定到本次运行。
+- **`current-entity-update`。** 判定用的实体卡（`entities/项目/苍鹭.md`）只有一行同时含 8100 和 7600，写法是"取代同日较早确认的每月 7600 元"。`hasCurrentBudget` 已接受"取代 / 替代 / 较早 / superseded"等标注，以及"7600 已被取代"这种后置写法；用这张卡的原文核验，现在判为通过。同时记录两处蒸馏偏差，都未改动：
+  - A 的实体卡写成"苍鹭（RAM-1）"，带了任务编号；
+  - B 的任务范围卡在 Relations 里写了不存在的"RAM-2"任务。
+- **重排观测。** OV 观测器已覆盖 `requests` 库，记录里用 `client=requests` 区分。另修复一个问题：旧版观测器在 token 为空时会丢掉 cf-ray 等请求 ID。
+- **第 7 节第 5 条的更正。** 由于上面这个丢 ID 的问题，旧报告里保留了 cf-ray 的 OV 401 样本，说明这些请求在 SDK 边界带着非空 token。所以 `no_bearer_token`（原名 `empty_bearer_token`）本身不能证明"进程拿到了空密钥"，要和同一请求的 `authorization_token_present` 一起看。详见 [401 归因复核](auth-401-diagnosis-2026-10-01.md) 的"后续复核"。

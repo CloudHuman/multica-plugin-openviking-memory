@@ -43,7 +43,7 @@ export function authorizationShape(value) {
 
 // OpenRouter's 401 text names what reached it (reproduced against the live API).
 const PROVIDER_AUTH_REASONS = [
-  [/Missing Authentication header/i, 'empty_bearer_token'],
+  [/Missing Authentication header/i, 'no_bearer_token'], // Bearer with an empty token, or a Basic header
   [/No (?:cookie )?auth credentials found/i, 'missing_authorization'],
   [/User not found/i, 'unknown_api_key'],
 ];

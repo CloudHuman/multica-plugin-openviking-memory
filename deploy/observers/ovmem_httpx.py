@@ -1,4 +1,8 @@
-"""Observe the actual OpenViking SDK HTTP boundary, including streamed calls."""
+"""Observe the actual OpenViking SDK HTTP boundary, including streamed calls.
+
+Covers HTTPX, sync and async (OV's OpenAI-compatible embedding and VLM
+clients), and requests (OV's rerank client).
+"""
 import json
 import os
 import re
@@ -6,8 +10,10 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _lock = threading.Lock()
+_RESPONSE_IDS = ['x-request-id', 'request-id', 'x-openrouter-request-id', 'cf-ray']
 
 
 def write(record):
@@ -41,65 +47,113 @@ def authorization_shape(value):
                 authorization_token_present=len(parts) > 1 if scheme else True)
 
 
-def metadata(request, response=None):
-    auth = request.headers.get('authorization', '')
-    result = dict(host=request.url.host, path=request.url.path, method=request.method,
-                  **authorization_shape(auth))
+def _httpx_target(request):
+    return request.url.host, request.url.path, request.method, request.headers.get('authorization', '')
+
+
+def _requests_target(request):
+    url = urlsplit(request.url or '')
+    return url.hostname, url.path, request.method, request.headers.get('authorization', '') or ''
+
+
+def metadata(request, response=None, target=_httpx_target):
+    host, path, method, auth = target(request)
+    result = dict(host=host, path=path, method=method, **authorization_shape(auth))
     if response is not None:
         ids = {}
-        secrets = [auth, auth.split(' ', 1)[-1]] if auth else []
-        for name in ['x-request-id', 'request-id', 'x-openrouter-request-id', 'cf-ray']:
-            value = response.headers.get(name, '')
+        # An empty token is '' and '' is in every string: keep only real secrets, or a
+        # blank-token request (the failure being diagnosed) would lose its request IDs.
+        secrets = [s for s in (auth, auth.split(' ', 1)[-1]) if s.strip()] if auth else []
+        for name in _RESPONSE_IDS:
+            value = response.headers.get(name, '') or ''
             if re.fullmatch(r'[a-zA-Z0-9._:/-]{1,128}', value) and not any(s in value for s in secrets):
                 ids[name] = value
-        result.update(http_status=response.status_code, response_ids=ids,
-                      redirects=[dict(host=r.request.url.host, path=r.request.url.path,
-                                      http_status=r.status_code,
-                                      **authorization_shape(r.request.headers.get('authorization')))
-                                 for r in response.history])
+        redirects = []
+        for hop in response.history:
+            hop_host, hop_path, _, hop_auth = target(hop.request)
+            redirects.append(dict(host=hop_host, path=hop_path, http_status=hop.status_code,
+                                  **authorization_shape(hop_auth)))
+        result.update(http_status=response.status_code, response_ids=ids, redirects=redirects)
     return result
 
 
+def _start(request, target, client):
+    try:
+        if target(request)[0] != 'openrouter.ai':
+            return None
+        base = dict(id=str(uuid.uuid4()), runtime='openviking', client=client, ts=time.time())
+        write(dict(base, event='request', **metadata(request, target=target)))
+        return base, time.monotonic()
+    except Exception:
+        return None  # Observability must not affect model calls.
+
+
+def _finish(observation, request, target, response=None, error=None):
+    if observation is None:
+        return
+    try:
+        base, started = observation
+        write(dict(base, event='transport-error' if error else 'response',
+                   duration_ms=round((time.monotonic() - started) * 1000),
+                   **({'error_type': type(error).__name__} if error else metadata(request, response, target))))
+    except Exception:
+        pass
+
+
 def install():
+    _install_httpx()
+    _install_requests()
+
+
+def _install_httpx():
     import httpx
     if getattr(httpx.Client.send, '_ovmem_observer', False):
         return
     sync_send, async_send = httpx.Client.send, httpx.AsyncClient.send
 
-    def start(request):
-        if request.url.host != 'openrouter.ai':
-            return None
-        base = dict(id=str(uuid.uuid4()), runtime='openviking', ts=time.time())
-        write(dict(base, event='request', **metadata(request)))
-        return base, time.monotonic()
-
-    def finish(observation, request, response=None, error=None):
-        if observation is None:
-            return
-        base, started = observation
-        write(dict(base, event='transport-error' if error else 'response',
-                   duration_ms=round((time.monotonic()-started)*1000),
-                   **({'error_type':type(error).__name__} if error else metadata(request, response))))
-
     def send(self, request, *args, **kwargs):
-        observation = start(request)
+        observation = _start(request, _httpx_target, 'httpx')
         try:
             response = sync_send(self, request, *args, **kwargs)
         except Exception as error:
-            finish(observation, request, error=error)
+            _finish(observation, request, _httpx_target, error=error)
             raise
-        finish(observation, request, response)
+        _finish(observation, request, _httpx_target, response)
         return response
 
     async def asend(self, request, *args, **kwargs):
-        observation = start(request)
+        observation = _start(request, _httpx_target, 'httpx')
         try:
             response = await async_send(self, request, *args, **kwargs)
         except Exception as error:
-            finish(observation, request, error=error)
+            _finish(observation, request, _httpx_target, error=error)
             raise
-        finish(observation, request, response)
+        _finish(observation, request, _httpx_target, response)
         return response
 
     send._ovmem_observer = True
     httpx.Client.send, httpx.AsyncClient.send = send, asend
+
+
+def _install_requests():
+    """OV's rerank client posts with requests, which HTTPX never sees."""
+    try:
+        import requests
+    except ImportError:
+        return
+    if getattr(requests.Session.send, '_ovmem_observer', False):
+        return
+    original = requests.Session.send
+
+    def send(self, request, **kwargs):
+        observation = _start(request, _requests_target, 'requests')
+        try:
+            response = original(self, request, **kwargs)
+        except Exception as error:
+            _finish(observation, request, _requests_target, error=error)
+            raise
+        _finish(observation, request, _requests_target, response)
+        return response
+
+    send._ovmem_observer = True
+    requests.Session.send = send

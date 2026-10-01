@@ -1,8 +1,8 @@
 # 原生模型请求观测
 
-可选的诊断代码分别观察 OpenCode 的现有 provider fetch 与 OpenViking 原生 HTTPX SDK。两者都只观察 `openrouter.ai`，不改变凭据、模型、代理、证书验证或响应体，也不重试请求。默认关闭。
+可选的诊断代码分别观察 OpenCode 的现有 provider fetch，以及 OpenViking 的原生 HTTP 客户端：HTTPX 承载向量和抽取模型，requests 承载重排。两者都只观察 `openrouter.ai`，不改变凭据、模型、代理、证书验证或响应体，也不重试请求。默认关闭。
 
-记录请求 UUID、时间、运行时、主机、路径（不含查询串）、方法、认证头是否存在、HTTP 状态、允许的响应请求 ID、耗时与重定向信息。日志没有认证值、请求体或模型响应。日志仅本机使用，以 0600 创建，超过 4 MiB 时保留一份 `.1` 轮转；已有文件的权限由部署者管理。日志写入失败不影响请求。
+记录请求 UUID、时间、运行时、OV 侧的 HTTP 客户端（`client`：`httpx` / `requests`）、主机、路径（不含查询串）、方法、认证头形态（是否存在、scheme、token 是否为空）、HTTP 状态、允许的响应请求 ID、耗时与重定向信息。token 为空时同样保留响应请求 ID。日志没有认证值、请求体或模型响应。日志仅本机使用，以 0600 创建，超过 4 MiB 时保留一份 `.1` 轮转；已有文件的权限由部署者管理。日志写入失败不影响请求。
 
 ## OpenCode
 
@@ -24,7 +24,7 @@ OVMEM_PROVIDER_DIAGNOSTICS=1
 OVMEM_PROVIDER_DIAGNOSTICS_FILE=/app/.openviking/provider-requests.jsonl
 ```
 
-Python 的 `sitecustomize.py` 在启用时安装同步及异步 HTTPX `send` 包装。日志目录须可写；这不需要替换 OpenViking 或其模型 SDK。使用当前配置的容器管理方式重启服务以生效。关闭环境开关或撤销挂载即可停用。
+Python 的 `sitecustomize.py` 在启用时安装 HTTPX（同步与异步）和 requests 的 `send` 包装；后者覆盖 OV 的重排调用。日志目录须可写；这不需要替换 OpenViking 或其模型 SDK。使用当前配置的容器管理方式重启服务以生效。关闭环境开关或撤销挂载即可停用。
 
 用 OV 原生 Python 环境运行 `scripts/test-provider-observers.py`，验证同步/异步请求、401 流式响应、日志错误与凭据脱敏。
 
@@ -34,12 +34,18 @@ Python 的 `sitecustomize.py` 在启用时安装同步及异步 HTTPX `send` 包
 
 OpenRouter 的 401 文本能说明它实际收到了什么（2026-10-01 对线上接口逐项复现，embeddings / chat/completions / rerank 一致）：
 
-| OpenRouter 收到的认证头 | 401 文本 | 诊断里的 `provider_auth_reason` |
+| OpenRouter 收到的认证头 | 结果 | 诊断里的 `provider_auth_reason` |
 | --- | --- | --- |
-| `Bearer` + 空 token | `Missing Authentication header` | `empty_bearer_token` |
-| 没有认证头，或头为空 | `No cookie auth credentials found` | `missing_authorization` |
-| `Bearer` + 不存在的 key | `User not found.` | `unknown_api_key` |
+| `Bearer` + 空 token 或只有空白；或 `Basic` 认证 | 401 `Missing Authentication header` | `no_bearer_token` |
+| 没有认证头，或头为空 | 401 `No cookie auth credentials found` | `missing_authorization` |
+| `Bearer` + 不存在的 key | 401 `User not found.` | `unknown_api_key` |
+| 同一请求里出现两个认证头 | Cloudflare 400 Bad Request | — |
 
-`Missing Authentication header` 的含义是认证头到了 OpenRouter，但 token 为空。所以应先查发请求的进程当时拿到的密钥是否为空（环境变量、配置展开、凭据注入），而不是先查网络是否丢头。插件把这三种文本归入队列、抽取诊断的 `provider_auth_reason`。
+`Missing Authentication header` 的含义是：认证头到了 OpenRouter，但里面没有可用的 Bearer token。插件把这三种 401 文本归入队列、抽取诊断的 `provider_auth_reason`。
+
+排查时，把它与同一请求在 SDK 边界的 `authorization_token_present` 对照：
+
+- SDK 边界的 token 就是空的：发请求的进程当时拿到的密钥为空，检查环境变量、配置展开、凭据注入。
+- SDK 边界带着 token，OpenRouter 却说缺少：认证头在 SDK 之后被改写或清空了，检查代理、网关这类中间层，尤其是做 TLS 重新终止或凭据注入的。
 
 配合失败请求的响应 ID、状态、主机和重定向记录排查。成功请求与失败请求应分别保留；不可用单次 200 证明间歇性 401 已解决。受控端到端故障单列为 `controlled-e2e-fault`，不会作为真实提供商 401 的证据。

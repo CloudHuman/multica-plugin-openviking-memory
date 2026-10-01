@@ -44,7 +44,7 @@ test('HTTP auth diagnostics retain safe IDs and omit credentials, URL queries an
 
 test('OpenRouter 401 texts map to what actually reached the provider', () => {
   const reason = message => failureDiagnostic(new Error(`Error code: 401 - {'error': {'message': '${message}', 'code': 401}}`)).provider_auth_reason;
-  assert.equal(reason('Missing Authentication header'), 'empty_bearer_token');
+  assert.equal(reason('Missing Authentication header'), 'no_bearer_token');
   assert.equal(reason('No cookie auth credentials found'), 'missing_authorization');
   assert.equal(reason('User not found.'), 'unknown_api_key');
   assert.equal(reason('something else'), undefined);
