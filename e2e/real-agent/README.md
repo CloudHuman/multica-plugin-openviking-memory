@@ -21,7 +21,7 @@
 
 矩阵不模拟智能体转写或代替智能体调用工具。本地 webhook 只调用隔离工作区的测试 URL，定时规则在触发一次后暂停并删除；不向外部渠道发送通知。矩阵验证服务端入口，不代表 Web、桌面、移动端交互及外部聊天渠道都已逐一验收。
 
-`REAL_AGENT_SUITE=quality` 是聚焦蒸馏质量的真实双智能体验证：A 自动归档业务事实及持久代码风格偏好，成员评论把预算从 7600 更新为 8100，同一实体更新后重新晋升，B 在新 issue 中通过共享记忆恢复新预算及其他约定；私聊新会话召回真实周报格式。此套件不主动写入记忆，避免把直接写入当成自动蒸馏的质量证据。先按仓库 README 部署 `deploy/memory-policy.json` 对应的 OpenViking 模板。
+`REAL_AGENT_SUITE=quality` 是聚焦蒸馏质量的真实双智能体验证：A 自动归档业务事实及持久代码风格偏好，成员评论把预算从 7600 更新为 8100，同一实体更新后重新晋升，B 在新 issue 中通过共享记忆恢复新预算及其他约定；私聊新会话召回真实周报格式。此套件不主动写入记忆，避免把直接写入当成自动蒸馏的质量证据。套件衡量的是 OpenViking 原生抽取加上插件侧的清理与过滤，不对 OV 做任何模板或提示词定制。
 
 `REAL_AGENT_SUITE=benchmark` 扩大自动蒸馏评测：三组不同消息系统及中英文项目别名，先提取初始预算，再正式更新预算与晋升，B 各在三个独立新 issue 中召回更新后的事实及实际共享来源；同一 A 与成员的私聊偏好做三次新会话召回，另一个 B 检查隔离。默认计划 20 个真实任务、9 次事实查询、27 项事实。`REAL_AGENT_BENCHMARK_REPEATS` 可设为 1..5。覆盖不足仍以全部计划为分母，提取/交付/事实准确性分别记录。
 
@@ -36,7 +36,7 @@ MULTICA_RUN_REAL_AGENT_SMOKE=1 REAL_AGENT_SUITE=benchmark \
   AGENT_MODEL=openrouter/openai/gpt-5.4-mini node e2e/real-agent/run.mjs
 ```
 
-所有套件的记忆审计包含 `memories/` 及 `peers/*/memories/`，排除原生 identity/soul 和目录摘要；读取失败或到达遍历上限会标记不完整。已知执行控制、检索结果误写为实体、平台脚手架，以及实体卡里本工作区的 issue 编号（`entity-issue-key`）和运行过程记录（`entity-run-bookkeeping`）另列为 `qualityFindings`。实体卡这两项只用于审计，不影响共享晋升和召回过滤；该规则检查不能证明没有其他语义污染。`exactDuplicates` 列出原始文件的完全相同内容，原生所有者与 peer 副本保留出处。
+所有套件的记忆审计包含 `memories/` 及 `peers/*/memories/`，排除原生 identity/soul 和目录摘要；读取失败或到达遍历上限会标记不完整。已知执行控制、检索结果误写为实体、平台脚手架，另列为 `qualityFindings`。实体卡里本工作区的 issue 编号（`entity-issue-key`）和运行过程记录（`entity-run-bookkeeping`）记在 `entityFindings`，只作为 OV 原生抽取的观察，不判失败，也不影响共享晋升和召回过滤；该规则检查不能证明没有其他语义污染。`exactDuplicates` 列出原始文件的完全相同内容，原生所有者与 peer 副本保留出处。
 
 使用已迁移的本地开发 Multica（默认 API `http://127.0.0.1:18080`、开发验证码 `888888`）、真实 OpenViking 0.4.22、已安装且在 PATH 中的 OpenCode 1.17.7。Multica 需依序应用 `upstream/multica/` 的三个运行上下文补丁；benchmark 另需 `0004` 交付恢复补丁。CLI 用官方构建规则生成版本号；浅克隆需先取得 release tags，不能以固定的旧版本号构建，否则快速创建会被版本门禁拒绝。模型默认 `openrouter/z-ai/glm-5.3-flash`，通过现有 `OPENROUTER_API_KEY` 环境变量使用；配置文件仅保存环境变量引用。
 

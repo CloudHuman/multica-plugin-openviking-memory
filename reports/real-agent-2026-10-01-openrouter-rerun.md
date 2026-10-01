@@ -1,5 +1,7 @@
 # 真实模型 real-agent 重跑（dcc8bf2）— 2026-10-01 UTC
 
+> **后续变更**：本轮 OV 加载了由 `deploy/memory-policy.json` 生成的自定义抽取模板（见第 6 节）。该机制随后已移除，OV 改用原生模板（见 README 变更记录）。因此本文的抽取与蒸馏质量结果不代表原生抽取下的表现，第 7 节中修改模板策略的选项也不再适用。实体卡检查现在只记入 `entityFindings`，作为观察，不判失败。
+
 本次在 `fix/review-hardening` 的 `dcc8bf2` 上，用真实 `OPENROUTER_API_KEY` 重跑 basic 和 quality 两个套件，并与[上一轮](real-agent-2026-10-01-openrouter.md)逐项对比。
 
 环境与上一轮相同：补丁版 Multica（`43b0571` + `0001`–`0004`）官方 daemon、OpenCode 1.17.7、OpenViking 0.4.22。执行模型为 `openrouter/openai/gpt-5.4-mini`；OV 的抽取、向量、重排分别用 `z-ai/glm-5.3-flash`、`qwen/qwen3-embedding-8b`、`qwen/qwen3-reranker-8b`。两个套件都设置了 `REAL_AGENT_OBSERVE_PROVIDER=1`，没有改插件代码，也没有在本地改测试代码。

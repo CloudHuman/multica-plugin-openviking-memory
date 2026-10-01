@@ -164,7 +164,7 @@ export async function runQuality(ctx) {
     const audit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
     report.memoryAudit = audit;
     step('peer-audit-coverage', audit.every(s => s.complete) && audit.some(s => s.scope === dmScope && s.peerFiles > 0), 'Complete memory audit included peer-owned private memories');
-    step('reusable-memory-hygiene', audit.every(s => !s.qualityFindings.length), 'Known run controls, retrieval outcomes, platform scaffolding, and issue keys or run bookkeeping in entity cards absent from reusable memories');
+    step('reusable-memory-hygiene', audit.every(s => !s.qualityFindings.length), 'Known run controls, retrieval outcomes and platform scaffolding absent from reusable memories');
     step('runtime-markers-filtered', audit.every(s => !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Known injected runtime markers absent from extracted memories');
     save();
   } finally {

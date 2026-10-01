@@ -302,6 +302,6 @@ export async function auditMatrix({ ov, report, scopes, statuses, canary, step, 
   const memoryAudit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
   report.memoryAudit = memoryAudit;
   step('matrix-prompt-hygiene', memoryAudit.some(audit => audit.files > 0) && memoryAudit.every(audit => audit.complete && !audit.containsPlatformCanary && !audit.containsRuntimeBanner && !audit.containsPlatformGuidance), `Inspected ${memoryAudit.reduce((n, audit) => n + audit.files, 0)} extracted memory files including peer namespaces`);
-  step('matrix-memory-quality', memoryAudit.every(audit => audit.complete && !audit.qualityFindings.length), 'Reusable memories checked for known execution controls, search-outcome facts, platform scaffolding, and issue keys or run bookkeeping in entity cards (bounded rules, not a semantic zero-contamination proof)');
+  step('matrix-memory-quality', memoryAudit.every(audit => audit.complete && !audit.qualityFindings.length), 'Reusable memories checked for known execution controls, search-outcome facts and platform scaffolding (bounded rules, not a semantic zero-contamination proof)');
   save();
 }

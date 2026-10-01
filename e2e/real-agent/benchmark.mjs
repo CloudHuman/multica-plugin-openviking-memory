@@ -168,7 +168,7 @@ export async function runBenchmark(ctx) {
     step('benchmark-observed-coverage', queries.length === CASES.length*repeats, 'All planned independent fact recalls were actually run');
     step('benchmark-private-coverage', report.privateQueries?.length === repeats, 'All planned independent private recalls were actually run');
     step('benchmark-memory-audit', report.metrics.completeAudit, 'Own and peer memories were read completely for the quality audit');
-    step('benchmark-reusable-memory-hygiene', report.memoryAudit.every(s => s.complete && !s.qualityFindings.length && !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Complete audit found no known platform or execution controls in reusable memories, and no issue keys or run bookkeeping in entity cards');
+    step('benchmark-reusable-memory-hygiene', report.memoryAudit.every(s => s.complete && !s.qualityFindings.length && !s.containsPlatformCanary && !s.containsRuntimeBanner && !s.containsPlatformGuidance), 'Complete audit found no known platform or execution controls in reusable memories');
     step('benchmark-private-isolation', report.privateIsolation?.delivered && report.privateIsolation.recallObserved && !report.privateIsolation.unauthorizedScopeSearched && !report.privateIsolation.unauthorizedScopeReturned && !report.privateIsolation.leakedPrivateValues, 'Other agent actually recalled without searching or receiving another private pair scope');
     step('benchmark-delivery-fault-exercised', report.controlledFault?.injected && report.recoveries.some(r=>r.taskId===report.controlledFault.taskId), 'Controlled post-delivery model failure exercised receipt recovery');
     save();

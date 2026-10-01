@@ -218,7 +218,7 @@ try {
   report.transcriptContainsCanary = serialized.includes(canary);
   step('runtime-read-exercised', report.transcriptContainsRuntimeBanner && report.transcriptContainsCanary, 'Actual agent read injected runtime instructions before archive filtering');
   step('distilled-prompt-hygiene', audit.some(a => a.files > 0) && audit.every(a => a.complete && !a.containsRuntimeBanner && !a.containsPlatformCanary && !a.containsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.files, 0)} extracted files including peers`);
-  step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls, retrieval-outcome facts, and issue keys or run bookkeeping in entity cards');
+  step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls and retrieval-outcome facts');
   }
   report.currentResults = [...new Map(results.map(result => [result.id, result])).values()];
   if (report.currentResults.some(result => !result.ok)) process.exitCode = 1;

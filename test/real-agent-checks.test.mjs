@@ -39,7 +39,7 @@ test('entity cards are flagged for this workspace\'s issue keys and run bookkeep
   assert.deepEqual(entityAuditIssues(progress, { uri: entityUri }), ['entity-run-bookkeeping']);
 });
 
-test('the memory audit reports entity bookkeeping alongside the existing findings', async () => {
+test('the memory audit reports entity observations without counting them as quality findings', async () => {
   const root = 'viking://user/u';
   const files = {
     [`${root}/memories/entities/项目/海棠迁移.md`]: '# 海棠迁移\n- 使用 RocketMQ。\n- 方案于 2026-10-01 在任务 RAM-1 下确认。',
@@ -59,5 +59,6 @@ test('the memory audit reports entity bookkeeping alongside the existing finding
   };
   const [audit] = await auditMemories({ ov, scopes: { 'task:ws:i': { userId: 'u', apiKey: 'key' } }, canary: 'canary', issuePrefix: 'RAM' });
   assert.equal(audit.complete, true);
-  assert.deepEqual(audit.qualityFindings, [{ uri: `${root}/memories/entities/项目/海棠迁移.md`, reasons: ['entity-issue-key'] }]);
+  assert.deepEqual(audit.qualityFindings, []);
+  assert.deepEqual(audit.entityFindings, [{ uri: `${root}/memories/entities/项目/海棠迁移.md`, reasons: ['entity-issue-key'] }]);
 });

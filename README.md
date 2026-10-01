@@ -200,12 +200,12 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 ## 与功能规格的对照与已知边界
 
 - **历史运行时记录（本轮未复验）**：OpenCode 全工具；kimi 需直连条目解锁（机制待查）；pi 无 MCP（上游 #8961）；并发投递、跨运行时交接（oc→kimi / oc→pi）、小队分派-汇总。本轮真实智能体验证使用 OpenCode，其他运行时与客户端的验收不能从这些历史记录推定。
-- **蒸馏质量**：归档保留业务原话及出处；抽取规则区分持久偏好、业务事实与临时执行指令。召回会过滤已知执行控制，并合并完全相同内容的副本，返回 `content_filtered` 和 `duplicate_sources` 标记；仍保留不同数值、日期和条件的证据。真实模型的分类与实体维护不是确定性保证，未解决的冲突需按出处核实。
+- **蒸馏质量**：归档保留业务原话及出处，由 OpenViking 原生规则抽取。召回会过滤已知执行控制，并合并完全相同内容的副本，返回 `content_filtered` 和 `duplicate_sources` 标记；仍保留不同数值、日期和条件的证据。真实模型的分类与实体维护不是确定性保证，未解决的冲突需按出处核实。
 - **业务查询兜底**：分两种情况，都返回 `query_rewritten_from` 及说明；不含本运行标识的业务查询保持原样，也不扩大任何读取范围。
   - 绑定 issue 的运行若只用 UUID / issue 编号加中英文通用词查询，改用该 issue 的业务目标查询。
   - 查询用本运行自己的 issue UUID、编号或任务 UUID 指代本任务（例如 `issue <uuid> context or related decisions for <工作区名>`）时，去掉这些标识，在原措辞前补入该 issue 的业务目标。超时与错误表示检索未完成，空结果不能证明没有记忆。
 
-OpenViking 的抽取模板单独部署。使用运行 OpenViking 的同一 Python 环境执行 `python3 scripts/install-memory-policy.py --output /app/.openviking/multica-memory-templates`，然后在 OV 配置中设置 `memory.custom_templates_dir` 为该目录并重启 OV。脚本从已安装版本的原生模板生成覆盖文件，保留字段、路径与合并格式；不修改原生文件，也不删除已有记忆。规则见 `deploy/memory-policy.json`，推荐配置已包含此路径。容器部署时将脚本和规则文件带入 OV 容器，或挂载生成后的目录；只部署插件 ZIP 不会自动改变 OV 的抽取规则。运行 `python3 scripts/test-memory-policy.py` 可核验原生结构保留。
+- **不改 OpenViking 自身**：插件不修改 OpenViking 的抽取模板、提示词和代码，OV 按原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、按作者归属消息；召回和共享晋升时过滤已知执行控制、检索失败结论和平台脚手架。因此记忆里写成什么样取决于 OV 的原生抽取，插件只能决定把哪些内容交给 OV，以及取回时展示哪些。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。
@@ -242,6 +242,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-01 不再覆盖 OV 抽取模板**：移除 `deploy/memory-policy.json` 与模板生成脚本，推荐配置不再设置 `memory.custom_templates_dir`；实例级模板覆盖会影响同一 OpenViking 上所有账号和应用的蒸馏，并把测试场景写进了抽取提示词。
 - **2026-10-01 评审补修**：主动记忆持久化递归索引并监视失败重驱；归档持久化失败返回 503 供重投；按实际归档内容去重收尾评论；重启压缩保留待抽取任务；提交任务过期后从归档标记恢复；账本兼容旧格式并保留重启去重；端到端核验原文、预算、阈值和私聊偏好。
 - **0.3.0**（评审修复）：安装绑定唯一工作区，跨租户读取与状态泄露关闭；按运行类型归档（需任务读取 API，stock multica 以 200 跳过、不再触发熔断）；评论按作者类型如实归属；抽取监视移出队列，失败在新会话代际重驱（`POST /extract` 在提交后是空操作）；提交响应丢失可找回；`memory-recall` 绑定调用它的运行，issue 编号解析为 UUID；工具错误以可读的 200 返回；`memory-remember` 幂等；`ov-*` 门面限制在调用者自己的空间；状态目录心跳租约；清单描述与行为一致、校验器按 multica 的字节限制；真实栈端到端与 multica 补丁；真实模型验证后：`memory-remember` 写入后在后台重建所在目录的语义记录（配了重排时才能被检索到），召回合并同一记忆的自有/peer 两份副本，运行归档只保留一个归属方（避免 OpenViking 因归属不唯一丢弃记忆），私聊运行不再发匿名上下文头；`memory-recall` 与 `ov-*` 门面在钩子超时之前作答（模型服务慢时返回已完成的部分并注明，而不是让 multica 报"hook endpoint did not answer"）
 - **0.2.x**：`ov-*` 原生工具门面（schema 实例镜像 + actor.id 注入 key）；共享记忆晋升（原生抽取管道 + 夜间定时）；多工作区签名密钥；`agent=` 归属标签；队列快照重放修复；partial→complete 自动升级；`/admin/redrive`；单写者锁；抽取监视 120s
