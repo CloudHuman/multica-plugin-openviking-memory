@@ -41,6 +41,8 @@ class ProviderObservation(unittest.TestCase):
                 self.assertEqual(response.read(), b'private-response')
         rows = self.rows()
         self.assertTrue(rows[0]['authorization_present'])
+        self.assertEqual(rows[0]['authorization_scheme'], 'bearer')
+        self.assertTrue(rows[0]['authorization_token_present'])
         self.assertEqual(rows[-1]['http_status'], 401)
         self.assertEqual(rows[-1]['response_ids']['cf-ray'], 'response-401')
         for secret in ['private-key', 'private-input', 'private-response', 'private-query']:
@@ -56,6 +58,18 @@ class ProviderObservation(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertFalse(rows[0]['authorization_present'])
         self.assertEqual(rows[-1]['http_status'], 200)
+
+    def test_blank_bearer_token_is_distinguished_from_a_sent_key(self):
+        transport = httpx.MockTransport(lambda request: httpx.Response(401, content=b'{}'))
+        with httpx.Client(transport=transport) as client:
+            for value in ['Bearer ', 'Bearer', 'Bearer private-key', 'private-schemeless']:
+                client.post('https://openrouter.ai/api/v1/embeddings', headers={'Authorization': value})
+        shapes = [(r['authorization_present'], r.get('authorization_scheme'), r.get('authorization_token_present'))
+                  for r in self.rows() if r['event'] == 'request']
+        self.assertEqual(shapes, [(True, 'bearer', False), (True, 'bearer', False),
+                                  (True, 'bearer', True), (True, 'other', True)])
+        for secret in ['private-key', 'private-schemeless']:
+            self.assertNotIn(secret, self.path.read_text())
 
     def test_recording_failure_does_not_break_the_model_request(self):
         os.environ['OVMEM_PROVIDER_DIAGNOSTICS_FILE'] = '/proc/ovmem-impossible/log.jsonl'

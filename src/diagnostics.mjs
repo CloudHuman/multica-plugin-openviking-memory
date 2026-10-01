@@ -18,11 +18,35 @@ export function requestDiagnostic(url, { method, headers, response, phase }) {
   }
   return {
     source: 'http', method, host: target.hostname, path: target.pathname,
-    authorization_present: Boolean(requestHeaders.get('Authorization')),
+    ...authorizationShape(requestHeaders.get('Authorization')),
     phase, ...(response ? { http_status: response.status } : {}),
     ...(Object.keys(ids).length ? { response_ids: ids } : {}),
   };
 }
+
+/**
+ * The shape of an Authorization header, never its value. `Bearer` with an empty
+ * token is still a present header, so presence alone cannot tell a sent key
+ * from a blank one; OpenRouter answers that case "Missing Authentication header".
+ */
+export function authorizationShape(value) {
+  const parts = String(value ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { authorization_present: false };
+  const scheme = /^(bearer|basic)$/i.test(parts[0]) ? parts[0].toLowerCase() : null;
+  return {
+    authorization_present: true,
+    authorization_scheme: scheme ?? 'other',
+    // Without a recognised scheme the whole value is the credential.
+    authorization_token_present: scheme ? parts.length > 1 : true,
+  };
+}
+
+// OpenRouter's 401 text names what reached it (reproduced against the live API).
+const PROVIDER_AUTH_REASONS = [
+  [/Missing Authentication header/i, 'empty_bearer_token'],
+  [/No (?:cookie )?auth credentials found/i, 'missing_authorization'],
+  [/User not found/i, 'unknown_api_key'],
+];
 
 export function authorizationSecrets(headers) {
   const authorization = new Headers(headers).get('Authorization');
@@ -41,9 +65,11 @@ export function failureDiagnostic(error, { source = 'unknown' } = {}) {
     : error?.code === 'NETWORK' ? 'network'
     : status >= 500 ? 'server'
     : 'unknown';
+  const authReason = status === 401 ? PROVIDER_AUTH_REASONS.find(([pattern]) => pattern.test(message))?.[1] : undefined;
   return {
     source, ...error?.diagnostic, category,
     ...(httpStatus ? { http_status: httpStatus } : {}),
     ...(providerStatus ? { provider_status: providerStatus } : {}),
+    ...(authReason ? { provider_auth_reason: authReason } : {}),
   };
 }

@@ -11,11 +11,27 @@ test('provider observer preserves request, stream and error identity while loggi
   assert.equal(await wrapped('https://openrouter.ai/api/v1/chat/completions?secret=query', init), response);
   assert.equal(await response.text(), 'data: private-answer\n');
   assert.equal(records[0].authorization_present, true);
+  assert.equal(records[0].authorization_scheme, 'bearer');
+  assert.equal(records[0].authorization_token_present, true);
   assert.equal(records[1].http_status, 401);
   for (const secret of ['credential', 'private-business-input', 'private-answer', 'secret=query']) assert.ok(!JSON.stringify(records).includes(secret));
   const original = new Error('private provider payload');
   await assert.rejects(observedFetch(async () => { throw original; }, r => records.push(r))('https://openrouter.ai/api/v1/chat/completions'), error => error === original);
   assert.ok(!JSON.stringify(records).includes('private provider payload'));
+});
+
+test('observer tells a blank bearer token from a sent one without logging either', async () => {
+  const records = [];
+  const wrapped = observedFetch(async () => new Response('', { status: 401 }), r => records.push(r));
+  for (const authorization of ['Bearer ', 'Bearer', 'bearer sk-or-v1-secretvalue', 'sk-or-v1-schemeless']) {
+    await wrapped('https://openrouter.ai/api/v1/embeddings', { method: 'POST', headers: { Authorization: authorization } });
+  }
+  await wrapped('https://openrouter.ai/api/v1/embeddings', { method: 'POST', headers: {} });
+  const shapes = records.filter(r => r.event === 'request').map(r => [r.authorization_present, r.authorization_scheme, r.authorization_token_present]);
+  assert.deepEqual(shapes, [
+    [true, 'bearer', false], [true, 'bearer', false], [true, 'bearer', true], [true, 'other', true], [false, undefined, undefined],
+  ]);
+  assert.ok(!JSON.stringify(records).includes('secretvalue') && !JSON.stringify(records).includes('schemeless'));
 });
 
 test('observer logging failures do not affect model response and other hosts are untouched', async () => {

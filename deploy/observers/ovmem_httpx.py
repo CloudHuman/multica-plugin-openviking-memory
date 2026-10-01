@@ -27,10 +27,24 @@ def write(record):
         pass  # Observability must not affect model calls.
 
 
+def authorization_shape(value):
+    """Scheme and token presence of an Authorization header, never its value.
+
+    `Bearer` with an empty token is still a present header; OpenRouter answers
+    it with "Missing Authentication header", so presence alone is not enough.
+    """
+    parts = (value or '').split()
+    if not parts:
+        return dict(authorization_present=False)
+    scheme = parts[0].lower() if parts[0].lower() in ('bearer', 'basic') else None
+    return dict(authorization_present=True, authorization_scheme=scheme or 'other',
+                authorization_token_present=len(parts) > 1 if scheme else True)
+
+
 def metadata(request, response=None):
     auth = request.headers.get('authorization', '')
     result = dict(host=request.url.host, path=request.url.path, method=request.method,
-                  authorization_present=bool(auth))
+                  **authorization_shape(auth))
     if response is not None:
         ids = {}
         secrets = [auth, auth.split(' ', 1)[-1]] if auth else []
@@ -41,7 +55,7 @@ def metadata(request, response=None):
         result.update(http_status=response.status_code, response_ids=ids,
                       redirects=[dict(host=r.request.url.host, path=r.request.url.path,
                                       http_status=r.status_code,
-                                      authorization_present=bool(r.request.headers.get('authorization')))
+                                      **authorization_shape(r.request.headers.get('authorization')))
                                  for r in response.history])
     return result
 

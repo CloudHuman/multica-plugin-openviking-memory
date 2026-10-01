@@ -42,6 +42,16 @@ test('HTTP auth diagnostics retain safe IDs and omit credentials, URL queries an
   for (const secret of ['user:', 'password', 'secret-query', 'test-credential', 'echoed-secret', 'private-business-fact']) assert.ok(!visible.includes(secret));
 });
 
+test('OpenRouter 401 texts map to what actually reached the provider', () => {
+  const reason = message => failureDiagnostic(new Error(`Error code: 401 - {'error': {'message': '${message}', 'code': 401}}`)).provider_auth_reason;
+  assert.equal(reason('Missing Authentication header'), 'empty_bearer_token');
+  assert.equal(reason('No cookie auth credentials found'), 'missing_authorization');
+  assert.equal(reason('User not found.'), 'unknown_api_key');
+  assert.equal(reason('something else'), undefined);
+  // Only a 401 is classified; the same words in another failure are not auth evidence.
+  assert.equal(failureDiagnostic(Object.assign(new Error('User not found'), { status: 404 })).provider_auth_reason, undefined);
+});
+
 test('local auth rejection and a nested model auth failure retain different status evidence', async () => {
   for (const [status, message] of [[401, 'unauthorized'], [500, "OpenAI API error: Error code: 401 - Missing Authentication header"]]) {
     let calls = 0;

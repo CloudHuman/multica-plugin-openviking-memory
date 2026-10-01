@@ -126,7 +126,7 @@ test('expired extraction preserves model error and stage from the durable failur
   const result = statusLog.recent()[0];
   assert.equal(result.extraction, 'failed');
   assert.match(result.error, /Missing Authentication header/);
-  assert.deepEqual(result.error_diagnostic, { source: 'archive-marker', category: 'authentication', provider_status: 401, stage: 'archive_summary' });
+  assert.deepEqual(result.error_diagnostic, { source: 'archive-marker', category: 'authentication', provider_status: 401, provider_auth_reason: 'empty_bearer_token', stage: 'archive_summary' });
 });
 
 for (const failureSource of ['task', 'marker']) {

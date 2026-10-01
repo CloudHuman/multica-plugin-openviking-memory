@@ -30,4 +30,16 @@ Python 的 `sitecustomize.py` 在启用时安装同步及异步 HTTPX `send` 包
 
 ## 如何解释 401
 
-`authorization_present: true` 表示请求在 SDK 边界含认证头，不能证明中间代理或网关最终收到相同认证内容，也不验证密钥有效性。配合失败请求的响应 ID、状态、主机和重定向记录排查。成功请求与失败请求应分别保留；不可用单次 200 证明间歇性 401 已解决。受控端到端故障单列为 `controlled-e2e-fault`，不会作为真实提供商 401 的证据。
+`authorization_present: true` 只表示认证头非空：`Bearer` 后面没有 token 也算存在。所以同时记录 `authorization_scheme`（`bearer` / `basic` / `other`）和 `authorization_token_present`，仍不记录值。它们描述 SDK 边界发出的内容，不能证明中间代理或网关最终收到相同认证内容，也不验证密钥有效性。
+
+OpenRouter 的 401 文本能说明它实际收到了什么（2026-10-01 对线上接口逐项复现，embeddings / chat/completions / rerank 一致）：
+
+| OpenRouter 收到的认证头 | 401 文本 | 诊断里的 `provider_auth_reason` |
+| --- | --- | --- |
+| `Bearer` + 空 token | `Missing Authentication header` | `empty_bearer_token` |
+| 没有认证头，或头为空 | `No cookie auth credentials found` | `missing_authorization` |
+| `Bearer` + 不存在的 key | `User not found.` | `unknown_api_key` |
+
+`Missing Authentication header` 的含义是认证头到了 OpenRouter，但 token 为空。所以应先查发请求的进程当时拿到的密钥是否为空（环境变量、配置展开、凭据注入），而不是先查网络是否丢头。插件把这三种文本归入队列、抽取诊断的 `provider_auth_reason`。
+
+配合失败请求的响应 ID、状态、主机和重定向记录排查。成功请求与失败请求应分别保留；不可用单次 200 证明间歇性 401 已解决。受控端到端故障单列为 `controlled-e2e-fault`，不会作为真实提供商 401 的证据。
