@@ -48,14 +48,18 @@ const templatePath = (accountId, kind) => `/api/v1/admin/accounts/${encodeURICom
 export async function applyAccountMemoryPolicy({ ov, rootKey, workspaceId, accountId = workspaceId && accountIdFor(workspaceId), policy = loadMemoryPolicy() }) {
   if (!accountId) throw new Error('A workspace or account ID is required');
   if (workspaceId) await ov.createAccount(rootKey, { accountId, adminUserId: adminUserIdFor(workspaceId) });
+  const bodies = [];
   for (const kind of ACCOUNT_POLICY_TYPES) {
     const { defaults } = await ov.call(templatePath(accountId, kind), { key: rootKey });
-    const published = await ov.call(templatePath(accountId, kind), { method: 'PUT', key: rootKey, body: accountTemplate(defaults, policy) });
+    const body = accountTemplate(defaults, policy);
+    const published = await ov.call(templatePath(accountId, kind), { method: 'PUT', key: rootKey, body });
     if (published?.status !== 'custom' || !published.effective?.description?.includes(POLICY_HEADING)) {
       throw new Error(`OpenViking did not keep the account memory template for ${kind}`);
     }
+    bodies.push(body);
   }
-  const digest = createHash('sha256').update(JSON.stringify(policy)).digest('hex').slice(0, 16);
+  // Identifies what was published (rules and how they were placed), not just the rules file.
+  const digest = createHash('sha256').update(JSON.stringify(bodies)).digest('hex').slice(0, 16);
   return { scope: 'account', accountId, memoryTypes: ACCOUNT_POLICY_TYPES, digest };
 }
 
