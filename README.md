@@ -86,7 +86,7 @@
 
 需要一个 OpenViking ≥ 0.4.22 实例（`create_account` / `create_user` 内联返回 key 的版本；0.4.21 亦可用，开通走 create→regenerate）。记下 `OV_BASE_URL` 和 root key（**仅用于**按工作区惰性开通账号与空间；业务读写全部走各空间自己的 key）。
 
-**模型（OpenRouter 实测推荐）**：抽取用 `z-ai/glm-5.3-flash`，向量用 `qwen/qwen3-embedding-8b`（4096 维），重排用 `qwen/qwen3-reranker-8b`。可直接用的配置：[`deploy/ov.openrouter.conf.example`](deploy/ov.openrouter.conf.example)（key 从 OpenViking 进程的 `OPENROUTER_API_KEY` 读取）。对比数据、质量样例和已知限制（重排只有一家上游、偶尔过载；向量接口有慢时段，召回届时只返回时限内完成的部分）见 [`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)。向量模型和维度选定后不要轻易换——换了要重建全部向量索引；抽取和重排模型随时可换。
+**模型（OpenRouter 实测推荐）**：抽取用 `z-ai/glm-5.3-flash`，向量用 `qwen/qwen3-embedding-8b`（4096 维），重排用 `qwen/qwen3-reranker-8b`。可直接用的配置：[`deploy/ov.openrouter.conf.example`](deploy/ov.openrouter.conf.example)（key 从 OpenViking 进程的 `OPENROUTER_API_KEY` 读取；抽取输出格式等 `memory` 设置保持 OV 默认）。对比数据、质量样例和已知限制（重排只有一家上游、偶尔过载；向量接口有慢时段，召回届时只返回时限内完成的部分）见 [`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)。向量模型和维度选定后不要轻易换——换了要重建全部向量索引；抽取和重排模型随时可换。
 
 ### 2. 部署插件后端服务（推荐容器）
 
@@ -242,6 +242,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-02 推荐配置改用 OV 默认输出格式**：`deploy/ov.openrouter.conf.example` 去掉 `memory.extraction_output_format: "json"`。json 格式下，模型偶尔先输出一段空补丁、再补一段修正结果，OV 采用第一段，生成空实体卡（见 [`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)）。账号级测试规则的通用部分只写一份，放在 entities，每次抽取的提示词约少 7K 字符。quality 验证器接受“7600 元（之前的约定）”这类历史标注，但仍拒绝注释里带其他金额或写明仍然有效的情况。
 - **2026-10-01 不再覆盖 OV 实例级抽取模板**：推荐配置不再设置 `memory.custom_templates_dir`，移除实例模板生成脚本；实例级覆盖会影响同一 OpenViking 上所有账号和应用的蒸馏。抽取规则改为测试选项：设置 `REAL_AGENT_MEMORY_POLICY=account` 时，规则只写入测试工作区 OV 账户的账号级模板。规则追加在 profile、events、preferences、entities 的描述后；OV 0.4.22 不开放 experiences、cases 的账号级修改，原有这两类的规则因此移除；规则中的示例也不再使用测试用例的具体值。
 - **2026-10-01 评审补修**：主动记忆持久化递归索引并监视失败重驱；归档持久化失败返回 503 供重投；按实际归档内容去重收尾评论；重启压缩保留待抽取任务；提交任务过期后从归档标记恢复；账本兼容旧格式并保留重启去重；端到端核验原文、预算、阈值和私聊偏好。
 - **0.3.0**（评审修复）：安装绑定唯一工作区，跨租户读取与状态泄露关闭；按运行类型归档（需任务读取 API，stock multica 以 200 跳过、不再触发熔断）；评论按作者类型如实归属；抽取监视移出队列，失败在新会话代际重驱（`POST /extract` 在提交后是空操作）；提交响应丢失可找回；`memory-recall` 绑定调用它的运行，issue 编号解析为 UUID；工具错误以可读的 200 返回；`memory-remember` 幂等；`ov-*` 门面限制在调用者自己的空间；状态目录心跳租约；清单描述与行为一致、校验器按 multica 的字节限制；真实栈端到端与 multica 补丁；真实模型验证后：`memory-remember` 写入后在后台重建所在目录的语义记录（配了重排时才能被检索到），召回合并同一记忆的自有/peer 两份副本，运行归档只保留一个归属方（避免 OpenViking 因归属不唯一丢弃记忆），私聊运行不再发匿名上下文头；`memory-recall` 与 `ov-*` 门面在钩子超时之前作答（模型服务慢时返回已完成的部分并注明，而不是让 multica 报"hook endpoint did not answer"）

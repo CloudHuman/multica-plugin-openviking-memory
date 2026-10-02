@@ -77,8 +77,5 @@
       "HTTP-Referer": "https://github.com/CloudHuman/multica-plugin-openviking-memory",
       "X-Title": "multica-openviking-memory"
     }
-  },
-  "memory": {
-    "extraction_output_format": "json"
   }
 }

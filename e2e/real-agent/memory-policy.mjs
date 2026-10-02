@@ -13,6 +13,10 @@ import { accountIdFor, adminUserIdFor } from '../../src/scopes.mjs';
 // personality, outside a business-memory policy.
 export const ACCOUNT_POLICY_TYPES = ['profile', 'events', 'preferences', 'entities'];
 export const POLICY_HEADING = '## Multica business-memory quality';
+// The common rules are written once, under entities: its schema is in every
+// extraction prompt and is the only one in OV's entity follow-up prompt.
+export const COMMON_RULES_TYPE = 'entities';
+const COMMON_RULES_POINTER = `Also apply the general Multica business-memory rules listed under the ${COMMON_RULES_TYPE} memory type.`;
 
 export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.meta.url)) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -22,7 +26,7 @@ export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.m
 export function accountTemplate(defaults, policy) {
   const kind = defaults.memory_type;
   const typeRules = policy.types?.[kind] ?? [];
-  const rules = [...policy.common, ...typeRules];
+  const rules = [...(kind === COMMON_RULES_TYPE ? policy.common : [COMMON_RULES_POINTER]), ...typeRules];
   const fields = (defaults.fields ?? []).flatMap((field) => {
     const extra = [...(field.name === 'content' ? typeRules : []), ...(policy.fields?.[kind]?.[field.name] ?? [])];
     return extra.length ? [{ name: field.name, description: `${field.description ?? ''}\n${extra.join('\n')}` }] : [];

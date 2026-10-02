@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assessNoAnswer } from '../e2e/real-agent/answer-checks.mjs';
 import { auditMemories, entityAuditIssues } from '../e2e/real-agent/memory-audit.mjs';
+import { hasCurrentBudget } from '../e2e/real-agent/quality.mjs';
 
 const recall = (scopesSearched) => ({ status: 'ok', result: { entries: [], scopesSearched } });
 const complete = recall([{ scope: 'task:w:i', hits: 0 }, { scope: 'agent:w:a', hits: 0 }]);
@@ -61,4 +62,27 @@ test('the memory audit reports entity observations without counting them as qual
   assert.equal(audit.complete, true);
   assert.deepEqual(audit.qualityFindings, []);
   assert.deepEqual(audit.entityFindings, [{ uri: `${root}/memories/entities/项目/海棠迁移.md`, reasons: ['entity-issue-key'] }]);
+});
+
+// Entity cards stored by real extractions on 2026-10-01 (native / account rules / account rules on OV defaults).
+const CARD_NATIVE = '# 苍鹭\n用户参与的一个项目。\n## 技术约定\n- 发布使用 Apache Pulsar。\n- 存在双写机制，持续五天。\n## 预算与管理\n- 发布预算为 8100 元（2026-10-01 更新，此前为 7600 元）。';
+const CARD_ACCOUNT = '# 苍鹭\n## 关键约定\n- 发布使用 Apache Pulsar（成员于 2026-10-01 确认）。\n- 每月预算为 8100 元（成员于 2026-10-01 更新确认，明确以本次更新为准；此前确认为 7600 元）。\n- 采用双写，持续五天（成员于 2026-10-01 确认）。';
+const cardWith = (oldLine) => `# 苍鹭\n## 关键事实\n- 发布使用 Apache Pulsar (as of 2026-10-01)\n${oldLine}\n- 发布预算调整为 8100 元，其他约定不变，以本次更新为准 (as of 2026-10-01)\n- 双写持续五天 (as of 2026-10-01)`;
+
+test('the current budget accepts a labelled previous value but not an unresolved one', () => {
+  assert.equal(hasCurrentBudget(CARD_NATIVE), true);
+  assert.equal(hasCurrentBudget(CARD_ACCOUNT), true);
+  // The OV-defaults account card: the old value carries a note calling it the earlier agreement.
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（2026-10-01 之前的约定）')), true);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（已作废）')), true);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元 (previous agreement)')), true);
+  // Still rejected: an unlabelled old value, a note naming another amount as the earlier one,
+  // "之前" as a verb rather than a label, and a card without the update.
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元 (as of 2026-10-01)')), false);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前为 8100 元）')), false);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前确认）')), false);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算 7600 元仍然有效（之前的约定已延续）')), false);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前的约定，仍然有效）')), false);
+  assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（原预算，当前执行）')), false);
+  assert.equal(hasCurrentBudget('# 苍鹭\n- 发布使用 Apache Pulsar。\n- 每月预算为 7600 元。\n- 双写持续五天。'), false);
 });

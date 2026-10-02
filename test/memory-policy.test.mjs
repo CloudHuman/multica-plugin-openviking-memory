@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT_POLICY_TYPES, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, loadMemoryPolicy, prepareTestAccount, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
+import { ACCOUNT_POLICY_TYPES, COMMON_RULES_TYPE, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, loadMemoryPolicy, prepareTestAccount, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
 import { accountIdFor, adminUserIdFor } from '../src/scopes.mjs';
 
 const policy = loadMemoryPolicy();
@@ -22,12 +22,22 @@ test('account templates only append the policy to descriptions', () => {
     assert.ok(field.description.startsWith(`native ${field.name}\n`));
   }
   assert.ok(entities.fields[2].description.endsWith(policy.types.entities.join('\n')));
-  // Common rules everywhere; type rules also on the content field when the type has one.
+  // Type rules also on the content field when the type has one.
   assert.deepEqual(accountTemplate(native('preferences'), policy).fields.map((f) => f.name), ['content']);
   assert.deepEqual(Object.keys(accountTemplate(native('events'), policy)), ['description']);
-  const profile = accountTemplate(native('profile'), policy);
-  assert.deepEqual(Object.keys(profile), ['description']);
-  assert.ok(policy.common.every((rule) => profile.description.includes(rule)));
+  assert.deepEqual(Object.keys(accountTemplate(native('profile'), policy)), ['description']);
+});
+
+test('the common rules reach the prompt once, under entities', () => {
+  const templates = Object.fromEntries(ACCOUNT_POLICY_TYPES.map((kind) => [kind, JSON.stringify(accountTemplate(native(kind), policy))]));
+  for (const rule of policy.common) {
+    assert.deepEqual(ACCOUNT_POLICY_TYPES.filter((kind) => templates[kind].includes(JSON.stringify(rule).slice(1, -1))), [COMMON_RULES_TYPE]);
+  }
+  for (const kind of ACCOUNT_POLICY_TYPES.filter((k) => k !== COMMON_RULES_TYPE)) {
+    const { description } = accountTemplate(native(kind), policy);
+    assert.ok(description.startsWith(`native ${kind}\n\n${POLICY_HEADING}\n- Also apply the general Multica business-memory rules listed under the entities memory type.`));
+    for (const rule of policy.types[kind] ?? []) assert.ok(description.includes(`- ${rule}`));
+  }
 });
 
 test('the policy is plain text for account-editable types and carries no test answers', () => {

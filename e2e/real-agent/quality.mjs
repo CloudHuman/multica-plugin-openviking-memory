@@ -174,14 +174,25 @@ export async function runQuality(ctx) {
   }
 }
 
-// 7600 must read as superseded: a marker shortly before it, or "已被取代" style wording after it.
+// 7600 must read as superseded: a marker shortly before it, "已被取代" style wording after it,
+// or a note right after it labelling it the earlier value, e.g. "7600 元（2026-10-01 之前的约定）".
 const HISTORY_BEFORE_7600 = /(?:此前|原先|原预算|历史|取代|替代|较早|早先|previous|historical|supersed|replac|earlier|former).{0,20}7600/i;
 const HISTORY_AFTER_7600 = /7600.{0,20}(?:已?被(?:取代|替代)|superseded|replaced)/i;
+const NOTE_AFTER_7600 = /7600\s*元?\s*[（(]([^）)]*)[）)]/;
+const PREVIOUS_LABEL = /(?:之前|此前|以前|先前|原|旧)的?(?:约定|预算|决定|版本|数值|值)|已(?:作废|失效|过期)|历史(?:值|约定)|previous|earlier|former|outdated/i;
+const STILL_CURRENT = /(?:仍|继续|依然|依旧)(?:然)?(?:有效|适用|生效)|当前|现行|current|still/i;
+
+// The note may not carry another amount ("7600 元（之前为 8100 元）" says 8100 was the earlier value)
+// or call the old value still in force.
+function labelledPrevious(line) {
+  const note = line.match(NOTE_AFTER_7600)?.[1];
+  return note !== undefined && PREVIOUS_LABEL.test(note) && !/\d+(?:\.\d+)?\s*元/.test(note) && !STILL_CURRENT.test(note);
+}
 
 export function hasCurrentBudget(content) {
   const current = /^\s*-.*(?:预算|budget).{0,25}8100\s*元/im.test(content);
   const oldMentions = String(content).split('\n').filter(line => /7600/.test(line));
-  return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line))
+  return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line) || labelledPrevious(line))
     && /Pulsar/.test(content) && /五天|5\s*天/.test(content);
 }
 

@@ -50,7 +50,7 @@ multica 的版本是**探测**出来的：带 `chats:read` 的包被接受，说
    openviking-server --config ov.conf                 # 127.0.0.1:1936
    ```
 
-   mock 不会写出有意义的"记忆"，只保证抽取管道真实运转；验证蒸馏质量请接真实模型。
+   mock 不会写出有意义的"记忆"，只保证抽取管道真实运转；验证蒸馏质量请接真实模型。`ov.conf.example` 中的 `extraction_output_format: "json"` 只供 mock 使用，因为 mock 按提示词里的 JSON Schema 返回抽取结果。接真实模型时用 `deploy/ov.openrouter.conf.example`，保持 OV 默认输出格式。
 
 ## 运行
 

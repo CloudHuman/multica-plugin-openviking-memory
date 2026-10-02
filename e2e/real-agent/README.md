@@ -29,7 +29,7 @@
 
 其他套件设置 `REAL_AGENT_OBSERVE_PROVIDER=1` 时，也会加载 OpenCode 请求观测（`deploy/observers/opencode.mjs`），记录写入状态目录的 `opencode-provider-requests.jsonl`；这种情况下不注入受控故障。
 
-任一套件设置 `REAL_AGENT_MEMORY_POLICY=account` 时，测试工作区建好后、插件首次使用前，用 OV 的管理接口把 `memory-policy.json` 写入该工作区 OV 账户的账号级模板，用来和原生抽取对比；默认 `native` 不写入。两种方式都在这时预先建好该账户，插件走同样的路径，只有模板不同；若 OV 的实例模板仍带这套规则（遗留的 `memory.custom_templates_dir`），运行在调用模型之前就失败。它只在 profile、events、preferences、entities 四类模板的描述后追加规则（OV 0.4.22 不开放 experiences、cases 等类型的账号级修改），不改实例配置和其他账户；插件本身从不写模板。报告的 `memoryPolicy` 记录所用方式和规则摘要，续跑必须保持同一设置。规则里的示例刻意不用测试用例的具体值，避免把答案写进抽取提示词。手动对某个工作区启用或撤销：`OV_ROOT_KEY=… node e2e/real-agent/memory-policy.mjs --workspace <工作区 ID> [--reset]`，撤销不改写已抽取的记忆。
+任一套件设置 `REAL_AGENT_MEMORY_POLICY=account` 时，测试工作区建好后、插件首次使用前，用 OV 的管理接口把 `memory-policy.json` 写入该工作区 OV 账户的账号级模板，用来和原生抽取对比；默认 `native` 不写入。两种方式都在这时预先建好该账户，插件走同样的路径，只有模板不同；若 OV 的实例模板仍带这套规则（遗留的 `memory.custom_templates_dir`），运行在调用模型之前就失败。它只在 profile、events、preferences、entities 四类模板的描述后追加规则（OV 0.4.22 不开放 experiences、cases 等类型的账号级修改）。通用规则只写在 entities 一类（它的模板出现在每次抽取的提示词里），其余三类只写各自的规则和一句引用。不改实例配置和其他账户；插件本身从不写模板。报告的 `memoryPolicy` 记录所用方式和规则摘要，续跑必须保持同一设置。规则里的示例刻意不用测试用例的具体值，避免把答案写进抽取提示词。手动对某个工作区启用或撤销：`OV_ROOT_KEY=… node e2e/real-agent/memory-policy.mjs --workspace <工作区 ID> [--reset]`，撤销不改写已抽取的记忆。
 
 `REAL_AGENT_SUITE=delivery` 独立验证交付恢复，不受共享检索是否可用影响。成员直接提供一条待交付 JSON，实际智能体发布后才注入受控失败，核验内容，再两次提交同一恢复凭据，并确认仍只有一个任务且评论数量不增加。这里的答案由成员提供，不计入蒸馏准确性。
 
