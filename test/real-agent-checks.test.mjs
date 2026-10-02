@@ -76,11 +76,14 @@ test('the current budget accepts a labelled previous value but not an unresolved
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（2026-10-01 之前的约定）')), true);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（已作废）')), true);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元 (previous agreement)')), true);
+  // 2026-10-02 native card: the update names the old value as the one adjusted from.
+  assert.equal(hasCurrentBudget('# 苍鹭\n- 发布使用 Apache Pulsar 作为消息中间件（2026-10-02 确认）。\n- 发布预算为 8100 元（2026-10-02 由 7600 元调整更新，以本次更新为准）。\n- 发布期间采用双写方案，持续五天。'), true);
   // Still rejected: an unlabelled old value, a note naming another amount as the earlier one,
   // "之前" as a verb rather than a label, and a card without the update.
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元 (as of 2026-10-01)')), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前为 8100 元）')), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前确认）')), false);
+  assert.equal(hasCurrentBudget('# 苍鹭\n- 发布使用 Apache Pulsar。\n- 每月预算由 8100 元调整为 7600 元。\n- 双写持续五天。'), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算 7600 元仍然有效（之前的约定已延续）')), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前的约定，仍然有效）')), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（原预算，当前执行）')), false);

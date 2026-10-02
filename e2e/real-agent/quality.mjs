@@ -178,6 +178,8 @@ export async function runQuality(ctx) {
 // or a note right after it labelling it the earlier value, e.g. "7600 元（2026-10-01 之前的约定）".
 const HISTORY_BEFORE_7600 = /(?:此前|原先|原预算|历史|取代|替代|较早|早先|previous|historical|supersed|replac|earlier|former).{0,20}7600/i;
 const HISTORY_AFTER_7600 = /7600.{0,20}(?:已?被(?:取代|替代)|superseded|replaced)/i;
+// "由 7600 元调整更新": the old value is the one adjusted from.
+const ADJUSTED_FROM_7600 = /(?:由|从)\s*(?:每月)?\s*7600\s*元?\s*(?:调整|上调|提高|增加|改|变更|更新)/;
 const NOTE_AFTER_7600 = /7600\s*元?\s*[（(]([^）)]*)[）)]/;
 const PREVIOUS_LABEL = /(?:之前|此前|以前|先前|原|旧)的?(?:约定|预算|决定|版本|数值|值)|已(?:作废|失效|过期)|历史(?:值|约定)|previous|earlier|former|outdated/i;
 const STILL_CURRENT = /(?:仍|继续|依然|依旧)(?:然)?(?:有效|适用|生效)|当前|现行|current|still/i;
@@ -192,7 +194,7 @@ function labelledPrevious(line) {
 export function hasCurrentBudget(content) {
   const current = /^\s*-.*(?:预算|budget).{0,25}8100\s*元/im.test(content);
   const oldMentions = String(content).split('\n').filter(line => /7600/.test(line));
-  return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line) || labelledPrevious(line))
+  return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line) || ADJUSTED_FROM_7600.test(line) || labelledPrevious(line))
     && /Pulsar/.test(content) && /五天|5\s*天/.test(content);
 }
 
