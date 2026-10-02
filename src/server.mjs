@@ -39,6 +39,7 @@ import { InstallationRegistry } from './installations.mjs';
 import { buildRememberFile } from './archive.mjs';
 import { makeOvToolHandler } from './ov-facade.mjs';
 import { consolidateShared } from './consolidate.mjs';
+import { WorkspaceMemoryRules } from './memory-rules.mjs';
 import { acquireStateLock } from './state-lock.mjs';
 import { safeEqual, shortHash, cap } from './util.mjs';
 
@@ -52,12 +53,12 @@ export const VERSION = (() => {
   }
 })();
 
-export function createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions, fetchImpl } = {}) {
+export function createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules = null, fetchImpl } = {}) {
   installations ??= new InstallationRegistry({ stateDir: cfg.stateDir, cfg, fetchImpl, log });
   extractions ??= { stats: () => ({ pending: 0 }), watch: () => {}, isPinned: () => false };
   // Per installation: did GET /v1/tasks/{id} answer? (true / false / unknown)
   const taskApi = new Map();
-  const deps = { cfg, ov, registry, queue, ledger, statusLog, installations, extractions, fetchImpl, taskApi };
+  const deps = { cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules, fetchImpl, taskApi };
   return {
     ...deps,
     handlers: {
@@ -110,7 +111,11 @@ export function makeMemoryArchiveHandler(deps) {
     const ledgerKey = `inv:${body.invocation_id ?? shortHash(JSON.stringify(body))}`;
     if (ledger.has(ledgerKey)) return { status: 'duplicate', ledger: ledgerKey };
 
-    const settings = archiveSettings(mergeCallConfig(cfg, body.config));
+    const merged = mergeCallConfig(cfg, body.config);
+    const settings = archiveSettings(merged);
+    // Queued per workspace; the pipeline waits for it before committing, so this
+    // delivery's records are extracted with the rules its installation has now.
+    deps.memoryRules?.ensure(ws, merged.memoryRules);
     const mc = callbackClient(deps, ctx, body, cfg.archiveFetchBudgetMs);
     const skip = (reason, ref) => {
       statusLog.append({ type: 'skipped', event: eventType, ref, workspace: ws, reason });
@@ -475,7 +480,7 @@ export function makeMemoryRememberHandler({ ov, registry, queue, extractions }) 
   };
 }
 
-export function makeMemoryStatusHandler({ ov, registry, queue, statusLog, extractions }) {
+export function makeMemoryStatusHandler({ ov, registry, queue, statusLog, extractions, memoryRules }) {
   return async function memoryStatus(body, ctx) {
     const ws = ctx.workspaceId;
     let ovHealth;
@@ -490,6 +495,7 @@ export function makeMemoryStatusHandler({ ov, registry, queue, statusLog, extrac
       scopes: { scopes: scopeCount },
       archive_queue: queue.stats({ workspaceId: ws }),
       extraction: extractions.stats({ workspaceId: ws }),
+      memory_rules: memoryRules?.status(ws) ?? { status: 'default' },
       recent_archives: statusLog.recent({ limit: 10, workspaceId: ws }).map(publicStatusEntry),
     };
   };
@@ -808,10 +814,11 @@ export async function main() {
   const installations = new InstallationRegistry({ stateDir: cfg.stateDir, cfg, log });
   const ledger = new Ledger({ stateDir: cfg.stateDir });
   const statusLog = new ArchiveStatusLog({ stateDir: cfg.stateDir, maxBytes: cfg.statusLogMaxBytes });
-  const { queue, extractions } = createArchiveProcessing({ ov, registry, statusLog, cfg, log });
+  const memoryRules = new WorkspaceMemoryRules({ ov, registry, log });
+  const { queue, extractions } = createArchiveProcessing({ ov, registry, statusLog, cfg, memoryRules, log });
   queue.start();
   extractions.start();
-  const app = createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions });
+  const app = createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules });
 
   const handler = await buildRequestListener({ cfg, app });
   let server;

@@ -69,7 +69,7 @@ test('comments are archived with honest attribution: member = human feedback, ag
     const [human] = ov.archivedOf(rec.apiKey, 'mc-comment-cm-member');
     assert.equal(human.role, 'user');
     assert.equal(human.peer_id, FIXTURE_USER);
-    assert.match(human.content, /\[人类反馈\]\[评论\] MUL-7/);
+    assert.match(human.content, /\[人类反馈\]\[评论\] 「为消息推送服务选型并给出迁移方案」/);
 
     const agentMsgs = ov.archivedOf(rec.apiKey, 'mc-comment-cm-agent');
     const statement = agentMsgs.find((m) => m.role === 'assistant');
@@ -118,7 +118,8 @@ test('patched multica: issue run archives the real transcript with the installat
     const rec = await waitFor(() => svc.registry.get(taskScope), { label: 'task scope' });
     await waitFor(() => ov.archivedOf(rec.apiKey, `mc-task-${taskId}`).length, { label: 'run archive' });
     const flat = archivedText(ov, rec, `mc-task-${taskId}`);
-    assert.match(flat, /MUL-7/);
+    assert.match(flat, /「为消息推送服务选型并给出迁移方案」/, 'the issue is named by its title');
+    assert.equal(flat.includes('MUL-7'), false, 'the issue key stays out of the archive');
     assert.match(flat, /推荐 RocketMQ/, 'the agent\'s conclusion is archived');
     assert.match(flat, /触发评论/, 'the member input that started the run is archived');
     assert.equal(flat.includes('issue list'), false, 'probe dropped by the installation\'s drop_tool_prefixes');

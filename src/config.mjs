@@ -131,9 +131,11 @@ export function loadConfig(env = process.env, { stateDir } = {}) {
  * installation had when the event arrived, not whatever the service defaults are
  * when the queue gets to it.
  */
-export function mergeCallConfig(cfg, callConfig = {}) {
+export function mergeCallConfig(cfg, callConfig) {
   const merged = { ...cfg };
-  if (callConfig == null) return merged;
+  if (callConfig == null || typeof callConfig !== 'object' || Array.isArray(callConfig)) return merged;
+  // The call carries this installation's config: rules it does not set are none.
+  merged.memoryRules = typeof callConfig.memory_rules === 'string' ? callConfig.memory_rules : '';
   if (callConfig.recall_entries !== undefined && Number.isFinite(Number(callConfig.recall_entries))) {
     merged.recallEntries = Math.min(10, Math.max(1, Number(callConfig.recall_entries)));
   }

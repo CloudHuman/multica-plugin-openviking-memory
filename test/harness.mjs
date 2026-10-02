@@ -3,6 +3,7 @@ import { loadConfig, parseSigningSecrets } from '../src/config.mjs';
 import { OvClient } from '../src/ov-client.mjs';
 import { ScopeRegistry } from '../src/scopes.mjs';
 import { createArchiveProcessing } from '../src/processing.mjs';
+import { WorkspaceMemoryRules } from '../src/memory-rules.mjs';
 import { Ledger, ArchiveStatusLog } from '../src/ledger.mjs';
 import { InstallationRegistry } from '../src/installations.mjs';
 import { createApp, buildRequestListener } from '../src/server.mjs';
@@ -53,13 +54,14 @@ export async function bootService({ ov, stateDir = tempStateDir(), cfg: override
   const installations = new InstallationRegistry({ stateDir, cfg, fetchImpl, log });
   const ledger = new Ledger({ stateDir });
   const statusLog = new ArchiveStatusLog({ stateDir });
+  const memoryRules = new WorkspaceMemoryRules({ ov: ovClient, registry, log });
   const { queue, extractions } = createArchiveProcessing({
-    ov: ovClient, registry, statusLog, cfg, log,
+    ov: ovClient, registry, statusLog, cfg, memoryRules, log,
     queueOptions: { maxAttempts: overrides.queueMaxAttempts ?? 3, baseDelayMs: 5, pollMs: 10 },
   });
   queue.start();
   extractions.start();
-  const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog, installations, extractions, fetchImpl });
+  const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog, installations, extractions, memoryRules, fetchImpl });
   const server = createServer(await buildRequestListener({ cfg, app }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;

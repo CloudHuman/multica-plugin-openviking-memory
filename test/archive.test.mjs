@@ -129,7 +129,7 @@ test('comment builder: members are human feedback, agents speak as assistants, p
   assert.equal(member.messages.length, 1);
   assert.equal(member.messages[0].role, 'user');
   assert.equal(member.messages[0].peer_id, FIXTURE_USER);
-  assert.match(member.messages[0].content, /^\[人类反馈\]\[评论\] MUL-7/);
+  assert.match(member.messages[0].content, /^\[人类反馈\]\[评论\] 「为消息推送服务选型并给出迁移方案」/);
   assert.match(member.messages[0].content, /死信队列部分再补充一下/);
 
   const agent = buildCommentMessages({ comment: { ...base, id: 'c2', author_type: 'agent', author_id: FIXTURE_AGENT_A, content: '已完成压测,结论见附件。' }, issue });
@@ -144,6 +144,10 @@ test('comment builder: members are human feedback, agents speak as assistants, p
   assert.match(plugin.messages[0].content, /^\[插件消息\]/);
   assert.equal(plugin.messages[0].peer_id, undefined);
   assert.equal(/人类反馈/.test(plugin.messages[0].content), false);
+  // Archived text names the issue by its title; its key would be copied into memory cards.
+  for (const archived of [member, agent, plugin]) assert.equal(JSON.stringify(archived.messages).includes('MUL-7'), false);
+  const untitled = buildCommentMessages({ comment: { ...base, id: 'c4', author_type: 'member', author_id: FIXTURE_USER, content: '补充' }, issue: { ...issue, title: '' } });
+  assert.match(untitled.messages[0].content, /^\[人类反馈\]\[评论\] MUL-7/);
 });
 
 test('run builder is kind-aware and archives the input that started the run', () => {

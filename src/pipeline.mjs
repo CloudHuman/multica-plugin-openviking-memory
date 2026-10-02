@@ -58,7 +58,7 @@ export function markRetryable(err) {
   return err;
 }
 
-export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, log = () => {} }) {
+export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, memoryRules = null, log = () => {} }) {
   return async function handleArchiveJob(job) {
     const p = job.payload;
     const scopeKey = p.scopeKey ?? resolveArchiveScope(p.scope);
@@ -104,6 +104,8 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
           job.cp.archiveUri = latest?.result?.archive_uri ??
             `viking://user/${rec.userId}/sessions/${sessionId}/history/archive_${String(session.commit_count).padStart(3, '0')}`;
         } else {
+          // The workspace's extraction rules land before its records are committed.
+          await memoryRules?.settled(p.workspaceId);
           const live = Math.max(0, Number(session?.message_count ?? 0));
           for (const chunk of chunkMessages(built.messages.slice(live))) {
             await ov.addMessages(rec.apiKey, sessionId, chunk);

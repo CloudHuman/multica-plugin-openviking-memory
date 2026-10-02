@@ -68,6 +68,13 @@ export function tempStateDir() {
  * taskBehavior: 'succeed' | 'fail-first' (the first commit task in a space
  * fails, later ones succeed) | 'fail-always'.
  */
+// OpenViking 0.4.22's account-editable memory templates, reduced to what the plugin touches.
+const FAKE_TEMPLATE_FIELDS = { profile: ['content'], events: ['event_name', 'goal', 'summary', 'ranges'], preferences: ['user', 'topic', 'content'], entities: ['category', 'name', 'content'], soul: ['core_truths'], identity: ['name'] };
+const fakeTemplateDefaults = (kind) => ({
+  memory_type: kind, description: `native ${kind}`, enabled: true,
+  fields: FAKE_TEMPLATE_FIELDS[kind].map((name) => ({ name, type: 'string', description: `native ${name}`, merge_op: 'patch' })),
+});
+
 export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1, requireReindex = false, reindexBehavior = 'succeed' } = {}) {
   const spaces = new Map(); // apiKey -> space
   const calls = [];
@@ -152,6 +159,28 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1,
         acc.users.set(userId, userKey);
         spaces.set(userKey, newSpace(m[1], userId));
         return ok({ user_id: userId, user_key: userKey });
+      }
+
+      m = path.match(/^\/api\/v1\/admin\/accounts\/([^/]+)\/memory-templates\/([a-z_]+)$/);
+      if (m) {
+        const acc = accounts.get(decodeURIComponent(m[1]));
+        if (!acc) return err(404, 'NOT_FOUND', `Account not found: ${m[1]}`);
+        if (key !== 'root' && key !== acc.adminKey) return err(403, 'PERMISSION_DENIED', 'root or account admin key required');
+        const kind = m[2];
+        if (!FAKE_TEMPLATE_FIELDS[kind]) return err(404, 'NOT_FOUND', `Memory template not found: ${kind}`);
+        const defaults = fakeTemplateDefaults(kind);
+        acc.templates ??= new Map();
+        if (req.method === 'PUT') {
+          // Like OV: only descriptions change; an unchanged form removes the override.
+          const fields = defaults.fields.map((f) => ({ ...f, description: body.fields?.find((x) => x.name === f.name)?.description ?? f.description }));
+          const effective = { ...defaults, description: body.description ?? defaults.description, fields };
+          if (JSON.stringify(effective) === JSON.stringify(defaults)) acc.templates.delete(kind);
+          else acc.templates.set(kind, effective);
+        } else if (req.method === 'DELETE') {
+          acc.templates.delete(kind);
+        }
+        const custom = acc.templates.get(kind);
+        return ok({ account_id: m[1], memory_type: kind, status: custom ? 'custom' : 'system_default', defaults, effective: custom ?? defaults });
       }
 
       const space = spaceOf(key);
@@ -314,6 +343,8 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1,
     server, port, baseUrl: `http://127.0.0.1:${port}`,
     spaces, accounts, calls, taskStates, searchDelayMs,
     filesOf(key) { return spaceOf(key).files; },
+    /** Account-level memory templates that differ from the defaults, by type. */
+    templatesOf(accountId) { return Object.fromEntries(accounts.get(accountId)?.templates ?? []); },
     sessionsOf(key) { return spaceOf(key).sessions; },
     /** Every message a session ever archived, across commits. */
     archivedOf(key, sid) { return (spaceOf(key).sessions.get(sid)?.archives ?? []).flatMap((a) => a.messages); },

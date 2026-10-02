@@ -1,22 +1,18 @@
-// Account-level OpenViking memory templates for tests. The plugin never sets
-// these: they are written only to a test workspace's OV account through
-// OpenViking's own admin API, so the instance templates and every other
-// account keep OV's native extraction.
+// Account-level OpenViking memory templates for tests: the full rule set in
+// memory-policy.json, written straight to a test workspace's OV account through
+// OpenViking's own admin API. A workspace's own rules reach the plugin through
+// its installation config (src/memory-rules.mjs, whose template builder this
+// shares); this tool carries the larger test set, which exceeds multica's 4 KB
+// config value. Instance templates and every other account keep OV's defaults.
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { OvClient } from '../../src/ov-client.mjs';
 import { accountIdFor, adminUserIdFor } from '../../src/scopes.mjs';
+import { ACCOUNT_TEMPLATE_TYPES, COMMON_RULES_TYPE, accountTemplate as buildTemplate, resetAccountTemplates, writeAccountTemplates } from '../../src/memory-rules.mjs';
 
-// OpenViking 0.4.22 opens only profile, events, preferences, entities, soul and
-// identity to account edits; soul and identity are the agent's bootstrap
-// personality, outside a business-memory policy.
-export const ACCOUNT_POLICY_TYPES = ['profile', 'events', 'preferences', 'entities'];
+export const ACCOUNT_POLICY_TYPES = ACCOUNT_TEMPLATE_TYPES;
 export const POLICY_HEADING = '## Multica business-memory quality';
-// The common rules are written once, under entities: its schema is in every
-// extraction prompt and is the only one in OV's entity follow-up prompt.
-export const COMMON_RULES_TYPE = 'entities';
-const COMMON_RULES_POINTER = `Also apply the general Multica business-memory rules listed under the ${COMMON_RULES_TYPE} memory type.`;
+export { COMMON_RULES_TYPE };
 
 export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.meta.url)) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -24,17 +20,7 @@ export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.m
 
 /** The PUT body for one type: the policy appended to OV's default descriptions; everything else stays OV's default. */
 export function accountTemplate(defaults, policy) {
-  const kind = defaults.memory_type;
-  const typeRules = policy.types?.[kind] ?? [];
-  const rules = [...(kind === COMMON_RULES_TYPE ? policy.common : [COMMON_RULES_POINTER]), ...typeRules];
-  const fields = (defaults.fields ?? []).flatMap((field) => {
-    const extra = [...(field.name === 'content' ? typeRules : []), ...(policy.fields?.[kind]?.[field.name] ?? [])];
-    return extra.length ? [{ name: field.name, description: `${field.description ?? ''}\n${extra.join('\n')}` }] : [];
-  });
-  return {
-    description: `${defaults.description ?? ''}\n\n${POLICY_HEADING}\n${rules.map((rule) => `- ${rule}`).join('\n')}`,
-    ...(fields.length ? { fields } : {}),
-  };
+  return buildTemplate(defaults, policy, { heading: POLICY_HEADING });
 }
 
 const templatePath = (accountId, kind) => `/api/v1/admin/accounts/${encodeURIComponent(accountId)}/memory-templates/${kind}`;
@@ -48,19 +34,9 @@ const templatePath = (accountId, kind) => `/api/v1/admin/accounts/${encodeURICom
 export async function applyAccountMemoryPolicy({ ov, rootKey, workspaceId, accountId = workspaceId && accountIdFor(workspaceId), policy = loadMemoryPolicy() }) {
   if (!accountId) throw new Error('A workspace or account ID is required');
   if (workspaceId) await ov.createAccount(rootKey, { accountId, adminUserId: adminUserIdFor(workspaceId) });
-  const bodies = [];
-  for (const kind of ACCOUNT_POLICY_TYPES) {
-    const { defaults } = await ov.call(templatePath(accountId, kind), { key: rootKey });
-    const body = accountTemplate(defaults, policy);
-    const published = await ov.call(templatePath(accountId, kind), { method: 'PUT', key: rootKey, body });
-    if (published?.status !== 'custom' || !published.effective?.description?.includes(POLICY_HEADING)) {
-      throw new Error(`OpenViking did not keep the account memory template for ${kind}`);
-    }
-    bodies.push(body);
-  }
-  // Identifies what was published (rules and how they were placed), not just the rules file.
-  const digest = createHash('sha256').update(JSON.stringify(bodies)).digest('hex').slice(0, 16);
-  return { scope: 'account', accountId, memoryTypes: ACCOUNT_POLICY_TYPES, digest };
+  // The digest identifies what was published (rules and how they were placed).
+  const { memoryTypes, digest } = await writeAccountTemplates({ ov, key: rootKey, accountId, rules: policy, heading: POLICY_HEADING });
+  return { scope: 'account', accountId, memoryTypes, digest };
 }
 
 /**
@@ -84,7 +60,7 @@ export async function prepareTestAccount({ ov, rootKey, workspaceId, mode, polic
 
 /** Remove the overrides. Memories already extracted are not rewritten. */
 export async function resetAccountMemoryPolicy({ ov, rootKey, accountId }) {
-  for (const kind of ACCOUNT_POLICY_TYPES) await ov.call(templatePath(accountId, kind), { method: 'DELETE', key: rootKey });
+  await resetAccountTemplates({ ov, key: rootKey, accountId });
   return { scope: 'native', accountId };
 }
 

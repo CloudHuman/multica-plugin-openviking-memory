@@ -35,7 +35,7 @@ test('the common rules reach the prompt once, under entities', () => {
   }
   for (const kind of ACCOUNT_POLICY_TYPES.filter((k) => k !== COMMON_RULES_TYPE)) {
     const { description } = accountTemplate(native(kind), policy);
-    assert.ok(description.startsWith(`native ${kind}\n\n${POLICY_HEADING}\n- Also apply the general Multica business-memory rules listed under the entities memory type.`));
+    assert.ok(description.startsWith(`native ${kind}\n\n${POLICY_HEADING}\n- Also apply the general rules listed under this heading in the entities memory type.`));
     for (const rule of policy.types[kind] ?? []) assert.ok(description.includes(`- ${rule}`));
   }
 });

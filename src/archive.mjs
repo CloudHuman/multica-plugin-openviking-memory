@@ -80,6 +80,16 @@ const HEADER = {
   other: '[运行]',
 };
 
+/**
+ * How archived text names an issue: by its title. The issue key (MUL-7) is
+ * workspace bookkeeping that extraction copies into memory cards, so it is
+ * used only for an issue without a title.
+ */
+function issueName(issue) {
+  const title = String(issue?.title ?? '').trim();
+  return title ? `「${title}」` : String(issue?.identifier ?? '').trim();
+}
+
 /** The human/agent input that started a run, as attributed user messages. */
 function inputMessages(inputs, turn, cfg, { chatWith } = {}) {
   const out = [];
@@ -124,9 +134,8 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
   const header = HEADER[kind] ?? HEADER.other;
   let context;
   if (kind === 'issue') {
-    const identifier = issue?.identifier ?? issue?.id ?? task?.issue_id ?? '';
     const description = typeof issue?.description === 'string' ? issue.description : '';
-    context = `${header} ${identifier} ${issue?.title ?? ''}\n\n任务描述：\n${cap(description, cfg.textPartMaxChars) || '(无描述)'}`;
+    context = `${[header, issueName(issue)].filter(Boolean).join(' ')}\n\n任务描述：\n${cap(description, cfg.textPartMaxChars) || '(无描述)'}`;
   } else if (kind === 'chat') {
     context = `${header} 成员 ${task?.chat_user_id ?? 'unknown'} 与智能体 ${agentId} 的对话`;
   } else if (kind === 'autopilot') {
@@ -249,8 +258,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
 export function buildCommentMessages({ comment, issue }) {
   const authorType = comment?.author_type ?? 'member';
   const authorId = String(comment?.author_id ?? comment?.author?.id ?? '');
-  const identifier = issue?.identifier ?? issue?.id ?? '';
-  const where = `${identifier} ${issue?.title ?? ''}`.trim();
+  const where = issueName(issue);
   const turn = `comment-${sanitizeSessionId(comment.id ?? 'x')}`;
   const rawBody = String(comment.content ?? '');
   const body = cap(authorType === 'agent' ? stripRuntimeBrief(rawBody) : rawBody, 8000);
@@ -266,7 +274,7 @@ export function buildCommentMessages({ comment, issue }) {
           role: 'assistant',
           message_kind: 'assistant_step',
           turn_id: turn,
-          parts: [{ type: 'text', text: `[智能体评论] 智能体 ${authorId} 在 ${where} 下发表 (${when}):\n\n${body}` }],
+          parts: [{ type: 'text', text: `[智能体评论] 智能体 ${authorId} 在 ${where || '该任务'} 下发表 (${when}):\n\n${body}` }],
         },
       ],
     };

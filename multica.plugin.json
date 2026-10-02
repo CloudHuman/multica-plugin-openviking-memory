@@ -34,6 +34,14 @@
       "placeholder": "multica issue list",
       "multiline": true,
       "required": false
+    },
+    "memory_rules": {
+      "type": "string",
+      "label": "Memory extraction rules",
+      "description": "Optional extraction guidance for this workspace, one rule per line. Prefix a line with entities:, events:, preferences: or profile: to target one memory type; other lines apply to all. Written to this workspace's own OpenViking account as account-level memory templates; leave empty for OpenViking's defaults.",
+      "placeholder": "preferences: Keep each lasting preference as its own memory.",
+      "multiline": true,
+      "required": false
     }
   },
   "contributes": {

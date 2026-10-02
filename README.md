@@ -169,7 +169,9 @@ POST /internal/recall    // 供注入方拉取召回块
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
 | `OVMEM_RECALL_ENTRIES` | `5` | 每次召回条数上限（1-10） |
 
-multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）。
+multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）、`memory_rules`（本工作区的抽取规则，见下）。
+
+**工作区抽取规则 `memory_rules`**：每行一条，`entities:` / `events:` / `preferences:` / `profile:` 前缀把一行限定到一类记忆，其余行对所有类型生效；空行和 `#` 开头的行忽略。插件把规则写入该工作区自己 OV 账户的账号级模板（OpenViking 自带能力，只追加在原生描述之后，不替换），在该工作区下一条记录提交前生效，只影响这个工作区。清空即恢复 OV 默认，插件不会改动它没写过的模板。规则须是纯文本（不能含 `{{`、`{%`、`{#`），单个配置值上限 4 KB（multica 限制）；无效规则不生效，已生效的保持不变。状态见 `memory-status` 的 `memory_rules`（`default` / `applied` / `invalid` / `error`，不回显规则原文）。
 
 调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（2000）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
 
@@ -205,7 +207,7 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
   - 绑定 issue 的运行若只用 UUID / issue 编号加中英文通用词查询，改用该 issue 的业务目标查询。
   - 查询用本运行自己的 issue UUID、编号或任务 UUID 指代本任务（例如 `issue <uuid> context or related decisions for <工作区名>`）时，去掉这些标识，在原措辞前补入该 issue 的业务目标。超时与错误表示检索未完成，空结果不能证明没有记忆。
 
-- **不改 OpenViking 自身**：插件不修改 OpenViking 的抽取模板、提示词和代码，OV 按原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、按作者归属消息；召回和共享晋升时过滤已知执行控制、检索失败结论和平台脚手架。因此记忆里写成什么样取决于 OV 的原生抽取，插件只能决定把哪些内容交给 OV，以及取回时展示哪些。测试可另外用 OV 自带的账号级模板对比抽取规则：`e2e/real-agent/memory-policy.json` 只写入测试工作区对应的 OV 账户，不改实例配置和其他账户，插件运行时也不写入，见[真实智能体验证](e2e/real-agent/README.md)。
+- **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。工作区如需定制，可在安装配置 `memory_rules` 写自己的抽取规则，只作用于该工作区自己的 OV 账户（见上）。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。
@@ -242,6 +244,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-02 工作区抽取规则与归档清理**：新增安装配置 `memory_rules`，各工作区可为自己的 OV 账户追加抽取规则（账号级模板，提交前生效，清空恢复默认，状态见 `memory-status`）。归档时任务标题行用 issue 标题代替编号，避免编号被写进记忆卡。召回与共享晋升把“历史检索为空不影响确认”这类空检索结论当作检索结论过滤，“检索结果为空时显示提示”这类产品规则不受影响。
 - **2026-10-02 推荐配置改用 OV 默认输出格式**：`deploy/ov.openrouter.conf.example` 去掉 `memory.extraction_output_format: "json"`。json 格式下，模型偶尔先输出一段空补丁、再补一段修正结果，OV 采用第一段，生成空实体卡（见 [`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)）。账号级测试规则的通用部分只写一份，放在 entities，每次抽取的提示词约少 7K 字符。quality 验证器接受“7600 元（之前的约定）”和“由 7600 元调整”这类历史写法，但仍拒绝注释里带其他金额、写明仍然有效，或反向调整的情况。
 - **2026-10-01 不再覆盖 OV 实例级抽取模板**：推荐配置不再设置 `memory.custom_templates_dir`，移除实例模板生成脚本；实例级覆盖会影响同一 OpenViking 上所有账号和应用的蒸馏。抽取规则改为测试选项：设置 `REAL_AGENT_MEMORY_POLICY=account` 时，规则只写入测试工作区 OV 账户的账号级模板。规则追加在 profile、events、preferences、entities 的描述后；OV 0.4.22 不开放 experiences、cases 的账号级修改，原有这两类的规则因此移除；规则中的示例也不再使用测试用例的具体值。
 - **2026-10-01 评审补修**：主动记忆持久化递归索引并监视失败重驱；归档持久化失败返回 503 供重投；按实际归档内容去重收尾评论；重启压缩保留待抽取任务；提交任务过期后从归档标记恢复；账本兼容旧格式并保留重启去重；端到端核验原文、预算、阈值和私聊偏好。
