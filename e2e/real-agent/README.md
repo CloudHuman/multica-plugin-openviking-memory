@@ -40,6 +40,10 @@ quality 套件遇到内容上的失败时记一项失败、继续往下跑，不
 - 共享空间里查不到当前事实时，不再问 B，记 `real-B-current-shared-recall` 失败；
 - 私聊版式没有抽出或查不到时，不发新会话，记 `real-DM-layout-recall` 失败。
 
+matrix 套件的两次交接也一样：A 完成任务却没有提及 B（自己作答），两分钟内没有派发出 B 的任务，就记一项失败继续往下跑，不再等满十分钟后整轮停止。第一次交接没有派发时，`real-delegation-linked`、`real-delegation-archive`、`delegation-cross-task-recall` 都记失败（依赖第一次交接写入的委派通道）；第二次没有派发时只记 `delegation-cross-task-recall`，报告保留 A 的转写。
+
+`multi-agent-collaboration` 改派给 B 之前，先删除 A 在该 issue 下的确认评论（A 的记忆此时已抽取、可检索）。B 会先读评论线程，评论还在时它直接照抄评论，不调用 memory-recall，检查的就不是任务记忆了。
+
 抽取失败或超时、任务没有完成这类环境问题仍会停止运行。
 
 `REAL_AGENT_SUITE=delivery` 独立验证交付恢复，不受共享检索是否可用影响。成员直接提供一条待交付 JSON，实际智能体发布后才注入受控失败，核验内容，再两次提交同一恢复凭据，并确认仍只有一个任务且评论数量不增加。这里的答案由成员提供，不计入蒸馏准确性。

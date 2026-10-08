@@ -120,6 +120,9 @@ export async function runMatrix(ctx) {
   const taskScope = `task:${ws}:${collaboration.issue.id}`;
   await extracted(collaboration.task.id, taskScope);
   await searchable(taskScope, '苍鹭发布预算与双写', /7600/);
+  // A's confirmation is still in the thread, and B reads the thread first:
+  // without it the reassigned run has only the task memory to go on.
+  for (const comment of collaboration.record.comments) await call(`/api/comments/${comment.id}`, undefined, 'DELETE');
   await call(`/api/issues/${collaboration.issue.id}`, { description: `苍鹭发布之前确定的队列、预算与双写周期是什么？${finish} 数值没有在本次描述提供，请依据召回证据。`, assignee_type: 'agent', assignee_id: b.id }, 'PUT');
   const collaborator = await completed(b, t => t.issue_id === collaboration.issue.id, 'collaboration-recall');
   step('multi-agent-collaboration', cited(collaborator, taskScope) && /Pulsar/i.test(collaborator.response) && /7600/.test(collaborator.response) && /五天|5\s*天/.test(collaborator.response), 'Actual agent B recovered A task archive after issue reassignment and cited its URI');
@@ -142,19 +145,21 @@ export async function runMatrix(ctx) {
   }
 
   const delegated = await issueRun(a, '雨燕交接给复核智能体', `这是一次明确授权的多智能体交接测试。请先调用 memory-recall，然后实际用 multica issue comment add 在当前 issue 发布且只发布一次给复核智能体的交接评论。评论必须包含完整 mention：[@复核智能体](mention://agent/${b.id})，以及业务交接事实“雨燕项目重试上限为 7 次，请据此复核并引用记忆来源”。不要在这次运行直接回答复核问题。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。不要修改代码或主动写公共记忆。`, 'delegation-sender');
-  // B's reply may mention B again and start another run on the issue: the
-  // delegated run is B's first task there.
-  const delegatedRun = await wait('delegated receiver', async () => (await tasks(b)).filter(t => t.issue_id === delegated.issue.id).sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)))[0], 600000);
-  const receiver = await completed(b, t => t.id === delegatedRun.id, 'delegation-receiver');
+  const { firstReceiver, checkDelegationHistory } = await import('./delegation-check.mjs');
+  const handoff = await firstReceiver({ tasksOf: id => tasks({ id }), issueId: delegated.issue.id, fromAgentId: a.id, toAgentId: b.id });
   const channel = `delegation:${ws}:${a.id}:${b.id}`;
-  step('real-delegation-linked', recalls(receiver).some(r => r.run?.bound === true && r.scopesSearched?.some(s => s.scope === channel)), 'Actual A mention dispatched B with its delegation channel in recall scopes');
-  await extracted(receiver.task.id, `task:${ws}:${delegated.issue.id}`);
-  const channelEvent = await wait('actual delegation archive', async () => statuses().find(e => e.record === 'archive-delegation' && e.ref === receiver.task.id && e.extraction === 'done'), 45000).catch(() => null);
-  step('real-delegation-archive', !!channelEvent && channelEvent.scope === channel, 'The actual agent-authored handoff was archived and extracted in A to B channel');
-  const { checkDelegationHistory } = await import('./delegation-check.mjs');
-  const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: channel, state });
-  report.tasks.push(...history.records);
-  step('delegation-cross-task-recall', history.ok, 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI');
+  if (!handoff.receiver) {
+    for (const id of ['real-delegation-linked', 'real-delegation-archive', 'delegation-cross-task-recall']) step(id, false, 'Skipped: A finished without mentioning B, so nothing was delegated');
+  } else {
+    const receiver = await completed(b, t => t.id === handoff.receiver.id, 'delegation-receiver');
+    step('real-delegation-linked', recalls(receiver).some(r => r.run?.bound === true && r.scopesSearched?.some(s => s.scope === channel)), 'Actual A mention dispatched B with its delegation channel in recall scopes');
+    await extracted(receiver.task.id, `task:${ws}:${delegated.issue.id}`);
+    const channelEvent = await wait('actual delegation archive', async () => statuses().find(e => e.record === 'archive-delegation' && e.ref === receiver.task.id && e.extraction === 'done'), 45000).catch(() => null);
+    step('real-delegation-archive', !!channelEvent && channelEvent.scope === channel, 'The actual agent-authored handoff was archived and extracted in A to B channel');
+    const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: channel, state });
+    report.tasks.push(...history.records);
+    step('delegation-cross-task-recall', history.ok, history.detail);
+  }
 
   const dmScope = `dm:${ws}:${a.id}:${user.userId}`;
   const chatSeed = await chatRun(a, '私人周报排版', `蓝鹊周报是我的私人排版约定：固定按“风险、进展、下一步”三个中文标题，风险放第一。请先调用 memory-recall，再简短确认；这是私聊内容，不要写入公共记忆，不要创建 issue 或修改代码。`, 'chat-seed');
@@ -168,7 +173,7 @@ export async function runMatrix(ctx) {
     const { checkDelegationHistory } = await import('./delegation-check.mjs');
     const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: `delegation:${ws}:${a.id}:${b.id}`, state });
     report.tasks.push(...history.records);
-    step('delegation-cross-task-recall', history.ok, 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI');
+    step('delegation-cross-task-recall', history.ok, history.detail);
     for (const record of report.tasks.filter(t => t.chatSessionId)) {
       record.chatReplies = list(await call(`/api/chat/sessions/${record.chatSessionId}/messages`)).filter(m => m.role === 'assistant' && m.task_id === record.taskId).map(m => ({ id: m.id, content: m.content, taskId: m.task_id }));
     }
