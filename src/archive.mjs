@@ -4,7 +4,8 @@ import { withoutRunControls } from './memory-quality.mjs';
 /**
  * Pure builders: turn multica events + transcripts into OpenViking session
  * messages (parts mode), plus the archiving hygiene rules from the spec:
- *   - user business input preserved verbatim (issue text / chat message / comment);
+ *   - user business input preserved verbatim (issue text / chat message / comment),
+ *     except known one-run controls addressed to the agent (archiveDropRunControls);
  *   - agent visible replies, tool calls and results preserved as evidence;
  *   - who said what is kept honest: a member's words are user input attributed
  *     to that member (peer_id), an agent's words are assistant output, and a
@@ -41,7 +42,7 @@ function stripRuntimeBriefValue(value) {
   return value;
 }
 
-/** A member's words as archived: optionally without known one-run controls. */
+/** A member's words as archived: without known one-run controls unless archiveDropRunControls is off. */
 function memberText(text, cfg) {
   return cfg?.archiveDropRunControls ? withoutRunControls(text) : text;
 }

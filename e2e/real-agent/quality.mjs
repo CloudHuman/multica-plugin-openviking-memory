@@ -56,6 +56,8 @@ export async function runQuality(ctx) {
   }
   async function snapshot(scope, label) {
     const rec = scopes()[scope];
+    // Nothing was ever archived for this scope: an empty snapshot, which the checks report.
+    if (!rec) { report.qualitySnapshots.push({ label, scope, files: [], missing: true }); save(); return []; }
     const inventory = await listMemoryFiles({ ov, key: rec.apiKey, userId: rec.userId });
     if (!inventory.complete) throw new Error(`Incomplete snapshot ${label}`);
     const files = [];
@@ -66,15 +68,17 @@ export async function runQuality(ctx) {
   async function promote() {
     const response = await fetch(`${pluginUrl}/admin/consolidate`, { method: 'POST', headers: { Authorization: `Bearer ${pluginToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace_id: ws }) });
     const result = (await response.json()).result;
-    if (!response.ok || !result?.session_id) throw new Error('Shared promotion was not admitted');
+    if (!response.ok || !result) throw new Error(`Shared promotion failed: HTTP ${response.status}`);
     report.promotions ??= []; report.promotions.push(result); save();
-    await extracted(result.session_id);
+    // Nothing to promote is an outcome the checks record, not a reason to stop the run.
+    if (result.session_id) await extracted(result.session_id);
     return result;
   }
+  // Whether the expected facts became searchable within three bounded attempts.
   async function searchable(scope, query, pattern) {
     const rec = scopes()[scope];
-    if (!rec) throw new Error(`Missing readiness scope ${scope}`);
     report.searchReadiness ??= [];
+    if (!rec) { report.searchReadiness.push({ scope, query, ready: false, error: 'scope never archived', ts: new Date().toISOString() }); save(); return false; }
     for (let attempt = 1; attempt <= 3; attempt++) {
       // Indexing can trail extraction and single embedding calls can take 30 s+: wait between attempts.
       if (attempt > 1) await sleep(10000 * (attempt - 1));
@@ -83,15 +87,17 @@ export async function runQuality(ctx) {
         const contents = await Promise.all(hits.filter(h => h.context_type === 'memory').map(h => ov.readContent(rec.apiKey, h.uri)));
         const ready = contents.some(c => pattern.test(c.content ?? ''));
         report.searchReadiness.push({ scope, query, attempt, ready, ts: new Date().toISOString() }); save();
-        if (ready) return;
+        if (ready) return true;
         console.log(`Readiness ${scope}: expected indexed facts not returned (attempt ${attempt})`);
       } catch (error) {
         report.searchReadiness.push({ scope, query, attempt, ready: false, status: error.status, error: error.message, ts: new Date().toISOString() }); save();
         console.log(`Readiness ${scope}: search unavailable (attempt ${attempt})`);
       }
     }
-    throw new Error(`Readiness search unavailable after three bounded attempts: ${scope}`);
+    console.log(`Readiness ${scope}: not searchable after three bounded attempts`);
+    return false;
   }
+  const skipNote = (result) => [result.note, ...(result.skipped ?? []).map(s => `${s.file}: ${s.reasons.join('+')}`)].filter(Boolean).join('; ') || 'no memories';
   const finish = '请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。';
   try {
     if (!ctx.resume) {
@@ -104,7 +110,8 @@ export async function runQuality(ctx) {
     report.preferenceStorage = preferenceStorage(before); save();
     step('lasting-preference-retained', report.preferenceStorage !== 'missing', `Lasting Chinese-comment preference survived alongside temporary task controls (${report.preferenceStorage})`);
     step('no-active-write-shortcut', !seed.record.tools.some(t => /memory.*remember|ov.*write/.test(t)), 'Seed used automatic extraction, not active memory writes');
-    await promote();
+    const initial = await promote();
+    step('initial-promotion-admitted', !!initial.session_id, initial.session_id ? `Seed memories promoted: ${initial.promoted.map(p => p.file).join(', ')}` : `Nothing to promote after the seed run (${skipNote(initial)})`);
     const previousIds = new Set((await tasks(a)).map(t => t.id));
     await mc.comment(user.token, ws, seed.issue.id, `新的正式要求：苍鹭发布预算调整为 8100 元，其他约定不变，明确以本次更新为准。${finish}`);
     const update = await completed(a, t => t.issue_id === seed.issue.id && !previousIds.has(t.id), 'quality-budget-update');
@@ -129,13 +136,17 @@ export async function runQuality(ctx) {
       report.validatorCorrections.push({ check: 'current-entity-update', reason: 'Old check rejected any 7600 mention; stored card explicitly marks it as previous, with current budget 8100. Corrected check rejects unresolved old current values while accepting labelled history.' });
       step('current-entity-update', after.files.some(f => /\/entities\//.test(f.uri) && hasCurrentBudget(f.content)), 'Original stored entity has current 8100 and explicitly labelled previous 7600, preserving all other facts');
     }
-    await searchable(`shared:${ws}`, '苍鹭发布当前消息系统、月预算与双写周期', /8100/);
+    const promoted = (report.promotions ?? []).some(p => p.session_id);
+    const sharedReady = promoted && await searchable(`shared:${ws}`, '苍鹭发布当前消息系统、月预算与双写周期', /8100/);
     let answer = ctx.resume ? [...report.tasks].reverse().find(t => t.entry === 'quality-shared-recall' && hasSharedRecall(t, `shared:${ws}`)) : null;
     if (answer) {
       // A model error after posting the correct comment does not invalidate
       // the observed tool recall. Keep its failed delivery as a separate check.
       report.deliveryLimitations ??= [];
       if (answer.status !== 'completed') report.deliveryLimitations.push({ taskId: answer.taskId, status: answer.status, error: answer.error });
+    } else if (!sharedReady) {
+      // B can learn these facts only from shared memory: without them there is nothing to recall.
+      step('real-B-current-shared-recall', false, promoted ? 'Skipped: the promoted facts were not searchable in shared memory after three attempts' : 'Skipped: nothing was promoted to shared memory');
     } else if (ctx.resume) {
       const failed = report.tasks.find(t => t.entry === 'quality-shared-recall' && t.status === 'failed');
       if (!failed) throw new Error('Quality continuation requires the original failed B query');
@@ -148,20 +159,27 @@ export async function runQuality(ctx) {
     } else {
       answer = (await issueRun(b, '另一智能体查询苍鹭最新业务约定', `苍鹭发布目前的消息系统、每月预算和双写周期分别是什么？${finish} 本次没有提供答案数值；只依据实际 memory-recall 来源回答，不要查询其他 issue。回复中引用来源 URI。`, 'quality-shared-recall')).record;
     }
-    step('real-B-current-shared-recall', hasSharedRecall(answer, `shared:${ws}`), 'Actual B recovered all current facts from shared memory without supplied answer values');
-    step('real-B-task-delivery', answer.status === 'completed', 'Task completion is checked separately from recalled facts and persisted comments');
-    await extracted(answer.taskId);
+    if (answer) {
+      step('real-B-current-shared-recall', hasSharedRecall(answer, `shared:${ws}`), 'Actual B recovered all current facts from shared memory without supplied answer values');
+      step('real-B-task-delivery', answer.status === 'completed', 'Task completion is checked separately from recalled facts and persisted comments');
+      await extracted(answer.taskId);
+    }
     const dm = report.tasks.find(t => t.entry === 'quality-dm-seed' && t.status === 'completed')
       ?? await chatRun(a, '蓝鹊持久周报格式', `蓝鹊周报是我的私人排版约定：今后固定按“风险、进展、下一步”三个中文标题，风险放第一。仅用于私聊，不写入公共记忆。${finish}`, 'quality-dm-seed');
     await extracted(dm.taskId);
     const dmScope = `dm:${ws}:${a.id}:${user.userId}`;
     const dmFiles = await snapshot(dmScope, 'private-preference');
-    step('dm-distilled-peer-layout', dmFiles.some(f => /\/peers\//.test(f.uri) && /\/preferences\//.test(f.uri) && /风险、进展、下一步/.test(f.content)), 'Real private layout was extracted into the peer memory namespace');
-    await searchable(dmScope, '蓝鹊周报之前约定的三个标题和顺序', /风险、进展、下一步/);
-    const recalled = report.tasks.find(t => t.entry === 'quality-dm-recall' && t.status === 'completed' && t.recalls?.some(r => r.entries?.some(e => e.scope === dmScope)))
-      ?? await chatRun(a, '蓝鹊新会话查询', `蓝鹊周报之前约定的三个标题及顺序是什么？${finish} 本次没有再次提供标题；根据实际召回回复并引用来源 URI。`, 'quality-dm-recall');
-    step('real-DM-layout-recall', /风险/.test(recalled.response) && /进展/.test(recalled.response) && /下一步/.test(recalled.response) && recalled.recalls.some(r => r.entries.some(e => e.scope === dmScope && recalled.response.includes(e.uri))), 'New actual chat recovered private layout from its pair memory');
-    await extracted(recalled.taskId);
+    const layoutExtracted = dmFiles.some(f => /\/peers\//.test(f.uri) && /\/preferences\//.test(f.uri) && /风险、进展、下一步/.test(f.content));
+    step('dm-distilled-peer-layout', layoutExtracted, 'Real private layout was extracted into the peer memory namespace');
+    const earlierRecall = report.tasks.find(t => t.entry === 'quality-dm-recall' && t.status === 'completed' && t.recalls?.some(r => r.entries?.some(e => e.scope === dmScope)));
+    const dmReady = !earlierRecall && layoutExtracted && await searchable(dmScope, '蓝鹊周报之前约定的三个标题和顺序', /风险、进展、下一步/);
+    if (earlierRecall || dmReady) {
+      const recalled = earlierRecall ?? await chatRun(a, '蓝鹊新会话查询', `蓝鹊周报之前约定的三个标题及顺序是什么？${finish} 本次没有再次提供标题；根据实际召回回复并引用来源 URI。`, 'quality-dm-recall');
+      step('real-DM-layout-recall', /风险/.test(recalled.response) && /进展/.test(recalled.response) && /下一步/.test(recalled.response) && recalled.recalls.some(r => r.entries.some(e => e.scope === dmScope && recalled.response.includes(e.uri))), 'New actual chat recovered private layout from its pair memory');
+      await extracted(recalled.taskId);
+    } else {
+      step('real-DM-layout-recall', false, layoutExtracted ? 'Skipped: the private layout was not searchable after three attempts' : 'Skipped: no private layout was extracted to recall');
+    }
     const audit = await auditMemories({ ov, scopes: scopes(), canary, issuePrefix });
     report.memoryAudit = audit;
     step('peer-audit-coverage', audit.every(s => s.complete) && audit.some(s => s.scope === dmScope && s.peerFiles > 0), 'Complete memory audit included peer-owned private memories');

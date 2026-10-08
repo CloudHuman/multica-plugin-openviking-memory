@@ -38,10 +38,11 @@ export const DEFAULTS = {
   textPartMaxChars: 4000,
   toolOutputMaxChars: 8000,
   dropToolPrefixes: [],
-  // Experimental, off by default: archive members' messages and task descriptions
-  // without known one-run controls ("请先调用 memory-recall", "不要修改代码"), so
-  // extraction cannot copy them into memories. Being compared in real-model runs.
-  archiveDropRunControls: false,
+  // Archive members' messages and task descriptions without known one-run controls
+  // ("请先调用 memory-recall", "不要修改代码"): OpenViking's extraction otherwise
+  // copies them into memories, or obeys "不要主动记录记忆" and writes nothing
+  // (reports/real-agent-2026-10-08-archive-run-controls-ab.md). 0 archives verbatim.
+  archiveDropRunControls: true,
   // Everything memory-archive fetches while the callback token is alive must fit in
   // this budget: multica abandons (and retries) a hook that outlives its timeout_ms.
   archiveFetchBudgetMs: 12_000,
@@ -83,7 +84,7 @@ const ENV_MAP = {
   tlsCert: ['OVMEM_TLS_CERT'],
   tlsKey: ['OVMEM_TLS_KEY'],
   recallEntries: ['OVMEM_RECALL_ENTRIES', toNumber],
-  archiveDropRunControls: ['OVMEM_ARCHIVE_DROP_RUN_CONTROLS', (v) => ['1', 'true'].includes(v)],
+  archiveDropRunControls: ['OVMEM_ARCHIVE_DROP_RUN_CONTROLS', (v) => !['0', 'false', 'off', 'no'].includes(v.trim().toLowerCase())],
 };
 
 /**

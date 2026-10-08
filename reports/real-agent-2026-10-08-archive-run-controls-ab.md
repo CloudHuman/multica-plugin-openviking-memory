@@ -1,5 +1,7 @@
 # 真实模型 A/B：归档前去掉成员消息里的执行指令 — 2026-10-08 UTC
 
+> **决定（2026-10-08）**：按本报告的结果，`archiveDropRunControls` 改为默认开启，设 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS=0` 可恢复按原文归档。quality 套件同时改为遇到内容失败时记失败、继续跑（见 README 变更记录）。
+
 用户的问题是：原生抽取有时把“回复前先调用 memory-recall”这类执行指令写进记忆，要不要在归档前就去掉成员消息里这些固定的执行指令。决定前先做 A/B 对比。
 
 为此在 `6bb923e` 加了实验开关 `archiveDropRunControls`，默认关闭（环境变量 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS`）。开启后：

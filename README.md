@@ -168,7 +168,7 @@ POST /internal/recall    // 供注入方拉取召回块
 | `OVMEM_PLUGIN_TOKEN` | — | `/internal` + `/admin` Bearer（必填） |
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
 | `OVMEM_RECALL_ENTRIES` | `5` | 每次召回条数上限（1-10） |
-| `OVMEM_ARCHIVE_DROP_RUN_CONTROLS` | `0` | 实验开关，默认关闭：归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”），也可在 `state/config.json` 设 `archiveDropRunControls`。A/B 结果见 [`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md) |
+| `OVMEM_ARCHIVE_DROP_RUN_CONTROLS` | `1` | 归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要主动记录记忆”）；设为 `0` 按原文归档，也可在 `state/config.json` 设 `archiveDropRunControls`。依据见 [A/B 报告](reports/real-agent-2026-10-08-archive-run-controls-ab.md) |
 
 multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）、`memory_rules`（本工作区的抽取规则，见下）。
 
@@ -221,7 +221,7 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
   - 绑定 issue 的运行若只用 UUID / issue 编号加中英文通用词查询，改用该 issue 的业务目标查询。
   - 查询用本运行自己的 issue UUID、编号或任务 UUID 指代本任务（例如 `issue <uuid> context or related decisions for <工作区名>`）时，去掉这些标识，在原措辞前补入该 issue 的业务目标。超时与错误表示检索未完成，空结果不能证明没有记忆。
 
-- **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。工作区如需定制，可在安装配置 `memory_rules` 写自己的抽取规则，只作用于该工作区自己的 OV 账户（见上）。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
+- **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、去掉成员写给智能体的一次性执行指令、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。工作区如需定制，可在安装配置 `memory_rules` 写自己的抽取规则，只作用于该工作区自己的 OV 账户（见上）。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。
@@ -258,6 +258,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-08 默认去掉执行指令；quality 记失败继续跑**：按 A/B 结果，`archiveDropRunControls` 改为默认开启，设 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS=0` 按原文归档。quality 套件遇到“晋升为空”“共享里查不到当前事实”“私聊版式没有抽出”时，记一项失败、继续往下跑，不再整轮停止；新增检查 `initial-promotion-admitted`。新增的离线测试用模拟环境跑通了这些路径。
 - **2026-10-08 规则模板与归档前去掉执行指令的 A/B**：参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 写进文档。新增实验开关 `archiveDropRunControls`（默认关闭）：归档前去掉成员消息和任务描述里已知的一次性执行指令。原生抽取各跑 3 轮：关闭时 3 轮都有抽取因成员的“不要主动记录记忆”放弃写入，丢掉了种子任务的卡片或私聊版式；开启时 0 次，没有看到事实或偏好损失。开启组两次失败都来自成员原文里的检索结论句，共享晋升已把它去掉，这也是清理后晋升第一次在真实运行里触发（见 [`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)）。
 - **2026-10-08 清理后晋升与工作区规则真实验证**：共享晋升遇到夹杂临时执行指令或检索结论的卡片时，去掉这些句子后晋升其余事实（`promoted[].cleaned`）；只改了被去掉的句子不会再次晋升。quality 的偏好检查接受偏好单独成条或写在项目实体卡里，报告记录存放位置。real-agent 新增 `REAL_AGENT_MEMORY_POLICY=config`，经 Multica 安装配置写入 `memory_rules`。真实模型各跑 1 轮：config 16/16，规则在首次提交前生效，12 次抽取全部带上；native 14/15，私聊偏好里混入一句执行指令；两轮的实体卡都不再带 issue 编号（见 [`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)）。
 - **2026-10-02 工作区抽取规则与归档清理**：新增安装配置 `memory_rules`，各工作区可为自己的 OV 账户追加抽取规则（账号级模板，提交前生效，清空恢复默认，状态见 `memory-status`）。归档时任务标题行用 issue 标题代替编号，避免编号被写进记忆卡。召回与共享晋升把“历史检索为空不影响确认”这类空检索结论当作检索结论过滤，“检索结果为空时显示提示”这类产品规则不受影响。

@@ -33,7 +33,14 @@
 
 设置 `REAL_AGENT_MEMORY_POLICY=config` 时，走工作区管理员的真实路径：安装后经 multica 的配置接口把文档里的参考模板 [`deploy/memory-rules.example.txt`](../../deploy/memory-rules.example.txt) 写进安装配置 `memory_rules`，multica 随每次 hook 投递配置，插件在首次归档提交前把规则写入该工作区账户的模板。运行结束时检查 `memory-rules-applied`：插件记录的状态为 applied、规则条数与文件一致，OV 中对应模板为 custom 且带工作区规则标题，应用时间早于首次提交。这份模板约 2 KB，在配置上限以内，同样不含测试用例的具体值。
 
-设置 `REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS=1` 时，插件以实验开关 `archiveDropRunControls` 启动：成员消息和任务描述归档前去掉已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”），用来和默认归档做 A/B 对比。报告的 `archiveDropRunControls` 记录这一设置，续跑必须保持一致。
+插件默认在归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”，设置项 `archiveDropRunControls`）。设置 `REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS=0` 时按原文归档，用来对比。报告的 `archiveDropRunControls` 记录实际设置，续跑必须保持一致。
+
+quality 套件遇到内容上的失败时记一项失败、继续往下跑，不再整轮停止：
+- 第一次晋升没有内容时，记 `initial-promotion-admitted` 失败；
+- 共享空间里查不到当前事实时，不再问 B，记 `real-B-current-shared-recall` 失败；
+- 私聊版式没有抽出或查不到时，不发新会话，记 `real-DM-layout-recall` 失败。
+
+抽取失败或超时、任务没有完成这类环境问题仍会停止运行。
 
 `REAL_AGENT_SUITE=delivery` 独立验证交付恢复，不受共享检索是否可用影响。成员直接提供一条待交付 JSON，实际智能体发布后才注入受控失败，核验内容，再两次提交同一恢复凭据，并确认仍只有一个任务且评论数量不增加。这里的答案由成员提供，不计入蒸馏准确性。
 

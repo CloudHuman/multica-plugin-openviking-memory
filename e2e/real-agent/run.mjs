@@ -25,8 +25,8 @@ if (!['basic', 'matrix', 'quality', 'benchmark', 'delivery'].includes(suite)) th
 // templates (account), or the installation's memory_rules config, which the plugin applies (config).
 const memoryPolicy = env.REAL_AGENT_MEMORY_POLICY ?? 'native';
 if (!MEMORY_POLICY_MODES.includes(memoryPolicy)) throw new Error(`Unknown memory policy: ${memoryPolicy}`);
-// Experimental plugin setting under comparison: archive members' messages without known one-run controls.
-const archiveDropRunControls = env.REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS === '1';
+// The plugin archives members' messages without known one-run controls; 0 archives them verbatim (for comparison).
+const archiveDropRunControls = env.REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS !== '0';
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
@@ -62,6 +62,7 @@ if (previous) {
   delete report.error; delete report.finishedAt;
   if (report.model !== model) throw new Error('Resume must retain the original agent model');
   if ((report.memoryPolicy?.scope ?? 'native') !== memoryPolicy) throw new Error('Resume must retain the original memory policy');
+  // Reports from before the setting existed archived verbatim.
   if ((report.archiveDropRunControls ?? false) !== archiveDropRunControls) throw new Error('Resume must retain the original archive setting');
 }
 report.profile = profile;
@@ -111,7 +112,7 @@ try {
     }
     privateFile(join(state, 'access.json'), { token: user.token, userId: user.userId, workspaceId: ws });
     privateFile(join(cliRoot, 'profiles', profile, 'config.json'), { server_url: mc.base, token: pat.token, workspace_id: ws, workspaces_root: join(state, 'workspaces') });
-    privateFile(join(pluginState, 'config.json'), { extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000, ...(archiveDropRunControls ? { archiveDropRunControls: true } : {}) });
+    privateFile(join(pluginState, 'config.json'), { extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000, archiveDropRunControls });
   }
   const pluginToken = previous ? JSON.parse(readFileSync(join(state, 'plugin-access.json'), 'utf8')).pluginToken : randomUUID();
   privateFile(join(state, 'plugin-access.json'), { pluginToken, pluginUrl });

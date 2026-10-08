@@ -5,6 +5,10 @@ import {
   buildDelegationMessages, buildRememberFile, stripRuntimeBrief, makeDropToolMatcher,
   chunkMessages, commitTags, sanitizeTagValue,
 } from '../src/archive.mjs';
+import { archiveSettings, loadConfig } from '../src/config.mjs';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fixtureIssue, fixtureTranscript, FIXTURE_ISSUE_ID, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B, FIXTURE_USER } from './helpers.mjs';
 
 const cfg = {
@@ -96,7 +100,13 @@ test('agent comments and chat replies filter runtime instructions without changi
   assert.equal(chat.messages[1].content, 'Confirmed');
 });
 
-test('the experimental switch archives members\' words without their one-run controls; off by default', () => {
+test('members\' words are archived without their one-run controls by default; off keeps them verbatim', () => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'ovmem-cfg-'));
+  assert.equal(loadConfig({}, { stateDir }).archiveDropRunControls, true, 'on by default');
+  assert.equal(loadConfig({ OVMEM_ARCHIVE_DROP_RUN_CONTROLS: '0' }, { stateDir }).archiveDropRunControls, false);
+  assert.equal(loadConfig({ OVMEM_ARCHIVE_DROP_RUN_CONTROLS: 'false' }, { stateDir }).archiveDropRunControls, false);
+  assert.equal(loadConfig({ OVMEM_ARCHIVE_DROP_RUN_CONTROLS: '1' }, { stateDir }).archiveDropRunControls, true);
+  assert.equal(archiveSettings(loadConfig({}, { stateDir })).archiveDropRunControls, true, 'queued jobs keep the setting');
   // The fixed instructions a member appended in the 2026-10-08 real runs.
   const finish = '请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。';
   const description = `成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元。以后这个项目的代码注释一律使用中文。${finish}`;
