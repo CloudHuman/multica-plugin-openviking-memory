@@ -193,7 +193,7 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 
 multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`，一条记录只对应一个作业。
 
-**共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间。跳过命中的临时执行控制、检索失败结论、平台脚手架和目录摘要；`skipped` 返回原因。保留来源范围与完整 URI，按内容版本幂等：同文件内容更新后可再次晋升，明确回滚到旧值也作为新版本处理；完全相同内容的副本不重复晋升。旧版 URI 回执会对当前安全内容补晋升一次。筛选规则是有限的防护，不是通用语义分类器；超过 3500 字符的候选暂不自动晋升，避免截掉事实。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
+**共享空间晋升**：`POST /admin/consolidate {workspace_id}` 把各智能体公共/任务空间中可复用类别（experiences / cases / preferences / entities）的记忆经 OV 原生抽取管道晋升进共享空间。卡片里夹杂临时执行控制或检索结论（如“不要修改代码”“历史检索为空”）时，去掉这些句子、晋升其余事实，`promoted[].cleaned` 列出去掉的类别；去掉后不剩事实，或含运行时说明、平台脚手架、目录摘要的文件不晋升，`skipped` 返回原因。保留来源范围与完整 URI，按要共享的内容版本幂等：同文件事实更新后可再次晋升，明确回滚到旧值也作为新版本处理，只改了被去掉的句子不会再次晋升；完全相同内容的副本不重复晋升。旧版 URI 回执会对当前安全内容补晋升一次。筛选规则是有限的防护，不是通用语义分类器；超过 3500 字符的候选暂不自动晋升，避免截掉事实。晋升后的内容工作区所有智能体可读——私聊配对空间不参与晋升，skill 也提醒智能体不要把私密内容写进公共记忆。`scripts/consolidate-nightly.sh` + `deploy/consolidate.plist` 提供每夜 03:30 定时。
 
 晋升先返回 `status: queued`、`job_id` 与 `session_id`，表示持久化受理，抽取结果通过同一归档状态接口查看。队列和抽取监视在重启后恢复，失败时在新会话重驱；超过重驱预算后可用 `/admin/redrive {job_id}` 再试。旧版本未经监视的失败晋升可通过 `/admin/consolidate {workspace_id, replay_session_id}` 从原归档恢复，须提供 `mc-consolidate-*` 会话且有失败记录；只读取该工作区的共享空间，成功或尚未完成的会话不能重放。
 
