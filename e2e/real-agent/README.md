@@ -42,6 +42,8 @@ quality 套件遇到内容上的失败时记一项失败、继续往下跑，不
 
 matrix 套件的两次交接也一样：A 完成任务却没有提及 B（自己作答），两分钟内没有派发出 B 的任务，就记一项失败继续往下跑，不再等满十分钟后整轮停止。第一次交接没有派发时，`real-delegation-linked`、`real-delegation-archive`、`delegation-cross-task-recall` 都记失败（依赖第一次交接写入的委派通道）；第二次没有派发时只记 `delegation-cross-task-recall`，报告保留 A 的转写。第二次交接直接给出 A 要原样发布的评论：10-08 的两次回归里，让 A 自己写评论时，A 一次自己作答，一次写了“已转交”却漏了 mention。
 
+B 回复交接时如果照抄了指向自己的 mention，Multica 会在同一 issue 上再派发 B，B 的每次回复都会再触发一次（10-08 的回归中约 13 分钟多跑了 31 次）。脚本在找到接收方的第一次任务后监视该 issue，取消接收方之后在这里的任务，并把它们记入报告的 `selfMentionReruns` 和一条限制说明。
+
 `multi-agent-collaboration` 改派给 B 之前，先删除 A 在该 issue 下的确认评论（A 的记忆此时已抽取、可检索）。B 会先读评论线程，评论还在时它直接照抄评论，不调用 memory-recall，检查的就不是任务记忆了。
 
 抽取失败或超时、任务没有完成这类环境问题仍会停止运行。

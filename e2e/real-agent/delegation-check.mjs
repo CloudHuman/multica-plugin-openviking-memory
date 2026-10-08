@@ -31,7 +31,7 @@ export async function firstReceiver({ tasksOf, issueId, fromAgentId, toAgentId, 
 // Multica dispatches a comment that mentions its own author (meant for
 // notifying another issue), and a receiver that copies the handoff's mention
 // into its reply is dispatched again after every run: in the 10-08 regression
-// B ran 31 more times in 14 minutes. The guard cancels a receiver's later runs
+// B ran 31 more times in 13 minutes. The guard cancels a receiver's later runs
 // on the handoff issues it watches and lists them.
 export function selfMentionGuard({ tasksOf, cancel, interval = 5000 }) {
   const watched = new Map();
