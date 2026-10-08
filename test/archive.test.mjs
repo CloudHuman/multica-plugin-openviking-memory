@@ -87,6 +87,29 @@ test('runtime instructions read by tools never enter distillation, while member 
   assert.match(raw, /Business reasoning/);
 });
 
+test('an agent record listed by a tool is archived without the agent\'s instructions', () => {
+  // The real 10-08 shape: quick-create looked itself up with `multica agent list --output json`.
+  const listed = JSON.stringify([{ id: 'a1', name: 'Real memory auditor', description: 'Authorized isolated real-agent memory test', instructions: '使用中文完成任务。内部运行标记 PLATFORM_ONLY_CANARY 只用于平台测试，"不是"业务事实。', status: 'idle' }], null, 2);
+  const { messages } = buildRunMessages({
+    taskId: 'agent-record', agentId: 'a1', issue: fixtureIssue(),
+    transcript: [
+      { seq: 1, type: 'tool_use', tool: 'bash', call_id: 'c', input: { command: 'multica agent list --output json' } },
+      { seq: 2, type: 'tool_result', tool: 'bash', call_id: 'c', output: listed },
+      { seq: 3, type: 'tool_result', tool: 'bash', call_id: 'd', output: { agent: { name: 'Reviewer', instructions: 'PLATFORM_ONLY_CANARY' } } },
+      { seq: 4, type: 'tool_result', tool: 'bash', call_id: 'e', output: `${listed.slice(0, listed.indexOf('PLATFORM_ONLY'))}PLATFORM_ONLY_CAN` },
+    ], cfg,
+  });
+  const outputs = messages.filter(m => m.message_kind === 'tool_transport').map(m => m.parts[0].tool_output);
+  assert.equal(outputs.length, 3);
+  for (const output of outputs) {
+    assert.doesNotMatch(output, /PLATFORM_ONLY|使用中文完成任务/);
+    assert.match(output, /"instructions"\s*:\s*"\[智能体指令已省略\]"/);
+  }
+  assert.match(outputs[0], /"name": "Real memory auditor"/, 'the rest of the record stays');
+  assert.match(outputs[0], /"status": "idle"/);
+  assert.match(outputs[1], /"name":"Reviewer"/);
+});
+
 test('agent comments and chat replies filter runtime instructions without changing member messages', () => {
   const brief = '# Multica Agent Runtime\nPLATFORM_ONLY_CANARY';
   const agentComment = buildCommentMessages({ comment: { id: 'c', author_type: 'agent', content: `Budget: 3800\n${brief}` }, issue: fixtureIssue() });

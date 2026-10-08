@@ -42,6 +42,23 @@ function stripRuntimeBriefValue(value) {
   return value;
 }
 
+// An agent record printed by a tool (`multica agent list --output json`)
+// carries the agent's instructions, its own system prompt, which is never
+// archived: in the 10-08 matrix it brought the platform canary into a run
+// archive. The value is replaced and the rest of the record kept; a value cut
+// off by a size limit is replaced up to where it ends.
+const AGENT_INSTRUCTIONS = /("instructions"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|$)/g;
+export const INSTRUCTIONS_OMITTED = '[智能体指令已省略]';
+
+export function withoutAgentInstructions(value) {
+  if (typeof value === 'string') return value.replace(AGENT_INSTRUCTIONS, `$1"${INSTRUCTIONS_OMITTED}"`);
+  if (Array.isArray(value)) return value.map(withoutAgentInstructions);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, key === 'instructions' && typeof item === 'string' ? INSTRUCTIONS_OMITTED : withoutAgentInstructions(item)]));
+  }
+  return value;
+}
+
 /** A member's words as archived: without known one-run controls unless archiveDropRunControls is off. */
 function memberText(text, cfg) {
   return cfg?.archiveDropRunControls ? withoutRunControls(text) : text;
@@ -232,7 +249,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
       }
       case 'tool_result': {
         if (droppedCalls.has(m.call_id) || drop(m.tool, m.output)) { dropped++; continue; }
-        const clean = stripRuntimeBriefValue(m.output);
+        const clean = withoutAgentInstructions(stripRuntimeBriefValue(m.output));
         const output = clean && typeof clean === 'object' ? JSON.stringify(clean) : clean;
         messages.push({
           role: 'user',
