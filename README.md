@@ -223,6 +223,7 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 
 - **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、去掉成员写给智能体的一次性执行指令、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。工作区如需定制，可在安装配置 `memory_rules` 写自己的抽取规则，只作用于该工作区自己的 OV 账户（见上）。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
 - **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
+- **智能体自我 @ 循环**：智能体回复交接时如果照抄了指向自己的 mention，原版 multica 会在同一 issue 上反复派发它（防循环只合并仍在排队的任务）。插件会把每次运行照常归档、抽取，委派通道不受影响，但任务记忆里会写进循环出来的内容。补丁 [`0005`](upstream/multica/README.md) 让同一 issue 上的自我 @ 不再派发，尚未进入 multica 主线。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。
 
@@ -258,7 +259,8 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
-- **2026-10-08 basic 与 matrix 回归**：basic 13/13。matrix 跑了 3 次都没跑完，问题都在测试脚本、Multica 平台和模型行为上，插件没有发现回归：第 3 次 22/23 项通过，收尾审计离线补跑 3/3。Multica 只在任务记录里保存工具输出的前 8 KB，`memory-recall` 的结果因此改为先列运行绑定和查询范围、再列条目。B 回复 A 的交接时照抄了指向自己的 mention，Multica 在同一 issue 上反复派发 B（约 13 分钟多跑 31 次，约占这一轮花费的四分之三）；委派通道保持干净，但任务记忆里写进了循环出来的“出处”。测试脚本现在会取消这类重复运行，平台和插件层面怎么处理待定。另外修了 matrix 的协作检查漏洞、第二次交接的指令，以及收尾审计自 10-01 起的参数错误（见 [`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)）。
+- **2026-10-08 归档省略智能体自己的指令**：归档工具结果时，JSON 里 `instructions` 字段的值换成“[智能体指令已省略]”，记录的其余字段保留。完整 matrix 中，快速创建的智能体用 `multica agent list --output json` 查自己，输出里带着自己的系统指令，测试放在里面的平台标记随之进了运行归档。运行时说明原本就会按标题去掉，智能体记录没有这个标题。
+- **2026-10-08 basic 与 matrix 回归**：basic 13/13。matrix 前 3 次都没跑完，停下的原因都在测试脚本、Multica 平台和模型行为上。按决定全新跑了第 4 次，Multica 打上补丁 0005，跑完全程 27/30（第二次交接单独重测通过）。三项失败分别是：快速创建时模型先执行命令后写文件；上面那条归档修复；原生抽取把运行记录写进实体卡。Multica 只在任务记录里保存工具输出的前 8 KB，`memory-recall` 的结果因此改为先列运行绑定和查询范围、再列条目。第 3 次中，B 回复交接时照抄了指向自己的 mention，Multica 在同一 issue 上反复派发 B，约 13 分钟多跑 31 次，约占那一轮花费的四分之三。补丁 [`upstream/multica/0005`](upstream/multica/README.md) 让同一 issue 上的自我 @ 不再派发，测试脚本也会取消这类重复运行。另外修了 matrix 的协作检查漏洞、两次交接的指令，以及收尾审计自 10-01 起的参数错误（见 [`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)）。
 - **2026-10-08 执行指令改为按分句去掉**：复查发现按整句去掉会连带删掉同一句里的业务内容，例如“方案确认：不修改代码，只调整 Kafka 分区数为 12。”整句被删。现在只去掉含指令的分句，长期约定整句保留；归档、召回摘录和共享晋升用同一规则。默认开启后的真实验证轮 13/16，失败都在私聊：原生抽取把“不写入公共记忆”理解成不要记（见 A/B 报告第 6、7 节）。
 - **2026-10-08 默认去掉执行指令；quality 记失败继续跑**：按 A/B 结果，`archiveDropRunControls` 改为默认开启，设 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS=0` 按原文归档。quality 套件遇到“晋升为空”“共享里查不到当前事实”“私聊版式没有抽出”时，记一项失败、继续往下跑，不再整轮停止；新增检查 `initial-promotion-admitted`。新增的离线测试用模拟环境跑通了这些路径。
 - **2026-10-08 规则模板与归档前去掉执行指令的 A/B**：参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 写进文档。新增实验开关 `archiveDropRunControls`（默认关闭）：归档前去掉成员消息和任务描述里已知的一次性执行指令。原生抽取各跑 3 轮：关闭时 3 轮都有抽取因成员的“不要主动记录记忆”放弃写入，丢掉了种子任务的卡片或私聊版式；开启时 0 次，没有看到事实或偏好损失。开启组两次失败都来自成员原文里的检索结论句，共享晋升已把它去掉，这也是清理后晋升第一次在真实运行里触发（见 [`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)）。
