@@ -2,7 +2,7 @@ import { nowIso, readJsonIfExists, atomicWriteJson, shortHash } from './util.mjs
 import { scopeKey } from './scopes.mjs';
 import { join } from 'node:path';
 import { listMemoryFiles } from './memory-inventory.mjs';
-import { memoryFingerprint, promotionQuality } from './memory-quality.mjs';
+import { memoryExcerpt, memoryFingerprint, promotionQuality } from './memory-quality.mjs';
 
 /**
  * Shared-memory promotion: distil durable knowledge from the workspace's
@@ -15,6 +15,20 @@ import { memoryFingerprint, promotionQuality } from './memory-quality.mjs';
  * plus URI); extraction monitoring and re-drives use the archive queue.
  */
 const PROMOTABLE_KINDS = ['experiences', 'cases', 'preferences', 'entities'];
+// Sentence-level problems: the recall excerpt drops exactly these sentences, so
+// the facts around them can be shared without them. Anything else (a leaked
+// runtime brief, platform scaffolding, an oversized file) keeps the file local.
+const CLEANABLE = new Set(['execution-control', 'retrieval-outcome']);
+
+/** What may be shared from one memory file: as is, without its run controls and search outcomes, or nothing. */
+export function promotableContent({ content, uri, contentMinChars = 30 }) {
+  const quality = promotionQuality({ content, uri });
+  if (quality.eligible) return { content, quality };
+  if (!quality.reasons.every((r) => CLEANABLE.has(r))) return { content: null, quality };
+  const cleaned = memoryExcerpt(content, { uri }).content;
+  if (cleaned.length < contentMinChars || !promotionQuality({ content: cleaned, uri }).eligible) return { content: null, quality };
+  return { content: cleaned, quality: { eligible: true, reasons: [] }, cleaned: quality.reasons };
+}
 
 export async function consolidateShared({
   ov, registry, queue, workspaceId, stateDir, replaySessionId,
@@ -84,9 +98,11 @@ export async function consolidateShared({
         content = r?.content;
       } catch { continue; }
       if (!content || content.length < contentMinChars) continue;
-      const quality = promotionQuality({ content, uri: f.uri });
-      if (!quality.eligible) { skipped.push({ from: scopeKeyStr, file: base, reasons: quality.reasons }); continue; }
-      const hash = memoryFingerprint(content);
+      const promotable = promotableContent({ content, uri: f.uri, contentMinChars });
+      if (!promotable.content) { skipped.push({ from: scopeKeyStr, file: base, reasons: promotable.quality.reasons }); continue; }
+      // What would be shared decides idempotency: an edit to the facts is
+      // promoted again, an edit to a dropped run control is not.
+      const hash = memoryFingerprint(promotable.content);
       const previous = done.files[doneKey] ?? done.files[base];
       // An old URI-only receipt cannot prove which content was promoted. Admit
       // its current safe content once, then track the content version normally.
@@ -97,7 +113,10 @@ export async function consolidateShared({
         skipped.push({ from: scopeKeyStr, file: base, reasons: ['duplicate-content'] });
         continue;
       }
-      selected.push({ from: scopeKeyStr, file: base, key: doneKey, uri: f.uri, hash, revision, updated: !!previous, content });
+      selected.push({
+        from: scopeKeyStr, file: base, key: doneKey, uri: f.uri, hash, revision, updated: !!previous,
+        content: promotable.content, ...(promotable.cleaned ? { cleaned: promotable.cleaned } : {}),
+      });
       taken++;
     }
   }
@@ -136,7 +155,7 @@ export async function consolidateShared({
   return {
     shared_scope: sharedScope,
     sources: sourceScopes.length,
-    promoted: selected.map(({ file, from }) => ({ file, from })),
+    promoted: selected.map(({ file, from, cleaned }) => ({ file, from, ...(cleaned ? { cleaned } : {}) })),
     skipped,
     session_id: sessionId,
     status: 'queued', job_id: job.id, extraction_task: null,

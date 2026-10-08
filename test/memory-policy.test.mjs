@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT_POLICY_TYPES, COMMON_RULES_TYPE, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, loadMemoryPolicy, prepareTestAccount, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
+import { ACCOUNT_POLICY_TYPES, COMMON_RULES_TYPE, POLICY_HEADING, accountTemplate, applyAccountMemoryPolicy, inspectAccountTemplates, loadMemoryPolicy, loadMemoryRules, prepareTestAccount, resetAccountMemoryPolicy } from '../e2e/real-agent/memory-policy.mjs';
+import { WORKSPACE_RULES_HEADING, parseMemoryRules, writeAccountTemplates } from '../src/memory-rules.mjs';
 import { accountIdFor, adminUserIdFor } from '../src/scopes.mjs';
 
 const policy = loadMemoryPolicy();
@@ -47,6 +48,17 @@ test('the policy is plain text for account-editable types and carries no test an
   assert.deepEqual([...Object.keys(policy.types), ...Object.keys(policy.fields)].filter((kind) => !ACCOUNT_POLICY_TYPES.includes(kind)), []);
   // The suites' own values (budget 7600→8100, RAM-n keys, weekly-report and comment-language preferences).
   assert.doesNotMatch(text, /7600|8100|RAM-\d|周报|注释|weekly|Chinese/i);
+});
+
+test('the config-mode rules fit the installation field, parse cleanly and carry no test answers', () => {
+  const text = loadMemoryRules();
+  // multica stores a string config value of at most 4096 bytes.
+  assert.ok(Buffer.byteLength(text) <= 4096, `${Buffer.byteLength(text)} bytes`);
+  const { rules, errors, count } = parseMemoryRules(text);
+  assert.deepEqual(errors, []);
+  assert.ok(rules.common.length > 0 && count > rules.common.length);
+  assert.deepEqual(Object.keys(rules.types).filter((kind) => !ACCOUNT_POLICY_TYPES.includes(kind)), []);
+  assert.doesNotMatch(text, /7600|8100|Pulsar|苍鹭|蓝鹊|RAM-\d|周报|注释|风险|weekly|Chinese|comment/i);
 });
 
 function fakeOv() {
@@ -98,6 +110,26 @@ test('native and account runs start from the same pre-created account', async ()
   assert.equal((await prepareTestAccount({ ov: accountRun, rootKey: 'root', workspaceId: 'ws-3', mode: 'account', policy })).scope, 'account');
   assert.deepEqual(accountRun.calls[0][0], 'create');
   assert.deepEqual(Object.keys(accountRun.custom).sort(), [...ACCOUNT_POLICY_TYPES].sort());
+});
+
+test('config runs start from OV\'s defaults; the plugin\'s rules show up as custom templates', async () => {
+  const ov = fakeOv();
+  const accountId = accountIdFor('ws-5');
+  assert.deepEqual(await prepareTestAccount({ ov, rootKey: 'root', workspaceId: 'ws-5', mode: 'config', policy }), { scope: 'config', accountId });
+  assert.deepEqual(ov.custom, {});
+  await assert.rejects(prepareTestAccount({ ov, rootKey: 'root', workspaceId: 'ws-5', mode: 'instance', policy }), /Unknown memory policy/);
+  assert.deepEqual(Object.values(await inspectAccountTemplates({ ov, rootKey: 'root', accountId })), ACCOUNT_POLICY_TYPES.map(() => ({ status: 'system_default', rules: false })));
+  // What the plugin writes for the rules file.
+  await writeAccountTemplates({ ov, key: 'root', accountId, rules: parseMemoryRules(loadMemoryRules()).rules });
+  const templates = await inspectAccountTemplates({ ov, rootKey: 'root', accountId });
+  assert.deepEqual(templates.entities, { status: 'custom', rules: true });
+  assert.ok(Object.values(templates).every((t) => t.status === 'custom' && t.rules), JSON.stringify(templates));
+  // The test-only account policy is a different heading: not mistaken for the plugin's rules.
+  const other = fakeOv();
+  await applyAccountMemoryPolicy({ ov: other, rootKey: 'root', accountId, policy });
+  assert.equal((await inspectAccountTemplates({ ov: other, rootKey: 'root', accountId })).entities.rules, false);
+  assert.equal((await inspectAccountTemplates({ ov: other, rootKey: 'root', accountId, heading: POLICY_HEADING })).entities.rules, true);
+  assert.notEqual(POLICY_HEADING, WORKSPACE_RULES_HEADING);
 });
 
 test('a leftover instance-level policy stops the run before any model call', async () => {

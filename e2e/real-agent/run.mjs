@@ -3,12 +3,13 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir, tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Multica, sleep } from '../real-stack/multica.mjs';
 import { OvClient } from '../../src/ov-client.mjs';
 import { auditMemories } from './memory-audit.mjs';
 import { assessNoAnswer } from './answer-checks.mjs';
-import { prepareTestAccount } from './memory-policy.mjs';
+import { MEMORY_POLICY_MODES, inspectAccountTemplates, loadMemoryRules, prepareTestAccount } from './memory-policy.mjs';
+import { parseMemoryRules } from '../../src/memory-rules.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -20,9 +21,10 @@ const suite = env.REAL_AGENT_SUITE ?? 'basic';
 // Issue keys of the test workspace (RAM-1, RAM-2, ...); the memory audit flags them in entity cards.
 const ISSUE_PREFIX = 'RAM';
 if (!['basic', 'matrix', 'quality', 'benchmark', 'delivery'].includes(suite)) throw new Error(`Unknown real-agent suite: ${suite}`);
-// OV's native extraction unless the test workspace's own OV account is given the opt-in account templates.
+// OV's native extraction unless the test workspace's own OV account is given the opt-in account
+// templates (account), or the installation's memory_rules config, which the plugin applies (config).
 const memoryPolicy = env.REAL_AGENT_MEMORY_POLICY ?? 'native';
-if (!['native', 'account'].includes(memoryPolicy)) throw new Error(`Unknown memory policy: ${memoryPolicy}`);
+if (!MEMORY_POLICY_MODES.includes(memoryPolicy)) throw new Error(`Unknown memory policy: ${memoryPolicy}`);
 for (const key of ['OV_ROOT_KEY', 'OVMEM_TLS_CERT', 'OVMEM_TLS_KEY', 'OPENROUTER_API_KEY']) {
   if (!env[key]) throw new Error(`${key} is required`);
 }
@@ -97,6 +99,12 @@ try {
     const pkg = await mc.must('publish package', mc.publishPlugin(user.token, ws, join(repo, zipped)));
     inst = await mc.installPlugin(user.token, ws, pkg.versions[0].id);
     report.workspaceId = ws; report.installationId = inst.installationId;
+    if (memoryPolicy === 'config') {
+      // Set as a workspace admin would: multica delivers it with every hook call.
+      const rules = loadMemoryRules();
+      await mc.must('configure memory rules', mc.call(`/api/workspaces/${ws}/plugins/${inst.installationId}/config`, { method: 'PUT', token: user.token, ws, body: { values: { memory_rules: rules } } }));
+      Object.assign(report.memoryPolicy, { rules: parseMemoryRules(rules).count, bytes: Buffer.byteLength(rules), digest: createHash('sha256').update(rules).digest('hex').slice(0, 16) });
+    }
     privateFile(join(state, 'access.json'), { token: user.token, userId: user.userId, workspaceId: ws });
     privateFile(join(cliRoot, 'profiles', profile, 'config.json'), { server_url: mc.base, token: pat.token, workspace_id: ws, workspaces_root: join(state, 'workspaces') });
     privateFile(join(pluginState, 'config.json'), { extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000 });
@@ -226,6 +234,19 @@ try {
   step('runtime-read-exercised', report.transcriptContainsRuntimeBanner && report.transcriptContainsCanary, 'Actual agent read injected runtime instructions before archive filtering');
   step('distilled-prompt-hygiene', audit.some(a => a.files > 0) && audit.every(a => a.complete && !a.containsRuntimeBanner && !a.containsPlatformCanary && !a.containsPlatformGuidance), `Transcript runtime banner: ${report.transcriptContainsRuntimeBanner}; inspected ${audit.reduce((n, a) => n + a.files, 0)} extracted files including peers`);
   step('memory-quality', audit.every(a => a.complete && !a.qualityFindings.length), 'Checked reusable memories for known execution controls and retrieval-outcome facts');
+  }
+  if (memoryPolicy === 'config') {
+    // The plugin applied the configured rules to this workspace's account before its first commit.
+    const accountId = report.memoryPolicy.accountId;
+    const applied = JSON.parse(readFileSync(join(pluginState, 'scopes.json'), 'utf8')).accounts?.[accountId]?.memoryRules ?? null;
+    const archived = existsSync(join(pluginState, 'archives.jsonl')) ? readFileSync(join(pluginState, 'archives.jsonl'), 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
+    const firstCommit = archived.find(e => e.workspace === ws && e.session_id && e.extraction === 'pending');
+    const templates = await inspectAccountTemplates({ ov, rootKey: env.OV_ROOT_KEY, accountId });
+    report.memoryRules = { applied, templates, firstCommitAt: firstCommit?.ts ?? null };
+    step('memory-rules-applied', applied?.status === 'applied' && applied.rules === report.memoryPolicy.rules
+      && applied.memoryTypes.length > 0 && applied.memoryTypes.every(kind => templates[kind]?.status === 'custom' && templates[kind].rules)
+      && !!firstCommit && Date.parse(applied.updatedAt) <= Date.parse(firstCommit.ts),
+    `Installation memory_rules: ${applied?.status ?? 'not applied'} (${applied?.rules ?? 0} rules on ${applied?.memoryTypes?.join(', ') || 'no types'}) before the first commit`);
   }
   report.currentResults = [...new Map(results.map(result => [result.id, result])).values()];
   if (report.currentResults.some(result => !result.ok)) process.exitCode = 1;

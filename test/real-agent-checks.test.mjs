@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { assessNoAnswer } from '../e2e/real-agent/answer-checks.mjs';
 import { auditMemories, entityAuditIssues } from '../e2e/real-agent/memory-audit.mjs';
-import { hasCurrentBudget } from '../e2e/real-agent/quality.mjs';
+import { hasCurrentBudget, preferenceStorage } from '../e2e/real-agent/quality.mjs';
 
 const recall = (scopesSearched) => ({ status: 'ok', result: { entries: [], scopesSearched } });
 const complete = recall([{ scope: 'task:w:i', hits: 0 }, { scope: 'agent:w:a', hits: 0 }]);
@@ -88,4 +88,15 @@ test('the current budget accepts a labelled previous value but not an unresolved
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（之前的约定，仍然有效）')), false);
   assert.equal(hasCurrentBudget(cardWith('- 每月预算为 7600 元（原预算，当前执行）')), false);
   assert.equal(hasCurrentBudget('# 苍鹭\n- 发布使用 Apache Pulsar。\n- 每月预算为 7600 元。\n- 双写持续五天。'), false);
+});
+
+test('the lasting comment-language rule counts as its own preference or as a line of the project card', () => {
+  const card = (content) => ({ uri: 'viking://user/u/memories/entities/项目/苍鹭.md', content });
+  // 2026-10-02 account round 2: a separate preference memory.
+  assert.equal(preferenceStorage([{ uri: 'viking://user/u/memories/preferences/代码注释语言.md', content: '苍鹭项目的代码注释一律使用中文。' }, card(CARD_ACCOUNT)]), 'preference');
+  // 2026-10-01 native: the rule is a line of the project card.
+  assert.equal(preferenceStorage([card(`${CARD_NATIVE}\n## 工作规范\n- 项目代码注释统一使用中文。`)]), 'entity-card');
+  // A card for another subject, or Chinese mentioned without the comment rule, does not count.
+  assert.equal(preferenceStorage([{ uri: 'viking://user/u/memories/entities/项目/青岚.md', content: '# 青岚\n- 代码注释一律使用中文。' }]), 'missing');
+  assert.equal(preferenceStorage([card(`${CARD_NATIVE}\n- 发布说明使用中文。`)]), 'missing');
 });

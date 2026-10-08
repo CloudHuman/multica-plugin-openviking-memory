@@ -3,19 +3,27 @@
 // OpenViking's own admin API. A workspace's own rules reach the plugin through
 // its installation config (src/memory-rules.mjs, whose template builder this
 // shares); this tool carries the larger test set, which exceeds multica's 4 KB
-// config value. Instance templates and every other account keep OV's defaults.
+// config value. memory-rules.txt is the config-sized set, applied by the plugin
+// itself in config mode. Instance templates and every other account keep OV's defaults.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { OvClient } from '../../src/ov-client.mjs';
 import { accountIdFor, adminUserIdFor } from '../../src/scopes.mjs';
-import { ACCOUNT_TEMPLATE_TYPES, COMMON_RULES_TYPE, accountTemplate as buildTemplate, resetAccountTemplates, writeAccountTemplates } from '../../src/memory-rules.mjs';
+import { ACCOUNT_TEMPLATE_TYPES, COMMON_RULES_TYPE, WORKSPACE_RULES_HEADING, accountTemplate as buildTemplate, resetAccountTemplates, writeAccountTemplates } from '../../src/memory-rules.mjs';
 
 export const ACCOUNT_POLICY_TYPES = ACCOUNT_TEMPLATE_TYPES;
 export const POLICY_HEADING = '## Multica business-memory quality';
+// native: OV's templates; account: memory-policy.json written here; config: memory-rules.txt through the installation config.
+export const MEMORY_POLICY_MODES = ['native', 'account', 'config'];
 export { COMMON_RULES_TYPE };
 
 export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.meta.url)) {
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+/** The installation's memory_rules value for config mode. */
+export function loadMemoryRules(path = new URL('./memory-rules.txt', import.meta.url)) {
+  return readFileSync(path, 'utf8');
 }
 
 /** The PUT body for one type: the policy appended to OV's default descriptions; everything else stays OV's default. */
@@ -47,6 +55,7 @@ export async function applyAccountMemoryPolicy({ ov, rootKey, workspaceId, accou
  * since a native run would then not be native.
  */
 export async function prepareTestAccount({ ov, rootKey, workspaceId, mode, policy = loadMemoryPolicy() }) {
+  if (!MEMORY_POLICY_MODES.includes(mode)) throw new Error(`Unknown memory policy: ${mode}`);
   const accountId = accountIdFor(workspaceId);
   await ov.createAccount(rootKey, { accountId, adminUserId: adminUserIdFor(workspaceId) });
   for (const kind of ACCOUNT_POLICY_TYPES) {
@@ -55,7 +64,19 @@ export async function prepareTestAccount({ ov, rootKey, workspaceId, mode, polic
       throw new Error(`OpenViking's instance templates already carry the Multica policy (${kind}); remove memory.custom_templates_dir and restart OV`);
     }
   }
-  return mode === 'account' ? applyAccountMemoryPolicy({ ov, rootKey, accountId, policy }) : { scope: 'native', accountId };
+  if (mode === 'account') return applyAccountMemoryPolicy({ ov, rootKey, accountId, policy });
+  // Config mode starts from OV's defaults too: the plugin applies the rules on the first delivery.
+  return { scope: mode, accountId };
+}
+
+/** Which account templates are customised, and whether they carry the plugin's workspace rules. */
+export async function inspectAccountTemplates({ ov, rootKey, accountId, heading = WORKSPACE_RULES_HEADING }) {
+  const templates = {};
+  for (const kind of ACCOUNT_POLICY_TYPES) {
+    const { status, effective } = await ov.call(templatePath(accountId, kind), { key: rootKey });
+    templates[kind] = { status, rules: JSON.stringify(effective ?? {}).includes(JSON.stringify(heading).slice(1, -1)) };
+  }
+  return templates;
 }
 
 /** Remove the overrides. Memories already extracted are not rewritten. */

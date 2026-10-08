@@ -101,7 +101,8 @@ export async function runQuality(ctx) {
     const before = await snapshot(taskScope, 'before-update');
     const beforeText = before.map(f => f.content).join('\n');
     step('automatic-fact-fidelity', /Pulsar/.test(beforeText) && /7600/.test(beforeText) && /五天|5\s*天/.test(beforeText), 'Real automatic extraction preserved all three supplied business facts');
-    step('lasting-preference-retained', before.some(f => /\/preferences\//.test(f.uri) && /中文/.test(f.content)), 'Lasting Chinese-comment preference survived alongside temporary task controls');
+    report.preferenceStorage = preferenceStorage(before); save();
+    step('lasting-preference-retained', report.preferenceStorage !== 'missing', `Lasting Chinese-comment preference survived alongside temporary task controls (${report.preferenceStorage})`);
     step('no-active-write-shortcut', !seed.record.tools.some(t => /memory.*remember|ov.*write/.test(t)), 'Seed used automatic extraction, not active memory writes');
     await promote();
     const previousIds = new Set((await tasks(a)).map(t => t.id));
@@ -196,6 +197,14 @@ export function hasCurrentBudget(content) {
   const oldMentions = String(content).split('\n').filter(line => /7600/.test(line));
   return current && oldMentions.every(line => HISTORY_BEFORE_7600.test(line) || HISTORY_AFTER_7600.test(line) || ADJUSTED_FROM_7600.test(line) || labelledPrevious(line))
     && /Pulsar/.test(content) && /五天|5\s*天/.test(content);
+}
+
+// The comment-language rule may be kept as its own preference or as a line of
+// the project's entity card; either way it is retained and recalled with it.
+export function preferenceStorage(files) {
+  if (files.some(f => /\/preferences\//.test(f.uri) && /中文/.test(f.content))) return 'preference';
+  const cardLine = f => /\/entities\//.test(f.uri) && /苍鹭/.test(f.content) && String(f.content).split('\n').some(line => /注释/.test(line) && /中文/.test(line));
+  return files.some(cardLine) ? 'entity-card' : 'missing';
 }
 
 export function hasSharedRecall(record, scope) {

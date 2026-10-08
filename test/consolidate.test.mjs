@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, rmdirSync, writeFileSync } from 'node:fs';
-import { consolidateShared } from '../src/consolidate.mjs';
+import { consolidateShared, promotableContent } from '../src/consolidate.mjs';
 import { scopeKey } from '../src/scopes.mjs';
 import { startFakeOv, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B } from './helpers.mjs';
 import { bootService, waitFor } from './harness.mjs';
@@ -112,6 +112,47 @@ test('sharing rejects known run controls, ignores stubs and deduplicates exact c
     assert.ok(result.json.result.skipped.some(s => s.reasons.includes('duplicate-content')));
     const retry = await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS });
     assert.equal(retry.json.result.promoted.length, 0);
+  } finally { await svc.stop(); await ovF.stop(); }
+});
+
+test('a shareable copy drops run controls and search outcomes; other problems keep the file local', () => {
+  const uri = 'viking://user/u/memories/entities/项目/苍鹭.md';
+  const facts = '# 苍鹭项目\n- 消息系统采用 Apache Pulsar。\n- 月度预算上限 8100 元。';
+  const mixed = `${facts}\n- 历史检索为空不影响确认。\n- 任务回复须基于 memory-recall 召回的实际证据，并引用来源 URI。`;
+  assert.deepEqual(promotableContent({ content: facts, uri }), { content: facts, quality: { eligible: true, reasons: [] } });
+  const cleaned = promotableContent({ content: mixed, uri });
+  assert.equal(cleaned.content, facts);
+  assert.deepEqual(cleaned.cleaned, ['execution-control', 'retrieval-outcome']);
+  // The 2026-10-01 native card that was kept local for one bookkeeping line.
+  const stored = '# 苍鹭\n## 关键约定\n- 发布使用 Apache Pulsar (as of 2026-10-01)\n- 每月预算为 7600 元 (as of 2026-10-01)\n- 双写持续五天 (as of 2026-10-01)\n## 背景\n- 处理该任务时要求按证据回复、不修改代码、不主动记录记忆';
+  const shareable = promotableContent({ content: stored, uri });
+  assert.deepEqual(shareable.cleaned, ['execution-control']);
+  assert.match(shareable.content, /双写持续五天/);
+  assert.doesNotMatch(shareable.content, /不修改代码/);
+  // Nothing left but controls, or a problem the excerpt cannot remove: not shared.
+  assert.equal(promotableContent({ content: '# 任务要求\n- 历史检索为空不影响确认。\n- 先调用 memory-recall 再回复。', uri }).content, null);
+  const brief = promotableContent({ content: `${facts}\n\n# Multica Agent Runtime\nYou are an agent.`, uri });
+  assert.equal(brief.content, null);
+  assert.deepEqual(brief.quality.reasons, ['runtime-brief']);
+});
+
+test('a card with facts and run controls is shared without the controls, once', async () => {
+  const ovF = await startFakeOv();
+  const svc = await bootService({ ov: ovF });
+  try {
+    const rec = await svc.registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), { workspaceId: FIXTURE_WS });
+    const uri = `viking://user/${rec.userId}/memories/entities/项目/苍鹭.md`;
+    const write = (control) => svc.ovClient.writeContent(rec.apiKey, { uri, mode: 'overwrite', content: `# 苍鹭项目\n- 消息系统采用 Apache Pulsar。\n- 月度预算上限 8100 元。\n- 历史检索为空不影响确认。\n- ${control}` });
+    await write('任务回复须基于 memory-recall 召回的实际证据，并引用来源 URI。');
+    const result = (await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS })).json.result;
+    assert.deepEqual(result.promoted, [{ file: '苍鹭.md', from: scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A), cleaned: ['execution-control', 'retrieval-outcome'] }]);
+    const message = svc.queue.jobs.get(result.job_id).payload.messages[0].content;
+    assert.match(message, /Apache Pulsar/);
+    assert.match(message, /8100/);
+    assert.doesNotMatch(message, /检索为空|memory-recall/);
+    // Only the dropped control changed: nothing new to share.
+    await write('先调用 memory-recall 再回复。');
+    assert.equal((await svc.admin('/admin/consolidate', { workspace_id: FIXTURE_WS })).json.result.promoted.length, 0);
   } finally { await svc.stop(); await ovF.stop(); }
 });
 

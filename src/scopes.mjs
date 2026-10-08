@@ -213,7 +213,8 @@ export class ScopeRegistry {
         adminKey = regen?.user_key ?? regen?.key ?? null;
       }
       if (!adminKey) throw new Error(`could not obtain admin key for account ${accountId}`);
-      this.data.accounts[accountId] = { workspaceId, adminUserId, adminKey, createdAt: cached?.createdAt ?? nowIso() };
+      // Keep what else is recorded for the account (its applied memory rules).
+      this.data.accounts[accountId] = { ...cached, workspaceId, adminUserId, adminKey, createdAt: cached?.createdAt ?? nowIso() };
       this.save();
       return { accountId, adminKey };
     })().finally(() => this.pending.delete(accountId));
