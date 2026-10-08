@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { firstReceiver, checkDelegationHistory, handoffComment, recheckDelegationHistory } from '../e2e/real-agent/delegation-check.mjs';
+import { firstReceiver, checkDelegationHistory, handoffComment, recheckDelegationHistory, selfMentionGuard, recordSelfMentionReruns } from '../e2e/real-agent/delegation-check.mjs';
 
 const A = 'agent-a';
 const B = 'agent-b';
@@ -124,4 +124,35 @@ test('the history phase reruns only the second handoff, on the matrix\'s own age
     if (previous === undefined) delete process.env.MULTICA_RUN_REAL_AGENT_SMOKE;
     else process.env.MULTICA_RUN_REAL_AGENT_SMOKE = previous;
   }
+});
+
+test('the self-mention guard cancels the receiver\'s reruns on the handoff issue and nothing else', async () => {
+  // B's reply mentions B: each finished run queues another one on the issue.
+  const tasks = [
+    { id: 'b1', issue_id: 'i', status: 'completed' },
+    { id: 'b-other', issue_id: 'other', status: 'queued' },
+  ];
+  let next = 2;
+  const cancelled = [];
+  const tasksOf = async (agentId) => {
+    assert.equal(agentId, B);
+    const live = tasks.find((t) => t.issue_id === 'i' && t.status === 'queued');
+    if (!live && next <= 4) tasks.push({ id: `b${next++}`, issue_id: 'i', status: 'queued' });
+    return tasks.map((t) => ({ ...t }));
+  };
+  const cancel = async (taskId) => { cancelled.push(taskId); tasks.find((t) => t.id === taskId).status = 'cancelled'; };
+  const guard = selfMentionGuard({ tasksOf, cancel, interval: 2 });
+  guard.watch('i', B, 'b1');
+  await new Promise((r) => setTimeout(r, 60));
+  const reruns = await guard.stop();
+  assert.deepEqual(cancelled, ['b2', 'b3', 'b4'], 'each rerun is cancelled once, the kept receiver and other issues are not');
+  assert.deepEqual(reruns.map((r) => [r.taskId, r.cancelled]), [['b2', true], ['b3', true], ['b4', true]]);
+  assert.equal(tasks.find((t) => t.id === 'b-other').status, 'queued');
+
+  const report = {};
+  recordSelfMentionReruns(report, []);
+  assert.deepEqual(report, {}, 'nothing is recorded without reruns');
+  recordSelfMentionReruns(report, reruns);
+  assert.equal(report.selfMentionReruns.length, 3);
+  assert.deepEqual(report.limitations.map((l) => [l.entry, l.count, l.cancelled]), [['self-mention-reruns', 3, 3]]);
 });

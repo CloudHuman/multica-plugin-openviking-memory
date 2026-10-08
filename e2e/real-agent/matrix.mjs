@@ -2,10 +2,26 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { auditMemories } from './memory-audit.mjs';
+import { selfMentionGuard, recordSelfMentionReruns } from './delegation-check.mjs';
 
 // All task transcripts and tool calls are produced by the official daemon.
 // The harness only sends member input, waits, and inspects persisted evidence.
 export async function runMatrix(ctx) {
+  const { mc, user, ws, report, save } = ctx;
+  const call = (path, body) => mc.must(path, mc.call(path, { token: user.token, ws, method: body === undefined ? 'GET' : 'POST', body }));
+  const guard = selfMentionGuard({
+    tasksOf: async agentId => { const data = await call(`/api/agents/${agentId}/tasks`); return Array.isArray(data) ? data : data?.tasks ?? []; },
+    cancel: taskId => call(`/api/tasks/${taskId}/cancel`, {}),
+  });
+  try {
+    await matrixSteps(ctx, guard);
+  } finally {
+    recordSelfMentionReruns(report, await guard.stop());
+    save();
+  }
+}
+
+async function matrixSteps(ctx, guard) {
   const { mc, ov, user, ws, agent: a, agentTemplate, state, pluginState, pluginUrl, pluginToken, canary, issuePrefix, run, report, step, save, wait, privateFile, toolResultData } = ctx;
   const list = data => Array.isArray(data) ? data : data?.tasks ?? data?.messages ?? data?.comments ?? data?.issues ?? data?.runs ?? data?.autopilots ?? [];
   const call = (path, body, method = body === undefined ? 'GET' : 'POST') => mc.must(path, mc.call(path, { token: user.token, ws, method, body }));
@@ -148,6 +164,7 @@ export async function runMatrix(ctx) {
   const { firstReceiver, checkDelegationHistory } = await import('./delegation-check.mjs');
   const handoff = await firstReceiver({ tasksOf: id => tasks({ id }), issueId: delegated.issue.id, fromAgentId: a.id, toAgentId: b.id });
   const channel = `delegation:${ws}:${a.id}:${b.id}`;
+  if (handoff.receiver) guard.watch(delegated.issue.id, b.id, handoff.receiver.id);
   if (!handoff.receiver) {
     for (const id of ['real-delegation-linked', 'real-delegation-archive', 'delegation-cross-task-recall']) step(id, false, 'Skipped: A finished without mentioning B, so nothing was delegated');
   } else {
@@ -156,7 +173,7 @@ export async function runMatrix(ctx) {
     await extracted(receiver.task.id, `task:${ws}:${delegated.issue.id}`);
     const channelEvent = await wait('actual delegation archive', async () => statuses().find(e => e.record === 'archive-delegation' && e.ref === receiver.task.id && e.extraction === 'done'), 45000).catch(() => null);
     step('real-delegation-archive', !!channelEvent && channelEvent.scope === channel, 'The actual agent-authored handoff was archived and extracted in A to B channel');
-    const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: channel, state });
+    const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: channel, state, guard });
     report.tasks.push(...history.records);
     step('delegation-cross-task-recall', history.ok, history.detail);
   }
@@ -171,7 +188,7 @@ export async function runMatrix(ctx) {
   step('chat-pair-isolation', noPrivateScope(chatOther, dmScope) && /没有|未找到|无相关|无法确认|暂无/.test(chatOther.response), 'The other actual agent did not search the A/member private conversation');
   } else if (!ctx.finish) {
     const { checkDelegationHistory } = await import('./delegation-check.mjs');
-    const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: `delegation:${ws}:${a.id}:${b.id}`, state });
+    const history = await checkDelegationHistory({ mc, user, ws, fromAgentId: a.id, toAgentId: b.id, channelScope: `delegation:${ws}:${a.id}:${b.id}`, state, guard });
     report.tasks.push(...history.records);
     step('delegation-cross-task-recall', history.ok, history.detail);
     for (const record of report.tasks.filter(t => t.chatSessionId)) {

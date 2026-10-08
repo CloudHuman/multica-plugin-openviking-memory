@@ -28,9 +28,54 @@ export async function firstReceiver({ tasksOf, issueId, fromAgentId, toAgentId, 
   throw new Error('Delegation sender neither handed off nor finished in time');
 }
 
+// Multica dispatches a comment that mentions its own author (meant for
+// notifying another issue), and a receiver that copies the handoff's mention
+// into its reply is dispatched again after every run: in the 10-08 regression
+// B ran 31 more times in 14 minutes. The guard cancels a receiver's later runs
+// on the handoff issues it watches and lists them.
+export function selfMentionGuard({ tasksOf, cancel, interval = 5000 }) {
+  const watched = new Map();
+  const cancelled = new Set();
+  let sweeping = null;
+  const sweep = () => sweeping ??= (async () => {
+    for (const [issueId, { agentId, keep }] of watched) {
+      for (const t of await tasksOf(agentId)) {
+        if (t.issue_id !== issueId || t.id === keep || DONE.includes(t.status) || cancelled.has(t.id)) continue;
+        await cancel(t.id);
+        cancelled.add(t.id);
+      }
+    }
+  })().catch(() => { /* the next sweep retries */ }).finally(() => { sweeping = null; });
+  const timer = setInterval(sweep, interval);
+  timer.unref?.();
+  return {
+    watch(issueId, agentId, keep) { watched.set(issueId, { agentId, keep }); },
+    async stop() {
+      clearInterval(timer);
+      await sweeping;
+      await sweep();
+      const reruns = [];
+      try {
+        for (const [issueId, { agentId, keep }] of watched) {
+          for (const t of await tasksOf(agentId)) if (t.issue_id === issueId && t.id !== keep) reruns.push({ issueId, agentId, taskId: t.id, status: t.status, cancelled: cancelled.has(t.id) });
+        }
+      } catch { /* report what was listed */ }
+      return reruns;
+    },
+  };
+}
+
+// Recorded on the report: the reruns are the platform's and the model's, not the plugin's.
+export function recordSelfMentionReruns(report, reruns) {
+  if (!reruns.length) return;
+  report.selfMentionReruns = [...(report.selfMentionReruns ?? []), ...reruns];
+  report.limitations ??= [];
+  report.limitations.push({ entry: 'self-mention-reruns', count: reruns.length, cancelled: reruns.filter(r => r.cancelled).length, reason: 'The receiver mentioned itself in its reply and Multica dispatched it again on the same issue; the harness cancelled the reruns' });
+}
+
 export const handoffComment = (toAgentId) => `[@复核智能体](mention://agent/${toAgentId}) 雨燕项目之前确定的重试上限是多少？请调用 memory-recall 查询 A 到 B 委派通道，回答并引用来源 URI。`;
 
-export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope, state, timeout = 600000, grace, poll = 1500 }) {
+export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope, state, guard, timeout = 600000, grace, poll = 1500 }) {
   if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
   const call = path => mc.must(path, mc.call(path, { token: user.token, ws }));
   const issue = await mc.createIssue(user.token, ws, {
@@ -43,6 +88,7 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   const deadline = Date.now() + timeout;
   const tasksOf = agentId => call(`/api/agents/${agentId}/tasks`);
   let { sender, receiver } = await firstReceiver({ tasksOf, issueId: issue.id, fromAgentId, toAgentId, timeout, grace, poll });
+  if (receiver) guard?.watch(issue.id, toAgentId, receiver.id);
   while (receiver && !DONE.includes(receiver.status)) {
     if (Date.now() >= deadline) throw new Error('History delegation receiver did not finish');
     await sleep(poll);
@@ -73,9 +119,16 @@ export async function recheckDelegationHistory({ mc, user, ws, report, agentTemp
   if (!fromAgentId || !toAgentId) throw new Error('The matrix has no A and B agents to hand off between');
   if (!report.tasks?.some(t => t.entry === 'delegation-receiver')) throw new Error('The first handoff never reached B: there is no delegation channel to recall');
   await mc.must('bind resumed B', mc.call(`/api/agents/${toAgentId}`, { method: 'PUT', token: user.token, ws, body: { runtime_id: agentTemplate.runtime_id } }));
-  const history = await checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope: `delegation:${ws}:${fromAgentId}:${toAgentId}`, state });
-  report.tasks.push(...history.records);
-  save();
+  const call = (path, body) => mc.must(path, mc.call(path, { token: user.token, ws, method: body === undefined ? 'GET' : 'POST', body }));
+  const guard = selfMentionGuard({ tasksOf: agentId => call(`/api/agents/${agentId}/tasks`), cancel: taskId => call(`/api/tasks/${taskId}/cancel`, {}) });
+  let history;
+  try {
+    history = await checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope: `delegation:${ws}:${fromAgentId}:${toAgentId}`, state, guard });
+    report.tasks.push(...history.records);
+  } finally {
+    recordSelfMentionReruns(report, await guard.stop());
+    save();
+  }
   step('delegation-cross-task-recall', history.ok, history.detail);
   return history;
 }
