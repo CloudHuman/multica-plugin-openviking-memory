@@ -29,7 +29,7 @@
   - 重排：`qwen/qwen3-reranker-8b`。
 - **运行方式**：
   - quality 套件，native 与 config 各 1 轮，都设置 `REAL_AGENT_OBSERVE_PROVIDER=1`；
-  - config 使用 `e2e/real-agent/memory-rules.txt`：10 条规则，1,906 字节，不含测试用例的具体值。
+  - config 使用 `e2e/real-agent/memory-rules.txt`：10 条规则，1,906 字节，不含测试用例的具体值。这份文件之后移到 [`deploy/memory-rules.example.txt`](../deploy/memory-rules.example.txt) 作为参考模板，规则内容不变，只改了开头的注释。
 
 ## 结论
 

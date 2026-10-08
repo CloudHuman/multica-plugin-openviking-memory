@@ -17,13 +17,15 @@ const NO_VALUE = /(?:未检索到|没(?:有)?查到|未找到|查不到).{0,40}(
 // A product rule about empty results ("检索结果为空时显示提示") states a condition and stays.
 const EMPTY_RECALL = /(?:记忆|本次|此次|这次)\s*(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)|(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)\s*[，,、]?\s*(?:不影响|无法|不能|暂无|因此|所以|故|但)/;
 const recallOutcome = (text) => FAILED_RECALL.test(text) || NO_VALUE.test(text) || EMPTY_RECALL.test(text);
+// One sentence that only steers a single run; a stated lasting policy is not one.
+const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && EXECUTION_CONTROL.some(re => re.test(segment));
 const PLATFORM_TOOL = /(?:multica.{0,35}(?:issue|CLI)|--description-file|mention:\/\/agent\/|执行智能体.{0,10}ID|最终状态:\s*(?:completed|failed))/i;
 
 export function memoryQualityIssues(content) {
   const text = String(content ?? '');
   const issues = [];
   if (text.includes('# Multica Agent Runtime')) issues.push('runtime-brief');
-  if (text.split(/\n|(?<=[。；;])/u).some(s => !DURABLE_DOMAIN.test(s) && EXECUTION_CONTROL.some(re => re.test(s)))) issues.push('execution-control');
+  if (text.split(/\n|(?<=[。；;])/u).some(runControl)) issues.push('execution-control');
   if (recallOutcome(text)) issues.push('retrieval-outcome');
   return issues;
 }
@@ -46,7 +48,7 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
     if (/^#{1,6}\s/.test(line)) return [line];
     return line.split(/(?<=[。；;])/u).filter(segment => {
       if (DURABLE_DOMAIN.test(segment)) return true;
-      if (EXECUTION_CONTROL.some(re => re.test(segment))) return false;
+      if (runControl(segment)) return false;
       if (!isEvent && recallOutcome(segment)) return false;
       return true;
     }).join('');
@@ -54,6 +56,17 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
   const contentText = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   const statements = contentText.split('\n').filter(line => line.trim() && !/^\s*#/.test(line));
   return { content: statements.length ? contentText : '', filtered: body !== raw || contentText !== body.trim() };
+}
+
+/**
+ * A message without its known one-run controls ("请先调用 memory-recall",
+ * "不要修改代码", "按平台流程提交简短回复"), sentence by sentence. The rest of
+ * the message, headings and lasting policies included, is kept as written.
+ */
+export function withoutRunControls(text) {
+  return String(text ?? '').split('\n')
+    .map(line => /^#{1,6}\s/.test(line) ? line : line.split(/(?<=[。；;])/u).filter(segment => !runControl(segment)).join('').trimEnd())
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Sharing is stricter than scoped recall: uncertain candidates stay local. */

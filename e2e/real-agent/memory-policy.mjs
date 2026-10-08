@@ -3,8 +3,8 @@
 // OpenViking's own admin API. A workspace's own rules reach the plugin through
 // its installation config (src/memory-rules.mjs, whose template builder this
 // shares); this tool carries the larger test set, which exceeds multica's 4 KB
-// config value. memory-rules.txt is the config-sized set, applied by the plugin
-// itself in config mode. Instance templates and every other account keep OV's defaults.
+// config value. deploy/memory-rules.example.txt is the config-sized set, applied
+// by the plugin itself in config mode. Instance templates and every other account keep OV's defaults.
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { OvClient } from '../../src/ov-client.mjs';
@@ -13,7 +13,7 @@ import { ACCOUNT_TEMPLATE_TYPES, COMMON_RULES_TYPE, WORKSPACE_RULES_HEADING, acc
 
 export const ACCOUNT_POLICY_TYPES = ACCOUNT_TEMPLATE_TYPES;
 export const POLICY_HEADING = '## Multica business-memory quality';
-// native: OV's templates; account: memory-policy.json written here; config: memory-rules.txt through the installation config.
+// native: OV's templates; account: memory-policy.json written here; config: the example rules through the installation config.
 export const MEMORY_POLICY_MODES = ['native', 'account', 'config'];
 export { COMMON_RULES_TYPE };
 
@@ -21,8 +21,8 @@ export function loadMemoryPolicy(path = new URL('./memory-policy.json', import.m
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-/** The installation's memory_rules value for config mode. */
-export function loadMemoryRules(path = new URL('./memory-rules.txt', import.meta.url)) {
+/** The installation's memory_rules value for config mode: the documented example. */
+export function loadMemoryRules(path = new URL('../../deploy/memory-rules.example.txt', import.meta.url)) {
   return readFileSync(path, 'utf8');
 }
 

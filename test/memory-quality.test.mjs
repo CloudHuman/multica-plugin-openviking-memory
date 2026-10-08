@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryExcerpt, memoryFingerprint, promotionQuality } from '../src/memory-quality.mjs';
+import { memoryExcerpt, memoryFingerprint, promotionQuality, withoutRunControls } from '../src/memory-quality.mjs';
 import { listMemoryFiles } from '../src/memory-inventory.mjs';
 import { auditMemories } from '../e2e/real-agent/memory-audit.mjs';
 import { hasCurrentBudget } from '../e2e/real-agent/quality.mjs';
@@ -113,4 +113,11 @@ test('inventory does not follow a peer entry into another user namespace', async
   } };
   await listMemoryFiles({ ov, key: 'key', userId: 'u' });
   assert.ok(requested.every(uri => uri.startsWith('viking://user/u/')));
+});
+
+test('run controls are removed sentence by sentence; facts, headings and lasting policies stay', () => {
+  assert.equal(withoutRunControls('预算 7600 元。请先调用 memory-recall，按实际证据回复。双写五天。'), '预算 7600 元。双写五天。');
+  assert.equal(withoutRunControls('## 要求\n发布冻结期间一律不要修改代码。\n只做分析。'), '## 要求\n发布冻结期间一律不要修改代码。\n只做分析。');
+  assert.equal(withoutRunControls('不要修改代码，不要主动记录记忆。'), '');
+  assert.equal(withoutRunControls('检索结果为空时显示提示。'), '检索结果为空时显示提示。', 'search outcomes are not run controls');
 });

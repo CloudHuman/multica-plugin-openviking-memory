@@ -96,6 +96,36 @@ test('agent comments and chat replies filter runtime instructions without changi
   assert.equal(chat.messages[1].content, 'Confirmed');
 });
 
+test('the experimental switch archives members\' words without their one-run controls; off by default', () => {
+  // The fixed instructions a member appended in the 2026-10-08 real runs.
+  const finish = '请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。';
+  const description = `成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元。以后这个项目的代码注释一律使用中文。${finish}`;
+  const issue = { ...fixtureIssue(), description };
+  const chatInput = { source: 'chat_message', author_type: 'member', author_id: FIXTURE_USER, content: `蓝鹊周报固定按“风险、进展、下一步”排版。${finish}` };
+  const agentInput = { source: 'handoff', author_type: 'agent', author_id: FIXTURE_AGENT_B, content: `交接：请复核预算。${finish}` };
+  const run = (on, kind = 'issue', input = [agentInput]) => buildRunMessages({
+    taskId: `strip-${on}-${kind}`, agentId: FIXTURE_AGENT_A, kind, issue, cfg: { ...cfg, archiveDropRunControls: on },
+    task: { id: 't', kind, chat_user_id: FIXTURE_USER, input }, transcript: [{ seq: 1, type: 'text', content: '已确认。' }],
+  }).messages;
+  assert.match(run(false)[0].content, /不要修改代码/, 'off: archived as written');
+  const [task, handoff] = run(true);
+  assert.doesNotMatch(task.content, /请先调用 memory-recall|按平台流程提交简短回复/);
+  assert.match(task.content, /Apache Pulsar；每月预算 7600 元/);
+  assert.match(task.content, /以后这个项目的代码注释一律使用中文/, 'a stated lasting policy stays');
+  assert.match(handoff.content, /交接：请复核预算。请先调用 memory-recall/, 'only members\' words change');
+  const [chat] = run(true, 'chat', [chatInput]);
+  assert.match(chat.content, /蓝鹊周报固定按/);
+  assert.doesNotMatch(chat.content, /不要修改代码/);
+
+  const comment = (content, on) => buildCommentMessages({ comment: { id: 'c', author_type: 'member', author_id: FIXTURE_USER, content }, issue, cfg: { archiveDropRunControls: on } }).messages;
+  assert.match(comment(`预算调整为 8100 元。${finish}`, false)[0].content, /按平台流程/);
+  assert.doesNotMatch(comment(`预算调整为 8100 元。${finish}`, true)[0].content, /按平台流程|memory-recall/);
+  assert.deepEqual(comment(finish, true), [], 'nothing but run controls: nothing to archive');
+  const pairChat = buildChatMessages({ chatRef: 'chat', userId: FIXTURE_USER, cfg: { archiveDropRunControls: true }, messages: [{ role: 'user', content: finish }, { role: 'user', content: '' }, { role: 'assistant', content: '好的' }] });
+  assert.deepEqual(pairChat.messages.map((m) => m.content), ['', '好的'], 'an emptied turn is dropped; an empty one is kept as before');
+  assert.doesNotMatch(buildAppendMessages({ appendId: 'a', taskId: 't', content: `顺便给出回滚方案。${finish}`, cfg: { archiveDropRunControls: true } }).messages[0].content, /memory-recall/);
+});
+
 test('include_thinking opt-in keeps thinking as distillation nourishment', () => {
   const t = fixtureTranscript({ taskId: 't2' });
   const { messages } = buildRunMessages({

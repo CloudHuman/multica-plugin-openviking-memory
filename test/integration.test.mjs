@@ -83,6 +83,19 @@ test('comments are archived with honest attribution: member = human feedback, ag
   });
 });
 
+test('with the experimental switch on, a member\'s comment is archived without its one-run controls', async () => {
+  await withStack({ cfg: { archiveDropRunControls: true } }, async ({ ov, svc, cb }) => {
+    const content = '苍鹭发布预算调整为 8100 元，以本次为准。请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆。';
+    const r = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'comment.created', commentEvent({ id: 'cm-controls', content })));
+    assert.equal(r.status, 200, r.text);
+    assert.equal(svc.queue.jobs.get(r.json.result.job).payload.settings.archiveDropRunControls, true, 'the job keeps the setting it was accepted with');
+    const rec = await waitFor(() => svc.registry.get(taskScope), { label: 'task scope' });
+    const [human] = await waitFor(() => { const archived = ov.archivedOf(rec.apiKey, 'mc-comment-cm-controls'); return archived.length ? archived : null; }, { label: 'comment archive' });
+    assert.match(human.content, /苍鹭发布预算调整为 8100 元，以本次为准。/);
+    assert.doesNotMatch(human.content, /memory-recall|不要修改代码/);
+  });
+});
+
 test('patched multica: a run\'s closing comment that arrives before its task event is not archived twice', async () => {
   const taskId = 'run-closing';
   await withStack({ taskApi: true, tasks: { [taskId]: fixtureTask({ taskId }) }, transcript: fixtureTranscript({ taskId }) }, async ({ svc, cb, multica }) => {

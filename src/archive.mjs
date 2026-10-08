@@ -1,4 +1,5 @@
 import { cap, slugify, shortHash } from './util.mjs';
+import { withoutRunControls } from './memory-quality.mjs';
 
 /**
  * Pure builders: turn multica events + transcripts into OpenViking session
@@ -38,6 +39,11 @@ function stripRuntimeBriefValue(value) {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stripRuntimeBriefValue(item)]));
   }
   return value;
+}
+
+/** A member's words as archived: optionally without known one-run controls. */
+function memberText(text, cfg) {
+  return cfg?.archiveDropRunControls ? withoutRunControls(text) : text;
 }
 
 /** Flatten a tool input (string / array / object) into comparable command text. */
@@ -95,7 +101,7 @@ function inputMessages(inputs, turn, cfg, { chatWith } = {}) {
   const out = [];
   for (const item of inputs ?? []) {
     const raw = String(item?.content ?? '').trim();
-    const text = item?.author_type === 'agent' ? stripRuntimeBrief(raw) : raw;
+    const text = item?.author_type === 'agent' ? stripRuntimeBrief(raw) : item?.author_type === 'member' ? memberText(raw, cfg) : raw;
     if (!text) continue;
     let who = item.author_type === 'agent' ? `智能体 ${item.author_id}` : item.author_type === 'member' ? `成员 ${item.author_id}` : (item.author_type || '未知来源');
     if (chatWith && item.source === 'chat_message') who += `（与智能体 ${chatWith} 的私聊）`;
@@ -134,7 +140,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
   const header = HEADER[kind] ?? HEADER.other;
   let context;
   if (kind === 'issue') {
-    const description = typeof issue?.description === 'string' ? issue.description : '';
+    const description = memberText(typeof issue?.description === 'string' ? issue.description : '', cfg);
     context = `${[header, issueName(issue)].filter(Boolean).join(' ')}\n\n任务描述：\n${cap(description, cfg.textPartMaxChars) || '(无描述)'}`;
   } else if (kind === 'chat') {
     context = `${header} 成员 ${task?.chat_user_id ?? 'unknown'} 与智能体 ${agentId} 的对话`;
@@ -255,13 +261,13 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
  * (assistant role, after a one-line context turn so extraction has a user-role
  * anchor); a plugin's is labelled as such and attributed to no person.
  */
-export function buildCommentMessages({ comment, issue }) {
+export function buildCommentMessages({ comment, issue, cfg }) {
   const authorType = comment?.author_type ?? 'member';
   const authorId = String(comment?.author_id ?? comment?.author?.id ?? '');
   const where = issueName(issue);
   const turn = `comment-${sanitizeSessionId(comment.id ?? 'x')}`;
   const rawBody = String(comment.content ?? '');
-  const body = cap(authorType === 'agent' ? stripRuntimeBrief(rawBody) : rawBody, 8000);
+  const body = cap(authorType === 'agent' ? stripRuntimeBrief(rawBody) : authorType === 'plugin' ? rawBody : memberText(rawBody, cfg), 8000);
   const when = comment?.created_at ?? '';
   const sessionId = `mc-comment-${sanitizeSessionId(comment.id ?? shortHash(JSON.stringify(comment)))}`;
   if (authorType === 'agent') {
@@ -285,6 +291,8 @@ export function buildCommentMessages({ comment, issue }) {
       messages: [{ role: 'user', message_kind: 'user_query', turn_id: turn, content: `[插件消息] ${where}\n\n${body}\n\n来源插件: ${authorId} | 时间: ${when}` }],
     };
   }
+  // A comment that was nothing but run controls leaves nothing to remember.
+  if (!body.trim()) return { sessionId, messages: [] };
   const msg = {
     role: 'user',
     message_kind: 'user_query',
@@ -296,13 +304,14 @@ export function buildCommentMessages({ comment, issue }) {
 }
 
 /** Companion: one direct-chat turn → pair-space messages (one session per turn). */
-export function buildChatMessages({ chatRef, turnKey, agentId, userId, messages = [] }) {
+export function buildChatMessages({ chatRef, turnKey, agentId, userId, messages = [], cfg }) {
   const sid = `mc-chat-${sanitizeSessionId(chatRef)}${turnKey ? `-${sanitizeSessionId(turnKey)}` : ''}`;
   const mapped = messages.flatMap((m, i) => {
     const isAgent = m.role === 'assistant';
-    const clean = isAgent ? stripRuntimeBriefValue(m.content) : m.content;
+    const clean = isAgent ? stripRuntimeBriefValue(m.content) : typeof m.content === 'string' ? memberText(m.content, cfg) : m.content;
     const text = typeof clean === 'string' ? clean : JSON.stringify(clean);
-    if (isAgent && !String(text ?? '').trim()) return [];
+    // An agent turn left empty by the brief strip, or a member turn that was only run controls.
+    if (!String(text ?? '').trim() && (isAgent || String(m.content ?? '').trim())) return [];
     const out = {
       role: isAgent ? 'assistant' : 'user',
       message_kind: isAgent ? 'assistant_step' : 'user_query',
@@ -316,7 +325,7 @@ export function buildChatMessages({ chatRef, turnKey, agentId, userId, messages 
 }
 
 /** Companion: mid-run appended requirement → confirmed-delivery record. */
-export function buildAppendMessages({ appendId, taskId, content, delivered = true }) {
+export function buildAppendMessages({ appendId, taskId, content, delivered = true, cfg }) {
   return {
     sessionId: `mc-append-${sanitizeSessionId(appendId)}`,
     messages: [
@@ -324,7 +333,7 @@ export function buildAppendMessages({ appendId, taskId, content, delivered = tru
         role: 'user',
         message_kind: 'user_query',
         turn_id: `append-${sanitizeSessionId(appendId)}`,
-        content: `[当前轮追加][${delivered ? '已确认投递' : '投递未确认'}] 目标运行 ${taskId}\n\n${cap(content, 8000)}`,
+        content: `[当前轮追加][${delivered ? '已确认投递' : '投递未确认'}] 目标运行 ${taskId}\n\n${cap(memberText(String(content ?? ''), cfg), 8000)}`,
       },
     ],
   };

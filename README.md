@@ -168,10 +168,24 @@ POST /internal/recall    // 供注入方拉取召回块
 | `OVMEM_PLUGIN_TOKEN` | — | `/internal` + `/admin` Bearer（必填） |
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
 | `OVMEM_RECALL_ENTRIES` | `5` | 每次召回条数上限（1-10） |
+| `OVMEM_ARCHIVE_DROP_RUN_CONTROLS` | `0` | 实验开关，默认关闭：归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”），也可在 `state/config.json` 设 `archiveDropRunControls`。正在做真实模型 A/B 对比 |
 
 multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）、`memory_rules`（本工作区的抽取规则，见下）。
 
 **工作区抽取规则 `memory_rules`**：每行一条，`entities:` / `events:` / `preferences:` / `profile:` 前缀把一行限定到一类记忆，其余行对所有类型生效；空行和 `#` 开头的行忽略。插件把规则写入该工作区自己 OV 账户的账号级模板（OpenViking 自带能力，只追加在原生描述之后，不替换），在该工作区下一条记录提交前生效，只影响这个工作区。清空即恢复 OV 默认，插件不会改动它没写过的模板。规则须是纯文本（不能含 `{{`、`{%`、`{#`），单个配置值上限 4 KB（multica 限制）；无效规则不生效，已生效的保持不变。状态见 `memory-status` 的 `memory_rules`（`default` / `applied` / `invalid` / `error`，不回显规则原文）。
+
+**参考模板** [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt)：10 条通用规则，约 2 KB，可整段粘贴进 `memory_rules` 再按需增删。规则内容：
+
+- 运行时说明和一次性执行指令（“先调用 memory-recall”“不要修改代码”等）不算偏好或事实；
+- 检索为空、失败或超时不是业务事实；
+- 金额保留单位和周期；
+- 私聊里“不公开”只限制分享，不影响记住；
+- 持久偏好单独成条；
+- 实体卡不写 issue 编号、任务 ID 和检索结果；
+- 同一主体沿用已有卡片，明确更新时把旧值标为此前的值；
+- 事件只记业务决定、变更和事故。
+
+模板用英文写，与 OV 模板原有描述一致。2026-10-08 的真实验证中，配置这份模板的工作区 quality 16/16，每次抽取的提示词约多 2.5K 字符（见[报告](reports/real-agent-2026-10-08-config-rules.md)）。不配置时仍按 OV 原生规则抽取。
 
 调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（2000）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
 

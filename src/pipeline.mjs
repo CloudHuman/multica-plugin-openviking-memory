@@ -34,11 +34,11 @@ export function buildJobMessages(job, cfg) {
         task: p.task, transcript: p.transcript ?? [], status: p.status, cfg: settings,
       });
     case 'archive-comment':
-      return buildCommentMessages({ comment: p.comment, issue: p.issue });
+      return buildCommentMessages({ comment: p.comment, issue: p.issue, cfg: settings });
     case 'archive-chat':
-      return buildChatMessages({ chatRef: p.refId, turnKey: p.turnKey, agentId: p.scope.agentId, userId: p.scope.userId, messages: p.messages });
+      return buildChatMessages({ chatRef: p.refId, turnKey: p.turnKey, agentId: p.scope.agentId, userId: p.scope.userId, messages: p.messages, cfg: settings });
     case 'archive-append':
-      return buildAppendMessages({ appendId: p.refId, taskId: p.scope.taskId, content: p.content, delivered: p.delivered });
+      return buildAppendMessages({ appendId: p.refId, taskId: p.scope.taskId, content: p.content, delivered: p.delivered, cfg: settings });
     case 'archive-delegation':
       return buildDelegationMessages({ handoffId: p.refId, fromAgentId: p.scope.fromAgentId, toAgentId: p.scope.toAgentId, content: p.content });
     case 'consolidate':

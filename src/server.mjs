@@ -248,7 +248,7 @@ function pickTask(task) {
 }
 
 async function archiveCommentEvent(deps) {
-  const { cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, skip } = deps;
+  const { cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, skip } = deps;
   const comment = input.comment;
   if (!comment?.id) return skip('comment event without comment.id');
   const authorType = comment.author_type ?? 'member';
@@ -298,6 +298,7 @@ async function archiveCommentEvent(deps) {
       content: cap(comment.content, 8000), created_at: comment.created_at ?? '', source_task_id: comment.source_task_id ?? null,
     },
     issue: { id: issueId, identifier: issue?.identifier ?? '', title: issue?.title ?? '' },
+    settings,
     scope: { kind: 'task', workspaceId: ws, issueId },
     scopeKey: scopeKey('task', ws, issueId),
     completeness: 'complete',
