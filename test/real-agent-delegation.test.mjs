@@ -52,7 +52,7 @@ test('a failed sender and a sender still running at the deadline stop the suite'
   await assert.rejects(firstReceiver({ tasksOf: running, issueId: 'i', fromAgentId: A, toAgentId: B, timeout: 20, poll: 1 }), /neither handed off nor finished/);
 });
 
-function historyStack({ handsOff }) {
+function historyStack({ handsOff, recalls = true }) {
   const tasks = { [A]: [], [B]: [] };
   const comments = [];
   let issue;
@@ -64,7 +64,7 @@ function historyStack({ handsOff }) {
       let m = path.match(/^\/api\/agents\/([^/]+)\/tasks$/);
       if (m) return ok(tasks[m[1]]);
       m = path.match(/^\/api\/tasks\/([^/]+)\/messages$/);
-      if (m) return ok(m[1] === 'b1' ? [{ type: 'tool_result', tool: 'memory-recall', output: JSON.stringify({ status: 'ok', result: { run: { bound: true }, entries: [{ scope: `delegation:w:${A}:${B}`, uri: 'viking://x/retry.md' }] } }) }] : [{ type: 'text', content: '未找到，不做猜测。' }]);
+      if (m) return ok(m[1] === 'b1' && recalls ? [{ type: 'tool_result', tool: 'memory-recall', output: JSON.stringify({ status: 'ok', result: { run: { bound: true }, entries: [{ scope: `delegation:w:${A}:${B}`, uri: 'viking://x/retry.md' }] } }) }] : [{ type: 'text', content: '未找到，不做猜测。' }]);
       if (/\/comments$/.test(path)) return ok(comments);
       throw new Error(`unexpected ${path}`);
     },
@@ -94,6 +94,11 @@ test('a history handoff A answers itself is a recorded failure with the sender\'
     assert.match(missed.records[0].response, /没有找到重试上限/);
     assert.ok(self.issue().description.endsWith(`\n\n${handoffComment(B)}`), 'A gets the handoff comment verbatim as the last paragraph, nothing after it to copy along');
     assert.match(handoffComment(B), /^\[@复核智能体\]\(mention:\/\/agent\/agent-b\) /);
+
+    const quiet = historyStack({ handsOff: true, recalls: false });
+    const unanswered = await checkDelegationHistory({ mc: quiet.mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: `delegation:w:${A}:${B}`, grace: 5, poll: 1 });
+    assert.equal(unanswered.ok, false);
+    assert.equal(unanswered.detail, 'The second handoff reached B, which did not call memory-recall');
 
     const handed = await checkDelegationHistory({ mc: historyStack({ handsOff: true }).mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: `delegation:w:${A}:${B}`, grace: 5, poll: 1 });
     assert.equal(handed.ok, true);

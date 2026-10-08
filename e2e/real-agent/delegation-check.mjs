@@ -109,8 +109,11 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   }
   if (!receiver) return { ok: false, records, detail: 'The second handoff never reached B: A finished without mentioning B (see delegation-history-sender)' };
   const result = records.find(r => r.entry === 'delegation-history-receiver');
-  const ok = result.status === 'completed' && /7\s*次|七次/.test(result.response) && result.recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === channelScope && result.response.includes(e.uri)));
-  return { ok, records, detail: 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI' };
+  const stated = /7\s*次|七次/.test(result.response);
+  const cited = result.recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === channelScope && result.response.includes(e.uri)));
+  const ok = result.status === 'completed' && stated && cited;
+  const missed = result.status !== 'completed' ? `ended ${result.status}` : !result.recalls.length ? 'did not call memory-recall' : !cited ? 'cited no URI from the A to B channel' : 'did not state the retry limit';
+  return { ok, records, detail: ok ? 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI' : `The second handoff reached B, which ${missed}` };
 }
 
 // REAL_AGENT_MATRIX_PHASE=history: only the second handoff, again, on a
