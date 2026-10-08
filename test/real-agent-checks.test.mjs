@@ -100,3 +100,28 @@ test('the lasting comment-language rule counts as its own preference or as a lin
   assert.equal(preferenceStorage([{ uri: 'viking://user/u/memories/entities/项目/青岚.md', content: '# 青岚\n- 代码注释一律使用中文。' }]), 'missing');
   assert.equal(preferenceStorage([card(`${CARD_NATIVE}\n- 发布说明使用中文。`)]), 'missing');
 });
+
+test('a recall result cut to Multica\'s 8 KB transcript preview keeps its binding and the entries that arrived whole', async () => {
+  const { toolResultData } = await import('../e2e/real-agent/tool-output.mjs');
+  const entry = (i) => ({ uri: `viking://user/u/memories/events/2026/10/08/苍鹭约定${i}.md`, level: 2, score: 0.9, abstract: `# Summary\n苍鹭发布的第 ${i} 项约定 "Pulsar" {7600} 元。\n${'双写持续五天。'.repeat(120)}`, scope: 'task:ws:issue-1', source: 'task' });
+  const result = { status: 'ok', result: { note: '参考证据', run: { kind: 'issue', bound: true }, query: '苍鹭 发布 预算', entries: [1, 2, 3, 4, 5].map(entry), scopesSearched: [{ scope: 'task:ws:issue-1', hits: 5 }, { scope: 'agent:ws:b', hits: 0 }] } };
+  const full = JSON.stringify(result);
+  // The daemon's preview: the longest whole-character prefix within 8192 bytes.
+  let preview = Buffer.from(full).subarray(0, 8192).toString('utf8');
+  if (preview.endsWith('�')) preview = preview.slice(0, -1);
+  assert.ok(Buffer.byteLength(full) > 8192 && Buffer.byteLength(preview) <= 8192);
+  assert.equal(toolResultData({ output: preview }), null, 'without the truncation flag a broken output is not guessed at');
+  const recovered = toolResultData({ output: preview, output_truncated: true });
+  assert.equal(recovered.status, 'ok');
+  assert.equal(recovered.truncated, true);
+  assert.deepEqual(recovered.result.run, { kind: 'issue', bound: true });
+  assert.equal(recovered.result.query, '苍鹭 发布 预算');
+  assert.ok(recovered.result.entries.length >= 1 && recovered.result.entries.length < 5, `${recovered.result.entries.length} whole entries`);
+  assert.deepEqual(recovered.result.entries.map((e) => e.uri), result.result.entries.slice(0, recovered.result.entries.length).map((e) => e.uri));
+  assert.equal(recovered.result.entries[0].scope, 'task:ws:issue-1');
+  assert.deepEqual(recovered.result.scopesSearched, [], 'cut off before it: nothing is invented');
+  // Whole outputs and non-JSON outputs are unchanged.
+  assert.deepEqual(toolResultData({ output: full }), result);
+  assert.equal(toolResultData({ output: 'plain text', output_truncated: true }), null);
+  assert.deepEqual(toolResultData({ output: { status: 'ok' } }), { status: 'ok' });
+});

@@ -142,7 +142,10 @@ export async function runMatrix(ctx) {
   }
 
   const delegated = await issueRun(a, '雨燕交接给复核智能体', `这是一次明确授权的多智能体交接测试。请先调用 memory-recall，然后实际用 multica issue comment add 在当前 issue 发布且只发布一次给复核智能体的交接评论。评论必须包含完整 mention：[@复核智能体](mention://agent/${b.id})，以及业务交接事实“雨燕项目重试上限为 7 次，请据此复核并引用记忆来源”。不要在这次运行直接回答复核问题。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。不要修改代码或主动写公共记忆。`, 'delegation-sender');
-  const receiver = await completed(b, t => t.issue_id === delegated.issue.id, 'delegation-receiver');
+  // B's reply may mention B again and start another run on the issue: the
+  // delegated run is B's first task there.
+  const delegatedRun = await wait('delegated receiver', async () => (await tasks(b)).filter(t => t.issue_id === delegated.issue.id).sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)))[0], 600000);
+  const receiver = await completed(b, t => t.id === delegatedRun.id, 'delegation-receiver');
   const channel = `delegation:${ws}:${a.id}:${b.id}`;
   step('real-delegation-linked', recalls(receiver).some(r => r.run?.bound === true && r.scopesSearched?.some(s => s.scope === channel)), 'Actual A mention dispatched B with its delegation channel in recall scopes');
   await extracted(receiver.task.id, `task:${ws}:${delegated.issue.id}`);

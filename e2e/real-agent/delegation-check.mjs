@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { sleep } from '../real-stack/multica.mjs';
+import { toolResultData } from './tool-output.mjs';
 
 export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope, state }) {
   if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
@@ -13,9 +14,12 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   await mc.assign(user.token, ws, issue.id, fromAgentId);
   const deadline = Date.now() + 600000;
   let sender, receiver;
+  // A reply that mentions the receiver again starts another run on the issue:
+  // the delegated run is each agent's first task there.
+  const firstOn = tasks => tasks.filter(t => t.issue_id === issue.id).sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)))[0];
   while (Date.now() < deadline) {
-    sender = (await call(`/api/agents/${fromAgentId}/tasks`)).find(t => t.issue_id === issue.id);
-    receiver = (await call(`/api/agents/${toAgentId}/tasks`)).find(t => t.issue_id === issue.id);
+    sender = firstOn(await call(`/api/agents/${fromAgentId}/tasks`));
+    receiver = firstOn(await call(`/api/agents/${toAgentId}/tasks`));
     if (receiver && ['completed', 'failed', 'cancelled'].includes(receiver.status)) break;
     if (sender?.status === 'failed' && !receiver) throw new Error(`History delegation sender failed: ${sender.error}`);
     await sleep(1500);
@@ -25,7 +29,7 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   for (const [role, task] of [['sender', sender], ['receiver', receiver]]) {
     const messages = await call(`/api/tasks/${task.id}/messages`);
     const comments = (await call(`/api/issues/${issue.id}/comments`)).filter(c => c.author_id === task.agent_id && c.source_task_id === task.id);
-    const recalls = messages.filter(m => m.type === 'tool_result' && /memory.*recall/.test(m.tool ?? '')).map(m => { try { return JSON.parse(m.output).result; } catch { return null; } }).filter(Boolean);
+    const recalls = messages.filter(m => m.type === 'tool_result' && /memory.*recall/.test(m.tool ?? '')).map(m => toolResultData(m)?.result).filter(Boolean);
     const record = { entry: `delegation-history-${role}`, taskId: task.id, agentId: task.agent_id, issueId: issue.id, status: task.status, error: task.error ?? null, startedAt: task.started_at, completedAt: task.completed_at, response: [task.result?.output ?? '', ...comments.map(c => c.content)].join('\n'), tools: messages.filter(m => m.type === 'tool_use').map(m => m.tool), recalls };
     records.push(record);
     if (state) writeFileSync(join(state, `${record.entry}-${task.id}-transcript.json`), JSON.stringify(messages), { mode: 0o600 });

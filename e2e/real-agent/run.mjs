@@ -10,6 +10,7 @@ import { auditMemories } from './memory-audit.mjs';
 import { assessNoAnswer } from './answer-checks.mjs';
 import { MEMORY_POLICY_MODES, inspectAccountTemplates, loadMemoryRules, prepareTestAccount } from './memory-policy.mjs';
 import { parseMemoryRules } from '../../src/memory-rules.mjs';
+import { toolResultData } from './tool-output.mjs';
 
 if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -70,9 +71,6 @@ report.archiveDropRunControls = archiveDropRunControls;
 report.multicaCliVersion = execFileSync(cli, ['--version'], { encoding: 'utf8' }).trim();
 function save() { writeFileSync(join(state, 'report.json'), JSON.stringify(report, null, 2)); }
 function step(id, ok, detail) { results.push({ id, ok: !!ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'} ${id}: ${detail}`); save(); }
-function toolResultData(message) {
-  try { return typeof message.output === 'string' ? JSON.parse(message.output) : message.output; } catch { return null; }
-}
 function privateFile(path, value) { writeFileSync(path, JSON.stringify(value), { mode: 0o600 }); }
 async function wait(label, fn, timeout = 120000) {
   const deadline = Date.now() + timeout;

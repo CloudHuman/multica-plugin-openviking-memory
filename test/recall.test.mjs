@@ -70,6 +70,8 @@ test('recall merges scopes, drops stubs, ranks and caps, and reads each hit from
     assert.equal(result.entries[0].uri, decision, 'the matching memory ranks first');
     // The first line is part of the content: reads start at offset 0.
     assert.match(hit.content, /^选型结论:推荐 RocketMQ/);
+    // Multica keeps an 8 KB preview of each tool result: the searched spaces come before the long entries.
+    assert.deepEqual(Object.keys(result), ['query', 'scopesSearched', 'entries']);
 
     const capped = await recallFromScopes({ ov: client, registry, scopeKeys: [taskScope, agentScope], query: 'e', entries: 1 });
     assert.equal(capped.entries.length, 1);

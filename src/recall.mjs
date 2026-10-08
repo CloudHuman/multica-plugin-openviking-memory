@@ -168,8 +168,11 @@ export async function recallFromScopes({
     ranked.push(entry);
   }
 
+  // Short facts first: Multica keeps only an 8 KB preview of a tool result in
+  // the run's transcript, and which spaces were searched must survive it.
   return {
     query,
+    scopesSearched: searches.map((s) => ({ scope: s.scopeKeyStr, hits: s.hits.length, skipped: s.skipped, error: s.error, timedOut: s.timedOut })),
     entries: ranked.map(({ uri, level, score, abstract, scope, content, contentFiltered, duplicateSources }) => ({
       uri,
       level,
@@ -181,7 +184,6 @@ export async function recallFromScopes({
       ...(contentFiltered ? { content_filtered: true } : {}),
       ...(duplicateSources ? { duplicate_sources: duplicateSources } : {}),
     })),
-    scopesSearched: searches.map((s) => ({ scope: s.scopeKeyStr, hits: s.hits.length, skipped: s.skipped, error: s.error, timedOut: s.timedOut })),
   };
 }
 
