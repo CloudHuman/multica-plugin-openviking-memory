@@ -92,7 +92,7 @@ test('a history handoff A answers itself is a recorded failure with the sender\'
     assert.match(missed.detail, /never reached B/);
     assert.deepEqual(missed.records.map((r) => r.entry), ['delegation-history-sender']);
     assert.match(missed.records[0].response, /没有找到重试上限/);
-    assert.ok(self.issue().description.includes(`\n\n${handoffComment(B)}\n\n`), 'A gets the handoff comment verbatim, mention first');
+    assert.ok(self.issue().description.endsWith(`\n\n${handoffComment(B)}`), 'A gets the handoff comment verbatim as the last paragraph, nothing after it to copy along');
     assert.match(handoffComment(B), /^\[@复核智能体\]\(mention:\/\/agent\/agent-b\) /);
 
     const handed = await checkDelegationHistory({ mc: historyStack({ handsOff: true }).mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: `delegation:w:${A}:${B}`, grace: 5, poll: 1 });

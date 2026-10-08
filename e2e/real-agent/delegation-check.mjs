@@ -81,8 +81,10 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   const issue = await mc.createIssue(user.token, ws, {
     title: `新任务查询雨燕历史交接约定 ${randomUUID().slice(0, 8)}`,
     // The comment is given verbatim: asked to compose it, A has answered the
-    // question itself or dropped the mention, and nothing reached B.
-    description: `这是一次新的、明确授权的历史交接测试。你只负责转交，不要在这次运行回答或查找答案，查不到也照样转交。请用 multica issue comment add 在当前 issue 原样发布下面这条评论，只发布一次；开头的 mention 负责派发复核智能体，必须原样保留：\n\n${handoffComment(toAgentId)}\n\n本次没有提供上限数字。不要猜测数字、主动记忆或修改代码。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。`,
+    // question itself or dropped the mention, and nothing reached B. It is the
+    // last paragraph, so nothing meant for A can be copied along with it: A
+    // once posted "不要猜测数字……提交简短最终回复" too, and B obeyed that instead.
+    description: `这是一次新的、明确授权的历史交接测试。你只负责转交，不要在这次运行回答或查找答案，查不到也照样转交。本次没有提供上限数字，不要猜测数字、主动记忆或修改代码。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。请用 multica issue comment add 在当前 issue 原样发布下面这条评论，只发布一次；它是本描述的最后一段，开头的 mention 负责派发复核智能体，必须原样保留，不要添加其他文字：\n\n${handoffComment(toAgentId)}`,
   });
   await mc.assign(user.token, ws, issue.id, fromAgentId);
   const deadline = Date.now() + timeout;
