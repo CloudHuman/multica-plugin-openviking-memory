@@ -110,7 +110,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ### 3. （推荐）给 multica 打任务读取 API 补丁
 
-运行转写、私聊/自动化/快速创建/委派归档、召回绑定运行都依赖任务读取补丁。另一个凭据补丁修复只有插件工具、没有远程 MCP 连接时，真实 daemon 调用插件工具返回 401 的问题。按顺序应用 `upstream/multica/0001-*.patch`、`0002-*.patch`，然后重新构建 multica 服务端。说明与 stock 降级对照见 [`upstream/multica/README.md`](upstream/multica/README.md)。
+运行转写、私聊/自动化/快速创建/委派归档、召回绑定运行都依赖任务读取补丁。另一个凭据补丁修复只有插件工具、没有远程 MCP 连接时，真实 daemon 调用插件工具返回 401 的问题。按顺序应用 `upstream/multica/0001-*.patch`、`0002-*.patch`，然后重新构建 multica 服务端。其余补丁按需应用：`0003` 修复快速创建关联 issue 后运行类型改变，`0004` 用于确认已发布的交付，`0005` 防止智能体在同一 issue 上 @ 自己而反复派发自己（这会让插件反复归档、抽取同一段循环）。说明与 stock 降级对照见 [`upstream/multica/README.md`](upstream/multica/README.md)。
 
 ### 4. 打包并安装
 
