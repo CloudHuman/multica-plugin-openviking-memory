@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { assessNoAnswer } from '../e2e/real-agent/answer-checks.mjs';
 import { auditMemories, entityAuditIssues } from '../e2e/real-agent/memory-audit.mjs';
 import { hasCurrentBudget, preferenceStorage } from '../e2e/real-agent/quality.mjs';
+import { auditMatrix } from '../e2e/real-agent/matrix.mjs';
 
 const recall = (scopesSearched) => ({ status: 'ok', result: { entries: [], scopesSearched } });
 const complete = recall([{ scope: 'task:w:i', hits: 0 }, { scope: 'agent:w:a', hits: 0 }]);
@@ -62,6 +63,29 @@ test('the memory audit reports entity observations without counting them as qual
   assert.equal(audit.complete, true);
   assert.deepEqual(audit.qualityFindings, []);
   assert.deepEqual(audit.entityFindings, [{ uri: `${root}/memories/entities/项目/海棠迁移.md`, reasons: ['entity-issue-key'] }]);
+});
+
+test('the matrix audit runs to the end and reports this workspace\'s issue keys in entity cards', async () => {
+  // Its last step: since 10-01 it referenced an issue prefix it was never given and threw.
+  const root = 'viking://user/u';
+  const archive = `${root}/sessions/s1/history/archive_001/messages.jsonl`;
+  const card = `${root}/memories/entities/项目/海棠迁移.md`;
+  const content = { [archive]: '{"role":"user","content":"[任务上下文] 「海棠迁移」"}', [card]: '# 海棠迁移\n- 使用 RocketMQ。\n- 方案于 2026-10-01 在任务 RAM-1 下确认。' };
+  const directories = { [`${root}/memories`]: [{ name: 'entities', isDir: true }], [`${root}/memories/entities`]: [{ name: '项目', isDir: true }], [`${root}/memories/entities/项目`]: [{ name: '海棠迁移.md' }] };
+  const ov = {
+    listDir: async (_key, uri) => { if (!(uri in directories)) throw Object.assign(new Error('missing'), { status: 404 }); return directories[uri]; },
+    readContent: async (_key, uri) => ({ content: content[uri] }),
+  };
+  const report = { tasks: [{ taskId: 't1' }] };
+  const steps = [];
+  await auditMatrix({
+    ov, report, canary: 'PLATFORM_ONLY_x', issuePrefix: 'RAM', save: () => {},
+    scopes: () => ({ 'task:ws:i': { userId: 'u', apiKey: 'key' } }),
+    statuses: () => [{ type: 'extraction', extraction: 'done', ref: 't1', scope: 'task:ws:i', session_id: 's1' }],
+    step: (id, ok) => steps.push([id, ok]),
+  });
+  assert.deepEqual(steps, [['matrix-archive-prompt-hygiene', true], ['matrix-prompt-hygiene', true], ['matrix-memory-quality', true]]);
+  assert.deepEqual(report.memoryAudit[0].entityFindings, [{ uri: card, reasons: ['entity-issue-key'] }]);
 });
 
 // Entity cards stored by real extractions on 2026-10-01 (native / account rules / account rules on OV defaults).

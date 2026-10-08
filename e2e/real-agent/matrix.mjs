@@ -309,10 +309,10 @@ async function matrixSteps(ctx, guard) {
     const expected = record.entry.startsWith('chat-') ? `dm:${ws}:${record.agentId}:${user.userId}` : record.entry === 'autopilot-schedule' ? `automation:${ws}:${scheduled.id}` : record.entry.startsWith('autopilot-') && record.entry !== 'autopilot-create-issue' ? automationScope : record.entry === 'quick-create' ? `run:${ws}:${record.taskId}` : `task:${ws}:${record.issueId}`;
     if (!statuses().some(e => e.ref === record.taskId && e.record === 'archive-run' && e.extraction === 'done')) await extracted(record.taskId, expected);
   }
-  await auditMatrix({ ov, report, scopes, statuses, canary, step, save });
+  await auditMatrix({ ov, report, scopes, statuses, canary, issuePrefix, step, save });
 }
 
-export async function auditMatrix({ ov, report, scopes, statuses, canary, step, save }) {
+export async function auditMatrix({ ov, report, scopes, statuses, canary, issuePrefix, step, save }) {
   const archiveAudit = [];
   const taskIds = new Set(report.tasks.map(t => t.taskId));
   for (const event of statuses().filter(e => e.type === 'extraction' && e.extraction === 'done' && taskIds.has(e.ref))) {

@@ -6,7 +6,7 @@ import { auditMatrix } from './matrix.mjs';
 // Continue the actual matrix after a native, unmonitored promotion failed.
 // Replay its original archive; do not supply the expected facts to the agent.
 export async function recoverSharedMatrix(ctx) {
-  const { mc, ov, user, ws, report, pluginState, pluginUrl, pluginToken, agentTemplate, canary, state, wait, step, save, privateFile, toolResultData } = ctx;
+  const { mc, ov, user, ws, report, pluginState, pluginUrl, pluginToken, agentTemplate, canary, issuePrefix, state, wait, step, save, privateFile, toolResultData } = ctx;
   const list = data => Array.isArray(data) ? data : data?.tasks ?? data?.comments ?? data?.messages ?? [];
   const call = (path, body, method = body === undefined ? 'GET' : 'POST') => mc.must(path, mc.call(path, { token: user.token, ws, body, method }));
   const scopes = () => JSON.parse(readFileSync(join(pluginState, 'scopes.json'), 'utf8')).scopes;
@@ -43,5 +43,5 @@ export async function recoverSharedMatrix(ctx) {
   report.tasks.push(record); privateFile(join(state, `shared-recall-${task.id}-transcript.json`), messages); save();
   step('multi-agent-shared-recall', task.status === 'completed' && /NATS/i.test(response) && /2450/.test(response) && recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === sharedScope && comments.some(c => c.content.includes(e.uri)))), 'Actual agent B recovered A business facts from the repaired shared memory and cited its URI in a persisted issue reply');
   for (const record of report.tasks) await wait(`archive ${record.entry}`, async () => statuses().find(e => e.record === 'archive-run' && e.ref === record.taskId && e.extraction === 'done'), 240000);
-  await auditMatrix({ ov, report, scopes, statuses, canary, step, save });
+  await auditMatrix({ ov, report, scopes, statuses, canary, issuePrefix, step, save });
 }
