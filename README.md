@@ -258,6 +258,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-08 执行指令改为按分句去掉**：复查发现按整句去掉会连带删掉同一句里的业务内容，例如“方案确认：不修改代码，只调整 Kafka 分区数为 12。”整句被删。现在只去掉含指令的分句，长期约定整句保留；归档、召回摘录和共享晋升用同一规则。默认开启后的真实验证轮 13/16，失败都在私聊：原生抽取把“不写入公共记忆”理解成不要记（见 A/B 报告第 6、7 节）。
 - **2026-10-08 默认去掉执行指令；quality 记失败继续跑**：按 A/B 结果，`archiveDropRunControls` 改为默认开启，设 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS=0` 按原文归档。quality 套件遇到“晋升为空”“共享里查不到当前事实”“私聊版式没有抽出”时，记一项失败、继续往下跑，不再整轮停止；新增检查 `initial-promotion-admitted`。新增的离线测试用模拟环境跑通了这些路径。
 - **2026-10-08 规则模板与归档前去掉执行指令的 A/B**：参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 写进文档。新增实验开关 `archiveDropRunControls`（默认关闭）：归档前去掉成员消息和任务描述里已知的一次性执行指令。原生抽取各跑 3 轮：关闭时 3 轮都有抽取因成员的“不要主动记录记忆”放弃写入，丢掉了种子任务的卡片或私聊版式；开启时 0 次，没有看到事实或偏好损失。开启组两次失败都来自成员原文里的检索结论句，共享晋升已把它去掉，这也是清理后晋升第一次在真实运行里触发（见 [`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)）。
 - **2026-10-08 清理后晋升与工作区规则真实验证**：共享晋升遇到夹杂临时执行指令或检索结论的卡片时，去掉这些句子后晋升其余事实（`promoted[].cleaned`）；只改了被去掉的句子不会再次晋升。quality 的偏好检查接受偏好单独成条或写在项目实体卡里，报告记录存放位置。real-agent 新增 `REAL_AGENT_MEMORY_POLICY=config`，经 Multica 安装配置写入 `memory_rules`。真实模型各跑 1 轮：config 16/16，规则在首次提交前生效，12 次抽取全部带上；native 14/15，私聊偏好里混入一句执行指令；两轮的实体卡都不再带 issue 编号（见 [`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)）。

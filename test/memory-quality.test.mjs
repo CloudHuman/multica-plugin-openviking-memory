@@ -115,6 +115,21 @@ test('inventory does not follow a peer entry into another user namespace', async
   assert.ok(requested.every(uri => uri.startsWith('viking://user/u/')));
 });
 
+test('a run control shares a sentence with facts: only its clause goes', () => {
+  // Real task wording, where the control sits beside the business content.
+  assert.equal(withoutRunControls('方案确认：不修改代码，只调整 Kafka 分区数为 12。'), '方案确认：只调整 Kafka 分区数为 12。');
+  assert.equal(withoutRunControls('请分析结算服务告警的原因，不要修改代码。'), '请分析结算服务告警的原因。');
+  assert.equal(withoutRunControls('回滚演练前须先调用 memory-recall 查历史方案，演练时长不超过 3 小时。'), '演练时长不超过 3 小时。');
+  assert.equal(withoutRunControls('- 不要修改代码，预算 7600 元。'), '- 预算 7600 元。', 'a list item keeps its marker');
+  // The fixed instructions of the real-agent suite still go entirely.
+  assert.equal(withoutRunControls('请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。'), '');
+  assert.equal(withoutRunControls('任务回复须基于 memory-recall 召回的实际证据，并引用来源 URI。'), '');
+  // A lasting policy is kept whole, its control clause included.
+  assert.equal(withoutRunControls('以后，不要修改代码。'), '以后，不要修改代码。');
+  // Recall excerpts and shared copies keep the facts of a mixed sentence too.
+  assert.equal(memoryExcerpt('# 苍鹭\n- 方案：不修改代码，只调整分区数为 12。\n- 历史检索为空不影响确认。').content, '# 苍鹭\n- 方案：只调整分区数为 12。');
+});
+
 test('run controls are removed sentence by sentence; facts, headings and lasting policies stay', () => {
   assert.equal(withoutRunControls('预算 7600 元。请先调用 memory-recall，按实际证据回复。双写五天。'), '预算 7600 元。双写五天。');
   assert.equal(withoutRunControls('## 要求\n发布冻结期间一律不要修改代码。\n只做分析。'), '## 要求\n发布冻结期间一律不要修改代码。\n只做分析。');

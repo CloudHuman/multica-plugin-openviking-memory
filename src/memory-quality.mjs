@@ -9,6 +9,8 @@ const EXECUTION_CONTROL = [
   /(?:不|不要|禁止|未经明确要求不|do not|don't|must not).{0,10}(?:主动记录记忆|主动记忆|修改代码|创建\s*issue|创建唤醒规则|主动创建唤醒规则|modify code|create (?:an? )?issue|record memor)/i,
   /(?:按平台流程|提交简短(?:最终)?回复|只发布一次|后续完成通知只需确认|不要再次委派)/,
   /(?:MULTICA_TASK_ID|MULTICA_AGENT_ID|Never background-and-yield|Background Task Safety)/i,
+  // How to word this run's reply ("按实际证据回复", "引用来源 URI").
+  /(?:按|依据|根据|基于)(?:实际|召回的?)?证据(?:回复|作答|回答)|引用(?:记忆)?来源\s*(?:URI|链接)/i,
 ];
 const DURABLE_DOMAIN = /(?:以后|今后|始终|长期|一律|团队规范|发布冻结|冻结期|always|from now on|team policy|code freeze)/i;
 const FAILED_RECALL = /(?:记忆(?:检索|搜索|召回)|检索|召回|memory (?:search|recall)).{0,65}(?:未(?:能)?找到|未检索到|没(?:有)?找到|无(?:可用|相关)|not found|no (?:relevant|available)|failed|timed? out)/i;
@@ -19,6 +21,28 @@ const EMPTY_RECALL = /(?:记忆|本次|此次|这次)\s*(?:检索|召回|搜索)
 const recallOutcome = (text) => FAILED_RECALL.test(text) || NO_VALUE.test(text) || EMPTY_RECALL.test(text);
 // One sentence that only steers a single run; a stated lasting policy is not one.
 const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && EXECUTION_CONTROL.some(re => re.test(segment));
+const CLAUSE_END = /(?<=[，,、：:])/u;
+
+/**
+ * One sentence without its run-control clauses, so the facts beside them stay:
+ * "方案确认：不修改代码，只调整分区数为 12。" keeps "方案确认：只调整分区数为 12。".
+ * A sentence stating a lasting policy stays whole; a control spread over several
+ * clauses takes the whole sentence; nothing left means ''.
+ */
+function withoutControlClauses(sentence) {
+  if (!runControl(sentence)) return sentence;
+  const clauses = sentence.split(CLAUSE_END);
+  const kept = clauses.filter(clause => !EXECUTION_CONTROL.some(re => re.test(clause)));
+  if (kept.length === clauses.length) return '';
+  let rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
+  if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
+  // A list item keeps its marker when the dropped clause carried it.
+  const marker = sentence.match(/^\s*(?:[-*•]|\d+[.)])\s+/u)?.[0] ?? '';
+  if (marker && !rest.startsWith(marker)) rest = `${marker}${rest.trimStart()}`;
+  if (runControl(rest)) return '';
+  const end = sentence.match(/[。；;.!?！？]\s*$/u)?.[0].trim() ?? '';
+  return rest.endsWith(end) ? rest : `${rest}${end}`;
+}
 const PLATFORM_TOOL = /(?:multica.{0,35}(?:issue|CLI)|--description-file|mention:\/\/agent\/|执行智能体.{0,10}ID|最终状态:\s*(?:completed|failed))/i;
 
 export function memoryQualityIssues(content) {
@@ -46,11 +70,10 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
   if (title && !/^\s*#\s/m.test(body)) body = `# ${title}\n\n${body}`;
   const lines = body.split('\n').flatMap(line => {
     if (/^#{1,6}\s/.test(line)) return [line];
-    return line.split(/(?<=[。；;])/u).filter(segment => {
-      if (DURABLE_DOMAIN.test(segment)) return true;
-      if (runControl(segment)) return false;
-      if (!isEvent && recallOutcome(segment)) return false;
-      return true;
+    return line.split(/(?<=[。；;])/u).map(segment => {
+      if (DURABLE_DOMAIN.test(segment)) return segment;
+      const kept = withoutControlClauses(segment);
+      return !isEvent && recallOutcome(kept) ? '' : kept;
     }).join('');
   });
   const contentText = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -60,12 +83,12 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
 
 /**
  * A message without its known one-run controls ("请先调用 memory-recall",
- * "不要修改代码", "按平台流程提交简短回复"), sentence by sentence. The rest of
- * the message, headings and lasting policies included, is kept as written.
+ * "不要修改代码", "按平台流程提交简短回复"), clause by clause. The rest of the
+ * message, headings and lasting policies included, is kept as written.
  */
 export function withoutRunControls(text) {
   return String(text ?? '').split('\n')
-    .map(line => /^#{1,6}\s/.test(line) ? line : line.split(/(?<=[。；;])/u).filter(segment => !runControl(segment)).join('').trimEnd())
+    .map(line => /^#{1,6}\s/.test(line) ? line : line.split(/(?<=[。；;])/u).map(withoutControlClauses).join('').trimEnd())
     .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
