@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { firstReceiver, checkDelegationHistory } from '../e2e/real-agent/delegation-check.mjs';
+import { firstReceiver, checkDelegationHistory, handoffComment, recheckDelegationHistory } from '../e2e/real-agent/delegation-check.mjs';
 
 const A = 'agent-a';
 const B = 'agent-b';
@@ -59,15 +59,17 @@ function historyStack({ handsOff }) {
   const ok = (json) => ({ status: 200, json });
   const mc = {
     async must(_label, promise) { return (await promise).json; },
-    async call(path) {
+    async call(path, { method = 'GET', body } = {}) {
+      if (method === 'PUT') { mc.bound.push({ path, body }); return ok({}); }
       let m = path.match(/^\/api\/agents\/([^/]+)\/tasks$/);
       if (m) return ok(tasks[m[1]]);
       m = path.match(/^\/api\/tasks\/([^/]+)\/messages$/);
-      if (m) return ok(m[1] === 'b1' ? [{ type: 'tool_result', tool: 'memory-recall', output: JSON.stringify({ status: 'ok', result: { run: { bound: true }, entries: [{ scope: 'delegation:w:a:b', uri: 'viking://x/retry.md' }] } }) }] : [{ type: 'text', content: '未找到，不做猜测。' }]);
+      if (m) return ok(m[1] === 'b1' ? [{ type: 'tool_result', tool: 'memory-recall', output: JSON.stringify({ status: 'ok', result: { run: { bound: true }, entries: [{ scope: `delegation:w:${A}:${B}`, uri: 'viking://x/retry.md' }] } }) }] : [{ type: 'text', content: '未找到，不做猜测。' }]);
       if (/\/comments$/.test(path)) return ok(comments);
       throw new Error(`unexpected ${path}`);
     },
     async createIssue(_t, _w, { title, description }) { issue = { id: 'i', title, description }; return issue; },
+    bound: [],
     async assign() {
       tasks[A].push({ id: 'a1', agent_id: A, issue_id: 'i', status: 'completed', created_at: 't0' });
       comments.push({ author_id: A, source_task_id: 'a1', content: handsOff ? '[@复核智能体](mention://agent/agent-b) 请查询' : '没有找到重试上限，不做猜测。' });
@@ -85,16 +87,39 @@ test('a history handoff A answers itself is a recorded failure with the sender\'
   process.env.MULTICA_RUN_REAL_AGENT_SMOKE = '1';
   try {
     const self = historyStack({ handsOff: false });
-    const missed = await checkDelegationHistory({ mc: self.mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: 'delegation:w:a:b', grace: 5, poll: 1 });
+    const missed = await checkDelegationHistory({ mc: self.mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: `delegation:w:${A}:${B}`, grace: 5, poll: 1 });
     assert.equal(missed.ok, false);
     assert.match(missed.detail, /never reached B/);
     assert.deepEqual(missed.records.map((r) => r.entry), ['delegation-history-sender']);
     assert.match(missed.records[0].response, /没有找到重试上限/);
-    assert.match(self.issue().description, /你只负责转交，不要在这次运行直接回答/);
+    assert.ok(self.issue().description.includes(`\n\n${handoffComment(B)}\n\n`), 'A gets the handoff comment verbatim, mention first');
+    assert.match(handoffComment(B), /^\[@复核智能体\]\(mention:\/\/agent\/agent-b\) /);
 
-    const handed = await checkDelegationHistory({ mc: historyStack({ handsOff: true }).mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: 'delegation:w:a:b', grace: 5, poll: 1 });
+    const handed = await checkDelegationHistory({ mc: historyStack({ handsOff: true }).mc, user: { token: 't' }, ws: 'w', fromAgentId: A, toAgentId: B, channelScope: `delegation:w:${A}:${B}`, grace: 5, poll: 1 });
     assert.equal(handed.ok, true);
     assert.deepEqual(handed.records.map((r) => r.entry), ['delegation-history-sender', 'delegation-history-receiver']);
+  } finally {
+    if (previous === undefined) delete process.env.MULTICA_RUN_REAL_AGENT_SMOKE;
+    else process.env.MULTICA_RUN_REAL_AGENT_SMOKE = previous;
+  }
+});
+
+test('the history phase reruns only the second handoff, on the matrix\'s own agents and channel', async () => {
+  const previous = process.env.MULTICA_RUN_REAL_AGENT_SMOKE;
+  process.env.MULTICA_RUN_REAL_AGENT_SMOKE = '1';
+  try {
+    const { mc } = historyStack({ handsOff: true });
+    const report = { agents: [{ id: A, role: 'A' }, { id: B, role: 'B' }], tasks: [{ entry: 'delegation-receiver' }] };
+    const steps = [];
+    let saved = 0;
+    const history = await recheckDelegationHistory({ mc, user: { token: 't' }, ws: 'w', report, agentTemplate: { runtime_id: 'rt-2' }, step: (id, ok, detail) => steps.push({ id, ok, detail }), save: () => saved++ });
+    assert.equal(history.ok, true);
+    assert.deepEqual(mc.bound, [{ path: `/api/agents/${B}`, body: { runtime_id: 'rt-2' } }], 'B runs on the resumed daemon');
+    assert.deepEqual(steps.map((s) => [s.id, s.ok]), [['delegation-cross-task-recall', true]]);
+    assert.deepEqual(report.tasks.map((t) => t.entry), ['delegation-receiver', 'delegation-history-sender', 'delegation-history-receiver']);
+    assert.ok(saved > 0);
+    // Without a first handoff there is no channel to recall from.
+    await assert.rejects(recheckDelegationHistory({ mc, user: { token: 't' }, ws: 'w', report: { agents: report.agents, tasks: [] }, agentTemplate: {}, step: () => {}, save: () => {} }), /no delegation channel/);
   } finally {
     if (previous === undefined) delete process.env.MULTICA_RUN_REAL_AGENT_SMOKE;
     else process.env.MULTICA_RUN_REAL_AGENT_SMOKE = previous;

@@ -40,7 +40,7 @@ quality 套件遇到内容上的失败时记一项失败、继续往下跑，不
 - 共享空间里查不到当前事实时，不再问 B，记 `real-B-current-shared-recall` 失败；
 - 私聊版式没有抽出或查不到时，不发新会话，记 `real-DM-layout-recall` 失败。
 
-matrix 套件的两次交接也一样：A 完成任务却没有提及 B（自己作答），两分钟内没有派发出 B 的任务，就记一项失败继续往下跑，不再等满十分钟后整轮停止。第一次交接没有派发时，`real-delegation-linked`、`real-delegation-archive`、`delegation-cross-task-recall` 都记失败（依赖第一次交接写入的委派通道）；第二次没有派发时只记 `delegation-cross-task-recall`，报告保留 A 的转写。
+matrix 套件的两次交接也一样：A 完成任务却没有提及 B（自己作答），两分钟内没有派发出 B 的任务，就记一项失败继续往下跑，不再等满十分钟后整轮停止。第一次交接没有派发时，`real-delegation-linked`、`real-delegation-archive`、`delegation-cross-task-recall` 都记失败（依赖第一次交接写入的委派通道）；第二次没有派发时只记 `delegation-cross-task-recall`，报告保留 A 的转写。第二次交接直接给出 A 要原样发布的评论：10-08 的两次回归里，让 A 自己写评论时，A 一次自己作答，一次写了“已转交”却漏了 mention。
 
 `multi-agent-collaboration` 改派给 B 之前，先删除 A 在该 issue 下的确认评论（A 的记忆此时已抽取、可检索）。B 会先读评论线程，评论还在时它直接照抄评论，不调用 memory-recall，检查的就不是任务记忆了。
 
@@ -80,6 +80,8 @@ MULTICA_RUN_REAL_AGENT_SMOKE=1 REAL_AGENT_SUITE=matrix node e2e/real-agent/run.m
 `REAL_AGENT_STATE_POINTER` 可指定本地状态目录指针文件；`AGENT_MODEL` 可选择其他已授权的 OpenRouter 模型。检查结果和详细转写位于脚本打印的状态目录中。
 
 仅对在快速创建版本检查处停止、尚未执行该任务的矩阵，可设置 `REAL_AGENT_RESUME_STATE` 为原状态目录继续。脚本复用原隔离工作区、成员、profile 与两名智能体，轮换该测试安装的凭据并保留先前停止原因，不重新提供业务答案。
+
+第二次交接没有派发到 B 时，可设置 `REAL_AGENT_RESUME_STATE` 为原矩阵的状态目录及 `REAL_AGENT_MATRIX_PHASE=history`，只重跑这一步：沿用原工作区、A/B 和 A→B 委派通道（第一次交接必须已经派发到 B），新建一个 issue 交给 A 转交。原失败保留在 `results`，`currentResults` 取最新结果。
 
 若原矩阵已经完成前三种自动化的调度，收尾诊断可同时设置 `REAL_AGENT_MATRIX_PHASE=finish`：复测快速创建，按平台保存的 webhook run ID 与自动化创建的 issue ID 核对真实任务，再执行并发、共享晋升和归档审计。原失败记录保留在 `results`；`currentResults` 对每个检查取最新结果，明确表示修复后的状态。
 

@@ -28,12 +28,16 @@ export async function firstReceiver({ tasksOf, issueId, fromAgentId, toAgentId, 
   throw new Error('Delegation sender neither handed off nor finished in time');
 }
 
+export const handoffComment = (toAgentId) => `[@复核智能体](mention://agent/${toAgentId}) 雨燕项目之前确定的重试上限是多少？请调用 memory-recall 查询 A 到 B 委派通道，回答并引用来源 URI。`;
+
 export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope, state, timeout = 600000, grace, poll = 1500 }) {
   if (process.env.MULTICA_RUN_REAL_AGENT_SMOKE !== '1') throw new Error('Explicit real-agent authorization is required');
   const call = path => mc.must(path, mc.call(path, { token: user.token, ws }));
   const issue = await mc.createIssue(user.token, ws, {
     title: `新任务查询雨燕历史交接约定 ${randomUUID().slice(0, 8)}`,
-    description: `这是一次新的、明确授权的历史交接查询。你只负责转交，不要在这次运行直接回答或查找答案。请先调用 memory-recall，然后实际用 multica issue comment add 在当前 issue 发布且只发布一次给复核智能体的评论，包含完整 mention：[@复核智能体](mention://agent/${toAgentId}) 以及问题“雨燕项目之前确定的重试上限是多少？请调用 memory-recall 查询 A 到 B 委派通道，回答并引用来源 URI”。本次没有提供上限数字，你查不到也照样转交，由复核智能体回答。不要猜测数字、主动记忆或修改代码。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。`,
+    // The comment is given verbatim: asked to compose it, A has answered the
+    // question itself or dropped the mention, and nothing reached B.
+    description: `这是一次新的、明确授权的历史交接测试。你只负责转交，不要在这次运行回答或查找答案，查不到也照样转交。请用 multica issue comment add 在当前 issue 原样发布下面这条评论，只发布一次；开头的 mention 负责派发复核智能体，必须原样保留：\n\n${handoffComment(toAgentId)}\n\n本次没有提供上限数字。不要猜测数字、主动记忆或修改代码。交接后提交简短最终回复；后续完成通知只需确认，不要再次委派。`,
   });
   await mc.assign(user.token, ws, issue.id, fromAgentId);
   const deadline = Date.now() + timeout;
@@ -59,4 +63,19 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   const result = records.find(r => r.entry === 'delegation-history-receiver');
   const ok = result.status === 'completed' && /7\s*次|七次/.test(result.response) && result.recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === channelScope && result.response.includes(e.uri)));
   return { ok, records, detail: 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI' };
+}
+
+// REAL_AGENT_MATRIX_PHASE=history: only the second handoff, again, on a
+// finished matrix's workspace and agents (its A to B channel is still there).
+export async function recheckDelegationHistory({ mc, user, ws, report, agentTemplate, state, step, save }) {
+  const id = role => report.agents?.find(a => a.role === role)?.id;
+  const [fromAgentId, toAgentId] = [id('A'), id('B')];
+  if (!fromAgentId || !toAgentId) throw new Error('The matrix has no A and B agents to hand off between');
+  if (!report.tasks?.some(t => t.entry === 'delegation-receiver')) throw new Error('The first handoff never reached B: there is no delegation channel to recall');
+  await mc.must('bind resumed B', mc.call(`/api/agents/${toAgentId}`, { method: 'PUT', token: user.token, ws, body: { runtime_id: agentTemplate.runtime_id } }));
+  const history = await checkDelegationHistory({ mc, user, ws, fromAgentId, toAgentId, channelScope: `delegation:${ws}:${fromAgentId}:${toAgentId}`, state });
+  report.tasks.push(...history.records);
+  save();
+  step('delegation-cross-task-recall', history.ok, history.detail);
+  return history;
 }

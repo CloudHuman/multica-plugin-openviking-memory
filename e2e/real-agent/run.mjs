@@ -37,16 +37,17 @@ const resumeState = env.REAL_AGENT_RESUME_STATE;
 const previous = resumeState ? JSON.parse(readFileSync(join(resumeState, 'report.json'), 'utf8')) : null;
 const finishMatrix = env.REAL_AGENT_MATRIX_PHASE === 'finish';
 const recoverShared = env.REAL_AGENT_MATRIX_PHASE === 'shared';
+const recheckHistory = env.REAL_AGENT_MATRIX_PHASE === 'history';
 const continueQuality = env.REAL_AGENT_QUALITY_PHASE === 'continue';
 const continueBenchmark = env.REAL_AGENT_BENCHMARK_PHASE === 'continue';
 if (env.REAL_AGENT_BENCHMARK_PHASE && !continueBenchmark) throw new Error('Unknown benchmark continuation phase');
 if (continueBenchmark && (!previous || suite !== 'benchmark' || previous.suite !== 'benchmark')) throw new Error('Benchmark continuation requires its original isolated workspace');
 if (env.REAL_AGENT_QUALITY_PHASE && !continueQuality) throw new Error('Unknown quality recovery phase');
 if (continueQuality && (!previous || suite !== 'quality' || previous.suite !== 'quality')) throw new Error('Quality continuation requires its existing isolated workspace');
-if (env.REAL_AGENT_MATRIX_PHASE && !finishMatrix && !recoverShared) throw new Error('Unknown matrix phase');
+if (env.REAL_AGENT_MATRIX_PHASE && !finishMatrix && !recoverShared && !recheckHistory) throw new Error('Unknown matrix phase');
 const stoppedAtVersionGate = previous && [previous.error, ...(previous.attempts ?? []).map(a => a.error)].some(error => error?.includes('daemon_version_unsupported'));
-if ((finishMatrix || recoverShared) && (!previous || suite !== 'matrix' || previous.suite !== 'matrix')) throw new Error('Recovery phase requires an existing isolated matrix');
-if (previous && !finishMatrix && !recoverShared && !continueQuality && !continueBenchmark && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
+if ((finishMatrix || recoverShared || recheckHistory) && (!previous || suite !== 'matrix' || previous.suite !== 'matrix')) throw new Error('Recovery phase requires an existing isolated matrix');
+if (previous && !finishMatrix && !recoverShared && !recheckHistory && !continueQuality && !continueBenchmark && (suite !== 'matrix' || previous.suite !== 'matrix' || !stoppedAtVersionGate || previous.tasks?.some(t => t.entry === 'quick-create'))) {
   throw new Error('Resume requires a matrix stopped at the quick-create version gate');
 }
 const run = previous ? previous.platformCanary.replace(/^PLATFORM_ONLY_/, '') : Date.now().toString(36);
@@ -185,6 +186,9 @@ try {
     } else if (recoverShared) {
       const { recoverSharedMatrix } = await import('./recover-shared.mjs');
       await recoverSharedMatrix(ctx);
+    } else if (recheckHistory) {
+      const { recheckDelegationHistory } = await import('./delegation-check.mjs');
+      await recheckDelegationHistory(ctx);
     } else {
       const { runMatrix } = await import('./matrix.mjs');
       await runMatrix(ctx);
