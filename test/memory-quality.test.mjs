@@ -182,3 +182,18 @@ test('business rules that share words with run controls are archived as written'
   assert.equal(withoutRunControls('未经明确要求不主动记录记忆，不修改代码；预算 7600 元。'), '预算 7600 元。');
 });
 
+test('what follows a condition is a rule, and recall and promotion keep product rules too', () => {
+  // The second independent review: a comma between the condition and the order.
+  for (const rule of ['支付回调失败时，不要创建新 issue，直接重试三次。', '如果超时，不要修改代码，先回滚。']) {
+    assert.equal(withoutRunControls(rule), rule, rule);
+  }
+  // Recall and promotion use the same outcome check as the archive.
+  const uri = 'viking://user/u/memories/entities/产品/搜索.md';
+  for (const rule of ['搜索结果为空，因此显示默认推荐列表。', '商品搜索结果为空，但要展示热门商品。', '历史数据检索 failed 的告警要发到运维群。']) {
+    assert.equal(memoryExcerpt(rule, { uri }).content, rule, rule);
+    assert.equal(promotionQuality({ content: rule, uri }).eligible, true, rule);
+  }
+  for (const outcome of ['检索为空，因此以成员确认为准。', '据称确定过重试上限，但本次记忆检索未能找到该数值。']) {
+    assert.deepEqual(promotionQuality({ content: outcome, uri }).reasons, ['retrieval-outcome'], outcome);
+  }
+});

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 // Narrow guards for execution controls seen in real archives. These are not a
 // semantic classifier: business facts and explicitly lasting preferences still
 // need the extractor's schema rules. Never rewrite the original archive.
-// Each pattern is tried on one clause at a time (see controlClause).
+// Each pattern is tried on one clause at a time (see markControls).
 const EXECUTION_CONTROL = [
   /(?:先|须|必须|应|before|must|first).{0,30}(?:调用\s*memory[-_ ]recall|memory[-_ ]recall)/i,
   /(?:memory[-_ ]recall|召回).{0,45}(?:引用.{0,12}(?:来源|URI)|实际证据|简短确认)/i,
@@ -23,20 +23,41 @@ const EXECUTION_CONTROL = [
 const DURABLE_DOMAIN = /(?:以后|今后|始终|长期|一律|团队规范|发布冻结|冻结期|always|from now on|team policy|code freeze)/i;
 const FAILED_RECALL = /(?:记忆(?:检索|搜索|召回)|检索|召回|memory (?:search|recall)).{0,65}(?:未(?:能)?找到|未检索到|没(?:有)?找到|无(?:可用|相关)|not found|no (?:relevant|available)|failed|timed? out)/i;
 const NO_VALUE = /(?:未检索到|没(?:有)?查到|未找到|查不到).{0,40}(?:相关记忆|可用记忆|该数值|上限数字)/;
-// An empty search reported as this run's outcome ("历史检索为空不影响确认", "本次召回为空").
-// A product rule about empty results ("检索结果为空时显示提示") states a condition and stays.
-const EMPTY_RECALL = /(?:记忆|本次|此次|这次)\s*(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)|(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)\s*[，,、]?\s*(?:不影响|无法|不能|暂无|因此|所以|故|但)/;
-const recallOutcome = (text) => FAILED_RECALL.test(text) || NO_VALUE.test(text) || EMPTY_RECALL.test(text);
+// An empty search reported as this run's outcome ("历史检索为空不影响确认", "本次召回为空",
+// "检索为空，因此以成员确认为准"). A product rule about empty results states a
+// condition or what the product does next and stays: "检索结果为空时显示提示",
+// "搜索结果为空，因此显示默认推荐列表", "商品搜索结果为空，但要展示热门商品".
+const EMPTY_RECALL = /(?:记忆|本次|此次|这次)\s*(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)|(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)\s*[，,、]?\s*(?:不影响|无法|不能|暂无|(?:因此|所以|故|但)\s*(?:仍|还是|只能|先)?\s*(?:以|按|无法|不能|暂无|未|没有))/;
 const CLAUSE_END = /(?<=[，,、：:])/u;
 const CONDITION = /(?:时|的话|如果|若|假如|when\b|if\b)/i;
 const LIST_MARKER = /^\s*(?:[-*•]|\d+[.)])\s+/u;
-// A clause that only steers this run; nothing stated as a condition is one.
-const controlClause = (clause) => {
-  const text = String(clause).replace(LIST_MARKER, '');
-  return !CONDITION.test(text) && EXECUTION_CONTROL.some(re => re.test(text));
-};
-// A sentence with such a clause; a stated lasting policy has none.
-const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && String(segment).split(CLAUSE_END).some(controlClause);
+// A clause that is itself a condition for what follows ("支付回调失败时，", "如果超时，").
+const CONDITION_CLAUSE = /^\s*(?:如果|若|假如|假设|when\b|if\b)|(?:时|的话)\s*[，,、：:]?\s*$/i;
+// The search itself, not a noun beside it ("历史数据检索 failed 的告警" is a business rule).
+const RUN_SEARCH = /(?:记忆|历史|本次|此次|这次|memory)\s*的?\s*(?:检索|召回|搜索|search|recall)/i;
+// A remark on a search's outcome ("本次记忆检索未能找到该数值"); nothing stated as a
+// condition ("检索无相关结果时显示空状态") is one. Archive, recall and promotion share it.
+const searchOutcome = (text) => !CONDITION.test(text)
+  && (EMPTY_RECALL.test(text) || NO_VALUE.test(text) || (FAILED_RECALL.test(text) && RUN_SEARCH.test(text)));
+const recallOutcome = (text) => String(text).split(/\n|(?<=[。；;])/u).some(searchOutcome);
+
+/**
+ * Each clause of a sentence, marked when it only steers this run. A clause
+ * stated as a condition is no control, and after a clause that sets up a
+ * condition neither is the rest: "支付回调失败时，不要创建新 issue，直接重试三次"
+ * says what to do in that case.
+ */
+function markControls(sentence) {
+  let conditioned = false;
+  return String(sentence).split(CLAUSE_END).map((clause) => {
+    const text = clause.replace(LIST_MARKER, '');
+    const control = !conditioned && !CONDITION.test(text) && EXECUTION_CONTROL.some(re => re.test(text));
+    if (CONDITION_CLAUSE.test(text)) conditioned = true;
+    return { clause, control };
+  });
+}
+// A sentence with a control clause; a stated lasting policy has none.
+const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && markControls(segment).some((c) => c.control);
 
 /**
  * One sentence without its run-control clauses, so the facts beside them stay:
@@ -45,8 +66,7 @@ const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && String(segment)
  */
 function withoutControlClauses(sentence) {
   if (!runControl(sentence)) return sentence;
-  const clauses = sentence.split(CLAUSE_END);
-  const kept = clauses.filter(clause => !controlClause(clause));
+  const kept = markControls(sentence).filter((c) => !c.control).map((c) => c.clause);
   let rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
   if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
   // A list item keeps its marker when the dropped clause carried it.
@@ -93,15 +113,8 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
   return { content: statements.length ? contentText : '', filtered: body !== raw || contentText !== body.trim() };
 }
 
-// A member's remark on this run's own search ("历史检索为空不影响确认") is
-// no business fact either. Stricter than recallOutcome: a member's message is
-// archived before any extraction sees it, so a failed-search phrase counts
-// only when it is about memory or this run, and nothing stated as a condition
-// ("检索无相关结果时显示空状态") is taken for an outcome.
-// The search itself, not a noun beside it ("历史数据检索 failed 的告警" is a business rule).
-const RUN_SEARCH = /(?:记忆|历史|本次|此次|这次|memory)\s*的?\s*(?:检索|召回|搜索|search|recall)/i;
-const memberRecallOutcome = (clause) => !CONDITION.test(clause)
-  && (EMPTY_RECALL.test(clause) || NO_VALUE.test(clause) || (FAILED_RECALL.test(clause) && RUN_SEARCH.test(clause)));
+// A member's remark on this run's own search ("历史检索为空不影响确认") is no
+// business fact either; it is removed clause by clause before archiving.
 
 /**
  * One sentence without the clauses that report this run's search. A sentence
@@ -109,9 +122,9 @@ const memberRecallOutcome = (clause) => !CONDITION.test(clause)
  * stays whole.
  */
 function withoutRecallOutcome(sentence) {
-  if (DURABLE_DOMAIN.test(sentence) || !memberRecallOutcome(sentence)) return sentence;
+  if (DURABLE_DOMAIN.test(sentence) || !searchOutcome(sentence)) return sentence;
   const clauses = sentence.split(CLAUSE_END);
-  const kept = clauses.filter(clause => !memberRecallOutcome(clause));
+  const kept = clauses.filter(clause => !searchOutcome(clause));
   if (kept.length === clauses.length) return sentence;
   const rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
   if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
