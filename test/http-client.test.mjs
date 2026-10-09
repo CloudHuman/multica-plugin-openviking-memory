@@ -65,3 +65,12 @@ test('local auth rejection and a nested model auth failure retain different stat
     assert.equal(calls, status === 401 ? 1 : 2, 'direct 401 keeps the existing non-retry policy');
   }
 });
+
+test('"does not exist" is a missing target, not a duplicate', async () => {
+  const { isAlreadyExists } = await import('../src/ov-client.mjs');
+  assert.equal(isAlreadyExists(new Error('parent directory does not exist')), false);
+  assert.equal(isAlreadyExists(new Error('resource not exist')), false);
+  assert.equal(isAlreadyExists(new Error('account already exists')), true);
+  assert.equal(isAlreadyExists(Object.assign(new Error('conflict'), { status: 409 })), true);
+  assert.equal(isAlreadyExists(Object.assign(new Error('x'), { code: 'ALREADY_EXISTS' })), true);
+});

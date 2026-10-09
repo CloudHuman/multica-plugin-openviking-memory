@@ -135,8 +135,12 @@ export function makeMemoryArchiveHandler(deps) {
   };
 }
 
-/** A failure the same request may not meet again: no answer, a timeout, a 5xx or 429. */
+/**
+ * A failure the same request may not meet again: no answer, a timeout, a 5xx
+ * or 429. A delivery without a callback (NO_CALLBACK) stays without one.
+ */
 const transientError = (err) => {
+  if (err?.code === 'NO_CALLBACK') return false;
   const status = err?.status;
   return !status || status >= 500 || [408, 425, 429].includes(status);
 };

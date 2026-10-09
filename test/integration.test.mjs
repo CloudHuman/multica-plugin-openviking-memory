@@ -68,6 +68,11 @@ test('patched multica: a run the task API fails to describe answers 503 and is a
     assert.notEqual(again.json.result.status, 'duplicate');
     assert.doesNotMatch(String(again.json.result.reason ?? ''), /run kind unknown/);
 
+    // A delivery without a callback stays without one: skipped with 200, not retried forever.
+    const noCallback = await svc.signedPost('/hooks/memory-archive', archiveBody(undefined, 'task.completed', taskEvent({ taskId: 'chat-4', issueId: '', chatSessionId: 'cs-4' })));
+    assert.equal(noCallback.status, 200, noCallback.text);
+    assert.equal(noCallback.json.result.status, 'skipped');
+
     // A refusal that will not change is skipped with 200, not retried into multica's breaker.
     tasks['chat-3'] = 'forbidden';
     const refused = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: 'chat-3', issueId: '', chatSessionId: 'cs-3' })));

@@ -209,7 +209,8 @@ export class OvClient {
 export function isAlreadyExists(err) {
   const c = String(err.code ?? '');
   const msg = String(err.message ?? '');
-  return c === 'ALREADY_EXISTS' || /exist/i.test(msg) || err.status === 409;
+  // "does not exist" is a missing target, not a duplicate.
+  return c === 'ALREADY_EXISTS' || /already\s+exists?|exists\s+already/i.test(msg) || err.status === 409;
 }
 
 function isConflict(err) {
