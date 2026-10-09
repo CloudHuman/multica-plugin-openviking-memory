@@ -39,10 +39,10 @@ export class ExtractionWatcher {
     atomicWriteJson(this.path, { pending: this.pending });
   }
 
-  watch({ jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation = 0 }) {
+  watch({ jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation = 0, autoRedrives = 0 }) {
     if (!taskId && !archiveUri) throw new Error('extraction watch requires a task or archive URI');
     this.pending[sessionId] = {
-      jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation,
+      jobId, workspaceId, scopeKey, sessionId, ref, type, taskId, archiveUri, generation, autoRedrives,
       startedAt: Date.now(), checks: 0, nextCheckAt: Date.now() + this.cfg.extractPollIntervalMs,
     };
     this.save();
@@ -158,7 +158,8 @@ export class ExtractionWatcher {
 
     if (state === 'done') return this.#settle(entry, 'done');
     if (state === 'failed') {
-      if (entry.generation < this.cfg.extractMaxRedrives && this.#redrive(entry, error)) {
+      // Watches saved before autoRedrives existed count by generation, as they used to.
+      if ((entry.autoRedrives ?? entry.generation) < this.cfg.extractMaxRedrives && this.#redrive(entry, error)) {
         return this.#settle(entry, 'redriven', error, diagnostic);
       }
       return this.#settle(entry, 'failed', error, diagnostic);
@@ -178,6 +179,7 @@ export class ExtractionWatcher {
     const job = this.queue.requeue(entry.jobId, {
       delayMs: this.cfg.extractRedriveDelayMs,
       reason: `extraction failed (${cause ?? 'unknown'})`,
+      autoRedrive: true,
     });
     if (job) this.log(`extraction failed for ${entry.sessionId}; re-driving as generation ${job.payload.generation}`);
     return Boolean(job);

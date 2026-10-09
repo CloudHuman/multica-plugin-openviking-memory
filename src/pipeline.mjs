@@ -78,7 +78,7 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
         const watchId = `memory-index-${job.id}-r${generation}`;
         extractions.watch({
           jobId: job.id, workspaceId: p.workspaceId, scopeKey, sessionId: watchId, ref: p.refId,
-          type: job.type, taskId: job.cp.indexTaskId, generation,
+          type: job.type, taskId: job.cp.indexTaskId, generation, autoRedrives: p.autoRedrives ?? 0,
         });
         statusLog.append({ ...base, extraction: 'pending', extraction_task: job.cp.indexTaskId });
         return;
@@ -124,7 +124,7 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
 
       extractions.watch({
         jobId: job.id, workspaceId: p.workspaceId, scopeKey, sessionId, ref: p.refId, type: job.type,
-        taskId: job.cp.commitTaskId, archiveUri: job.cp.archiveUri, generation,
+        taskId: job.cp.commitTaskId, archiveUri: job.cp.archiveUri, generation, autoRedrives: p.autoRedrives ?? 0,
       });
       statusLog.append({ ...base, session_id: sessionId, messages: built.messages.length, extraction: 'pending', extraction_task: job.cp.commitTaskId });
       log(`archived: ${job.type} ${p.refId} -> ${scopeKey} (session ${sessionId}, extraction pending)`);

@@ -142,14 +142,17 @@ export class JobQueue {
   /**
    * Run a job again as its next generation: a fresh OV session, reset
    * checkpoints and attempts. Used for redeliveries and extraction re-drives.
-   * A running job is not touched (its outcome is still pending).
+   * A running job is not touched (its outcome is still pending). Automatic
+   * re-drives are counted apart (autoRedrives): a redelivery, a manual redrive
+   * or a reindex requested by memory-remember starts that count again.
    */
-  requeue(id, { payload, delayMs = 0, reason = '' } = {}) {
+  requeue(id, { payload, delayMs = 0, reason = '', autoRedrive = false } = {}) {
     const job = this.jobs.get(id);
     if (!job || job.status === 'running' || job.status === 'queued') return null;
     const generation = (job.payload?.generation ?? 0) + 1;
+    const autoRedrives = autoRedrive ? (job.payload?.autoRedrives ?? 0) + 1 : 0;
     const updated = {
-      ...job, payload: { ...(payload ?? job.payload), generation }, cp: {}, attempts: 0,
+      ...job, payload: { ...(payload ?? job.payload), generation, autoRedrives }, cp: {}, attempts: 0,
       status: 'queued', next_run_at: Date.now() + delayMs,
       last_error: reason ? `requeued: ${reason}` : null, updated_at: nowIso(),
       last_error_diagnostic: null,

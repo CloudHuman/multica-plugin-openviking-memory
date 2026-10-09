@@ -188,6 +188,27 @@ test('requeue leaves queued and running jobs alone; non-retryable errors fail at
   assert.equal(q.requeue('no-such-job'), null);
 });
 
+test('automatic re-drives are counted apart from other requeues', async () => {
+  const q = new JobQueue({ stateDir: tempStateDir(), baseDelayMs: 5, pollMs: 10, log: () => {}, handler: async () => {} });
+  const { id } = q.enqueue('archive', {});
+  q.start();
+  await sleep(60);
+  // Reindexes requested by memory-remember move the generation, not the re-drive budget.
+  for (let i = 0; i < 3; i++) {
+    q.requeue(id, { reason: 'memory-remember requested reindex' });
+    await sleep(40);
+  }
+  assert.equal(q.jobs.get(id).payload.generation, 3);
+  assert.equal(q.jobs.get(id).payload.autoRedrives, 0);
+  q.requeue(id, { reason: 'extraction failed', autoRedrive: true });
+  await sleep(40);
+  assert.equal(q.jobs.get(id).payload.autoRedrives, 1);
+  q.requeue(id, { reason: 'manual redrive' });
+  await sleep(40);
+  await q.stop();
+  assert.equal(q.jobs.get(id).payload.autoRedrives, 0, 'a manual redrive starts the count again');
+});
+
 test('compaction never drops a done job that is still pinned (its extraction is being watched)', async () => {
   const stateDir = tempStateDir();
   const pinned = new Set();
