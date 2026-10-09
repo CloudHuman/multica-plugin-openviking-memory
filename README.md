@@ -139,7 +139,17 @@ OVMEM_MULTICA_API_URL=https://multica.example.com/v1
 
 多个安装既没写 `workspace_id` 又没配 `OVMEM_MULTICA_API_URL` 时，服务拒绝启动。
 
-### 6. （可选）配套能力接入
+### 6. （推荐）配置工作区抽取规则
+
+在插件设置里，把参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 整段粘贴进安装配置 `memory_rules`，再按需增删（格式见[配置参考](#配置参考)）。规则在该工作区下一条记录提交前写进它自己 OV 账户的模板，只影响这个工作区；`memory-status` 的 `memory_rules` 显示 `applied` 即已生效。
+
+推荐的依据（10-02、10-08 的真实模型对比）：
+
+- 原生抽取在私聊里会把成员说的“不写入公共记忆”理解成不要记：跑到私聊的 8 轮里有 3 轮没抽出版式，配了规则的 4 轮都正常；
+- 10-08 的对比中，原生抽取把“回复前先调用 memory-recall 核实证据”写进了私聊偏好，配了规则的那一轮没有；
+- 代价是每次抽取的提示词多约 2.5K 字符（8–9%）。
+
+### 7. （可选）配套能力接入
 
 ```jsonc
 POST /internal/events    // Bearer OVMEM_PLUGIN_TOKEN
@@ -168,11 +178,11 @@ POST /internal/recall    // 供注入方拉取召回块
 | `OVMEM_PLUGIN_TOKEN` | — | `/internal` + `/admin` Bearer（必填） |
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
 | `OVMEM_RECALL_ENTRIES` | `5` | 每次召回条数上限（1-10） |
-| `OVMEM_ARCHIVE_DROP_RUN_CONTROLS` | `1` | 归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要主动记录记忆”）；设为 `0` 按原文归档，也可在 `state/config.json` 设 `archiveDropRunControls`。依据见 [A/B 报告](reports/real-agent-2026-10-08-archive-run-controls-ab.md) |
+| `OVMEM_ARCHIVE_DROP_RUN_CONTROLS` | `1` | 归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要主动记录记忆”），以及对本次检索结果的说明（如“历史检索为空不影响确认”；“检索结果为空时显示提示”这类带条件的产品规则保留）；设为 `0` 按原文归档，也可在 `state/config.json` 设 `archiveDropRunControls`。依据见 [A/B 报告](reports/real-agent-2026-10-08-archive-run-controls-ab.md) |
 
 multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_entries`、`include_thinking`（默认否）、`drop_tool_prefixes`（按行填写要丢弃的工具调用前缀）、`memory_rules`（本工作区的抽取规则，见下）。
 
-**工作区抽取规则 `memory_rules`**：每行一条，`entities:` / `events:` / `preferences:` / `profile:` 前缀把一行限定到一类记忆，其余行对所有类型生效；空行和 `#` 开头的行忽略。插件把规则写入该工作区自己 OV 账户的账号级模板（OpenViking 自带能力，只追加在原生描述之后，不替换），在该工作区下一条记录提交前生效，只影响这个工作区。清空即恢复 OV 默认，插件不会改动它没写过的模板。规则须是纯文本（不能含 `{{`、`{%`、`{#`），单个配置值上限 4 KB（multica 限制）；无效规则不生效，已生效的保持不变。状态见 `memory-status` 的 `memory_rules`（`default` / `applied` / `invalid` / `error`，不回显规则原文）。
+**工作区抽取规则 `memory_rules`（推荐每个工作区配置）**：每行一条，`entities:` / `events:` / `preferences:` / `profile:` 前缀把一行限定到一类记忆，其余行对所有类型生效；空行和 `#` 开头的行忽略。插件把规则写入该工作区自己 OV 账户的账号级模板（OpenViking 自带能力，只追加在原生描述之后，不替换），在该工作区下一条记录提交前生效，只影响这个工作区。清空即恢复 OV 默认，插件不会改动它没写过的模板。规则须是纯文本（不能含 `{{`、`{%`、`{#`），单个配置值上限 4 KB（multica 限制）；无效规则不生效，已生效的保持不变。状态见 `memory-status` 的 `memory_rules`（`default` / `applied` / `invalid` / `error`，不回显规则原文）。
 
 **参考模板** [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt)：10 条通用规则，约 2 KB，可整段粘贴进 `memory_rules` 再按需增删。规则内容：
 
@@ -221,9 +231,9 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
   - 绑定 issue 的运行若只用 UUID / issue 编号加中英文通用词查询，改用该 issue 的业务目标查询。
   - 查询用本运行自己的 issue UUID、编号或任务 UUID 指代本任务（例如 `issue <uuid> context or related decisions for <工作区名>`）时，去掉这些标识，在原措辞前补入该 issue 的业务目标。超时与错误表示检索未完成，空结果不能证明没有记忆。
 
-- **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、去掉成员写给智能体的一次性执行指令、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。工作区如需定制，可在安装配置 `memory_rules` 写自己的抽取规则，只作用于该工作区自己的 OV 账户（见上）。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
-- **依赖上游**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API（[`upstream/multica/`](upstream/multica/README.md) 补丁，尚未进入 multica 主线）；运行中追加要求需要 multica 侧推送配套事件。
-- **智能体自我 @ 循环**：智能体回复交接时如果照抄了指向自己的 mention，原版 multica 会在同一 issue 上反复派发它（防循环只合并仍在排队的任务）。插件会把每次运行照常归档、抽取，委派通道不受影响，但任务记忆里会写进循环出来的内容。补丁 [`0005`](upstream/multica/README.md) 让同一 issue 上的自我 @ 不再派发，尚未进入 multica 主线。
+- **不改 OpenViking 自身**：插件不修改 OpenViking 的实例模板、提示词和代码，默认按 OV 原生规则蒸馏。插件只处理自己的输入和输出：归档前清理运行时说明、去掉成员写给智能体的一次性执行指令和对本次检索结果的说明、按作者归属消息、用 issue 标题而不是编号称呼任务；召回和共享晋升时过滤已知执行控制、检索结论和平台脚手架。推荐每个工作区在安装配置 `memory_rules` 写入抽取规则（参考模板见上），它只作用于该工作区自己的 OV 账户。测试用的完整规则 `e2e/real-agent/memory-policy.json` 超过 4 KB 配置上限，由测试脚本直接写入测试工作区的账户，见[真实智能体验证](e2e/real-agent/README.md)。
+- **依赖 multica 补丁**：运行转写、私聊等运行类场景、召回绑定运行需要 multica 的任务读取 API。[`upstream/multica/`](upstream/multica/README.md) 下的补丁由本仓库维护，不提交上游，部署时自行应用到所用的 multica。运行中追加要求需要 multica 侧推送配套事件。
+- **智能体自我 @ 循环**：智能体回复交接时如果照抄了指向自己的 mention，原版 multica 会在同一 issue 上反复派发它（防循环只合并仍在排队的任务）。插件会把每次运行照常归档、抽取，委派通道不受影响，但任务记忆里会写进循环出来的内容。部署时应用补丁 [`0005`](upstream/multica/README.md) 后，同一 issue 上的自我 @ 不再派发。
 - **stock multica 上的已知限制**：运行本身不归档（以收尾评论代表）；`memory-recall` 无法得知调用方运行，模型点名任意 issue 时可召回其协作记忆（与 multica 允许智能体读取工作区内任意 issue 一致）。
 - **未实现**：OV 0.4.21→0.4.22 生产升级需独立演练窗口；附件版本保留、多实例水平扩展未做。
 
@@ -259,6 +269,7 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-09 推荐配置工作区规则；归档前也去掉对本次检索结果的说明**：部署步骤新增“配置工作区抽取规则”，推荐每个工作区把参考模板写进 `memory_rules`。`archiveDropRunControls` 开启时（默认），成员消息里对本次检索结果的说明也在归档前按分句去掉，例如“历史检索为空不影响确认”。这类句子此前要靠召回和共享晋升兜底，A/B 中开启组的两次失败都来自它。判断比召回时更保守：只认指向记忆或本次运行的说法，带条件的产品规则（如“检索结果为空时显示提示”“检索无相关结果时显示空状态”）整句保留。multica 补丁改为由本仓库维护，不提交上游。
 - **2026-10-08 归档省略智能体自己的指令**：归档工具结果时，JSON 里 `instructions` 字段的值换成“[智能体指令已省略]”，记录的其余字段保留。完整 matrix 中，快速创建的智能体用 `multica agent list --output json` 查自己，输出里带着自己的系统指令，测试放在里面的平台标记随之进了运行归档。运行时说明原本就会按标题去掉，智能体记录没有这个标题。
 - **2026-10-08 basic 与 matrix 回归**：basic 13/13。matrix 前 3 次都没跑完，停下的原因都在测试脚本、Multica 平台和模型行为上。按决定全新跑了第 4 次，Multica 打上补丁 0005，跑完全程 27/30（第二次交接单独重测通过）。三项失败分别是：快速创建时模型先执行命令后写文件；上面那条归档修复；原生抽取把运行记录写进实体卡。Multica 只在任务记录里保存工具输出的前 8 KB，`memory-recall` 的结果因此改为先列运行绑定和查询范围、再列条目。第 3 次中，B 回复交接时照抄了指向自己的 mention，Multica 在同一 issue 上反复派发 B，约 13 分钟多跑 31 次，约占那一轮花费的四分之三。补丁 [`upstream/multica/0005`](upstream/multica/README.md) 让同一 issue 上的自我 @ 不再派发，测试脚本也会取消这类重复运行。另外修了 matrix 的协作检查漏洞、两次交接的指令，以及收尾审计自 10-01 起的参数错误（见 [`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)）。
 - **2026-10-08 执行指令改为按分句去掉**：复查发现按整句去掉会连带删掉同一句里的业务内容，例如“方案确认：不修改代码，只调整 Kafka 分区数为 12。”整句被删。现在只去掉含指令的分句，长期约定整句保留；归档、召回摘录和共享晋升用同一规则。默认开启后的真实验证轮 13/16，失败都在私聊：原生抽取把“不写入公共记忆”理解成不要记（见 A/B 报告第 6、7 节）。

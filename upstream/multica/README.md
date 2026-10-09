@@ -68,6 +68,6 @@ DATABASE_URL=postgres://…/multica_test go test ./internal/handler/ -run AgentS
 | `memory-recall` | 绑定到调用它的运行，模型给出的其他 `issue_id` 被忽略 | 不知道调用方是哪次运行：检索本智能体公共 + 共享，外加模型指定的 issue（multica 本身也允许智能体读工作区内任意 issue） |
 | 评论、`memory-remember`、`ov-*` 门面、租户隔离、抽取自愈 | ✓ | ✓ |
 
-## 上游状态
+## 维护方式
 
-尚未提交到 multica-ai/multica（本环境对该仓库只有只读权限）。补丁按 multica 的公开 API 约定编写（problem+json 错误、不透明游标、`DefaultPageSize` / `MaxPageSize`、scope 目录），可以直接作为上游 PR 的起点。
+这些补丁由本仓库维护，不提交到 multica-ai/multica。部署时按上面的顺序应用到所用的 multica；升级 multica 后重新应用，并跑一遍补丁自带的测试。补丁按 multica 的公开 API 约定编写（problem+json 错误、不透明游标、`DefaultPageSize` / `MaxPageSize`、scope 目录），冲突时以这些约定为准调整。
