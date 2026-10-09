@@ -6,8 +6,10 @@ import { createHash } from 'node:crypto';
 const EXECUTION_CONTROL = [
   /(?:先|须|必须|应|before|must|first).{0,30}(?:调用\s*memory[-_ ]recall|memory[-_ ]recall)/i,
   /(?:memory[-_ ]recall|召回).{0,45}(?:引用.{0,12}(?:来源|URI)|实际证据|简短确认)/i,
-  /(?:不|不要|禁止|未经明确要求不|do not|don't|must not).{0,10}(?:主动记录记忆|主动记忆|修改代码|创建\s*issue|创建唤醒规则|主动创建唤醒规则|modify code|create (?:an? )?issue|record memor)/i,
+  /(?:不|不要|禁止|无需|无须|不用|不必|未经明确要求不|do not|don't|must not).{0,10}(?:主动(?:写入?|记录|保存)?记忆|修改代码|创建\s*(?:新\s*)?issue|创建唤醒规则|主动创建唤醒规则|modify code|create (?:an? )?(?:new )?issue|record memor)/i,
   /(?:按平台流程|提交简短(?:最终)?回复|只发布一次|后续完成通知只需确认|不要再次委派)/,
+  // How to end this run, as a clause of its own ("之后结束", "请简短确认后结束").
+  /^\s*请?(?:简短确认(?:后|即可)?|确认后|之后|然后|随后)\s*结束\s*[。.!！]?\s*$/u,
   /(?:MULTICA_TASK_ID|MULTICA_AGENT_ID|Never background-and-yield|Background Task Safety)/i,
   // How to word this run's reply ("按实际证据回复", "引用来源 URI").
   /(?:按|依据|根据|基于)(?:实际|召回的?)?证据(?:回复|作答|回答)|引用(?:记忆)?来源\s*(?:URI|链接)/i,

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryExcerpt, memoryFingerprint, promotionQuality, withoutRunControls } from '../src/memory-quality.mjs';
+import { memoryExcerpt, memoryFingerprint, memoryQualityIssues, promotionQuality, withoutRunControls } from '../src/memory-quality.mjs';
 import { listMemoryFiles } from '../src/memory-inventory.mjs';
 import { auditMemories } from '../e2e/real-agent/memory-audit.mjs';
 import { hasCurrentBudget } from '../e2e/real-agent/quality.mjs';
@@ -147,4 +147,18 @@ test('a member\'s remark on this run\'s search is archived without that clause; 
   for (const rule of ['检索结果为空时显示提示。', '召回为空时降级到全文搜索。', '新用户历史检索为空，推荐热门词。', '搜索结果为空的页面需要展示引导。', '检索无相关结果时显示空状态。', '如果记忆检索失败，就重试一次。', '以后检索为空不影响上线评审。']) {
     assert.equal(withoutRunControls(rule), rule, rule);
   }
+});
+
+test('other wordings of "do not record memory" and how to end the run are run controls too', () => {
+  // The benchmark seeds, 10-09: native extraction took the private one as "write nothing".
+  assert.equal(withoutRunControls('不要修改代码，不要主动写记忆，不要创建新 issue。按平台流程发布最终评论，之后结束。'), '');
+  assert.equal(withoutRunControls('这是私人长期排版约定：紫鸢周报今后固定按“阻塞轨迹、验证凭据、计划窗口”三个标题排列。仅用于我们私聊，禁止写公共记忆。无需主动写记忆，请简短确认后结束。'),
+    '这是私人长期排版约定：紫鸢周报今后固定按“阻塞轨迹、验证凭据、计划窗口”三个标题排列。仅用于我们私聊，禁止写公共记忆。', 'where the preference may be kept stays');
+  for (const control of ['无需主动写入记忆。', '不用主动记录记忆。', '不必主动保存记忆。', '之后结束。', '请简短确认后结束。']) {
+    assert.equal(withoutRunControls(control), '', control);
+  }
+  for (const kept of ['客户数据不要写入记忆。', '双写之后结束旧链路。', '评审确认后结束冻结期。']) {
+    assert.equal(withoutRunControls(kept), kept, kept);
+  }
+  assert.deepEqual(memoryQualityIssues('**user**: 正式更新：当前月预算改为 8100 元。不要主动写记忆，不要创建新 issue。之后结束。'), ['execution-control']);
 });
