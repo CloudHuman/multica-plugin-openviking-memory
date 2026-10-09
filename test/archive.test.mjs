@@ -132,7 +132,7 @@ test('members\' words are archived without their one-run controls by default; of
   assert.equal(archiveSettings(loadConfig({}, { stateDir })).archiveDropRunControls, true, 'queued jobs keep the setting');
   // The fixed instructions a member appended in the 2026-10-08 real runs.
   const finish = '请先调用 memory-recall，按实际证据回复。不要修改代码，不要主动记录记忆，不要创建 issue 或唤醒规则。按平台流程提交简短回复。';
-  const description = `成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元。以后这个项目的代码注释一律使用中文。${finish}`;
+  const description = `成员正式确认：苍鹭发布使用 Apache Pulsar；每月预算 7600 元。以后这个项目的代码注释一律使用中文。${finish} 本次成员确认是直接证据，历史检索为空不影响确认。检索结果为空时显示提示。`;
   const issue = { ...fixtureIssue(), description };
   const chatInput = { source: 'chat_message', author_type: 'member', author_id: FIXTURE_USER, content: `蓝鹊周报固定按“风险、进展、下一步”排版。${finish}` };
   const agentInput = { source: 'handoff', author_type: 'agent', author_id: FIXTURE_AGENT_B, content: `交接：请复核预算。${finish}` };
@@ -141,8 +141,10 @@ test('members\' words are archived without their one-run controls by default; of
     task: { id: 't', kind, chat_user_id: FIXTURE_USER, input }, transcript: [{ seq: 1, type: 'text', content: '已确认。' }],
   }).messages;
   assert.match(run(false)[0].content, /不要修改代码/, 'off: archived as written');
+  assert.match(run(false)[0].content, /历史检索为空不影响确认/);
   const [task, handoff] = run(true);
-  assert.doesNotMatch(task.content, /请先调用 memory-recall|按平台流程提交简短回复/);
+  assert.doesNotMatch(task.content, /请先调用 memory-recall|按平台流程提交简短回复|历史检索为空/);
+  assert.match(task.content, /本次成员确认是直接证据。检索结果为空时显示提示。/, 'the remark on this run\'s search goes, an empty-result product rule stays');
   assert.match(task.content, /Apache Pulsar；每月预算 7600 元/);
   assert.match(task.content, /以后这个项目的代码注释一律使用中文/, 'a stated lasting policy stays');
   assert.match(handoff.content, /交接：请复核预算。请先调用 memory-recall/, 'only members\' words change');

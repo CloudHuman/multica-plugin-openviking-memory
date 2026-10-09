@@ -33,7 +33,7 @@
 
 设置 `REAL_AGENT_MEMORY_POLICY=config` 时，走工作区管理员的真实路径：安装后经 multica 的配置接口把文档里的参考模板 [`deploy/memory-rules.example.txt`](../../deploy/memory-rules.example.txt) 写进安装配置 `memory_rules`，multica 随每次 hook 投递配置，插件在首次归档提交前把规则写入该工作区账户的模板。运行结束时检查 `memory-rules-applied`：插件记录的状态为 applied、规则条数与文件一致，OV 中对应模板为 custom 且带工作区规则标题，应用时间早于首次提交。这份模板约 2 KB，在配置上限以内，同样不含测试用例的具体值。
 
-插件默认在归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”，设置项 `archiveDropRunControls`）。设置 `REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS=0` 时按原文归档，用来对比。报告的 `archiveDropRunControls` 记录实际设置，续跑必须保持一致。
+插件默认在归档前去掉成员消息和任务描述里已知的一次性执行指令（如“请先调用 memory-recall”“不要修改代码”）和对本次检索结果的说明（如“历史检索为空不影响确认”），设置项 `archiveDropRunControls`。设置 `REAL_AGENT_ARCHIVE_DROP_RUN_CONTROLS=0` 时按原文归档，用来对比。报告的 `archiveDropRunControls` 记录实际设置，续跑必须保持一致。
 
 quality 套件遇到内容上的失败时记一项失败、继续往下跑，不再整轮停止：
 - 第一次晋升没有内容时，记 `initial-promotion-admitted` 失败；

@@ -81,14 +81,38 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
   return { content: statements.length ? contentText : '', filtered: body !== raw || contentText !== body.trim() };
 }
 
+// A member's remark on this run's own search ("历史检索为空不影响确认") is
+// no business fact either. Stricter than recallOutcome: a member's message is
+// archived before any extraction sees it, so a failed-search phrase counts
+// only when it is about memory or this run, and nothing stated as a condition
+// ("检索无相关结果时显示空状态") is taken for an outcome.
+const RUN_SEARCH = /(?:记忆|历史|本次|此次|这次|memory)/i;
+const CONDITION = /(?:时|的话|如果|若|假如|when\b|if\b)/i;
+const memberRecallOutcome = (clause) => !CONDITION.test(clause)
+  && (EMPTY_RECALL.test(clause) || NO_VALUE.test(clause) || (FAILED_RECALL.test(clause) && RUN_SEARCH.test(clause)));
+
+/** One sentence without the clauses that report this run's search; a remark spread over several clauses takes the sentence. */
+function withoutRecallOutcome(sentence) {
+  if (DURABLE_DOMAIN.test(sentence) || !memberRecallOutcome(sentence)) return sentence;
+  const clauses = sentence.split(CLAUSE_END);
+  const kept = clauses.filter(clause => !memberRecallOutcome(clause));
+  if (kept.length === clauses.length) return '';
+  const rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
+  if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
+  const end = sentence.match(/[。；;.!?！？]\s*$/u)?.[0].trim() ?? '';
+  return rest.endsWith(end) ? rest : `${rest}${end}`;
+}
+
 /**
  * A message without its known one-run controls ("请先调用 memory-recall",
- * "不要修改代码", "按平台流程提交简短回复"), clause by clause. The rest of the
- * message, headings and lasting policies included, is kept as written.
+ * "不要修改代码", "按平台流程提交简短回复") and remarks on this run's search
+ * ("历史检索为空不影响确认"), clause by clause. The rest of the message,
+ * headings, lasting policies and empty-result product rules included, is kept
+ * as written.
  */
 export function withoutRunControls(text) {
   return String(text ?? '').split('\n')
-    .map(line => /^#{1,6}\s/.test(line) ? line : line.split(/(?<=[。；;])/u).map(withoutControlClauses).join('').trimEnd())
+    .map(line => /^#{1,6}\s/.test(line) ? line : line.split(/(?<=[。；;])/u).map(sentence => withoutRecallOutcome(withoutControlClauses(sentence))).join('').trimEnd())
     .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 

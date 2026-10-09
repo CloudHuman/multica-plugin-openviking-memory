@@ -134,5 +134,17 @@ test('run controls are removed sentence by sentence; facts, headings and lasting
   assert.equal(withoutRunControls('预算 7600 元。请先调用 memory-recall，按实际证据回复。双写五天。'), '预算 7600 元。双写五天。');
   assert.equal(withoutRunControls('## 要求\n发布冻结期间一律不要修改代码。\n只做分析。'), '## 要求\n发布冻结期间一律不要修改代码。\n只做分析。');
   assert.equal(withoutRunControls('不要修改代码，不要主动记录记忆。'), '');
-  assert.equal(withoutRunControls('检索结果为空时显示提示。'), '检索结果为空时显示提示。', 'search outcomes are not run controls');
+  assert.equal(withoutRunControls('检索结果为空时显示提示。'), '检索结果为空时显示提示。', 'an empty-result product rule is not a run control');
+});
+
+test('a member\'s remark on this run\'s search is archived without that clause; empty-result product rules stay', () => {
+  // The quality seed's wording, 10-08: the extraction copied it into entity cards.
+  assert.equal(withoutRunControls('本次成员确认是直接证据，历史检索为空不影响确认。'), '本次成员确认是直接证据。');
+  assert.equal(withoutRunControls('本次召回未找到相关记忆，以成员确认为准。'), '以成员确认为准。');
+  assert.equal(withoutRunControls('检索为空，因此以成员确认为准。'), '', 'a remark spread over two clauses takes the sentence');
+  assert.equal(withoutRunControls('请先调用 memory-recall 查历史，历史检索为空不影响确认。'), '');
+  assert.equal(withoutRunControls('预算 7600 元。历史检索为空不影响确认。双写五天。'), '预算 7600 元。双写五天。');
+  for (const rule of ['检索结果为空时显示提示。', '召回为空时降级到全文搜索。', '新用户历史检索为空，推荐热门词。', '搜索结果为空的页面需要展示引导。', '检索无相关结果时显示空状态。', '如果记忆检索失败，就重试一次。', '以后检索为空不影响上线评审。']) {
+    assert.equal(withoutRunControls(rule), rule, rule);
+  }
 });
