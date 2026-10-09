@@ -78,6 +78,115 @@
 
 配套 skill（`skills/openviking-memory/SKILL.md`）随插件包安装进工作区，教智能体何时召回、何时记录、如何诚实对待"没有记忆"。
 
+## 项目全景（截至 2026-10-09）
+
+按“能做什么”和“验证到哪一层”梳理当前状态。分支 `fix/review-hardening`，版本 0.3.0，OpenViking 0.4.22。
+
+**关键数字**
+
+- **记忆范围**：功能规格的七类范围都已实现，每类都有真实智能体样例。
+- **真实智能体验证**：24 项能力里 22 项在真实智能体上通过；运行中追加要求受运行时限制，归档省略智能体指令修复后还没在真实运行里再触发。
+- **测试**：190 个单元和集成测试（23 个文件，CI 跑 Node 20、22、24）；mock 端到端补丁版契约 13/13、原版契约 14/14。
+- **交付物**：19 个钩子（归档事件 1 个、记忆工具 3 个、OpenViking 原生工具门面 15 个），外加 1 个 skill。
+- **代码**：`src/` 24 个模块约 4,600 行，零 npm 依赖。
+
+### 能力 × 验证层级
+
+越靠右的层级越接近真实使用：
+
+- **单元/集成**：测试替身。
+- **真实 OV**：真实 OpenViking + mock 模型 + 模拟 Multica（`e2e/run-e2e.mjs`，场景 S1–S12）。
+- **真实 Multica**：真实 Multica 服务端 + 真实 OpenViking，用协议样例驱动（`e2e/real-stack/`，场景 R1–R7）。
+- **真实智能体**：官方 daemon + OpenCode + 真实模型（`e2e/real-agent/`）。
+
+✅ 已通过　◐ 部分验证　— 这一层未覆盖　✗ 运行时不支持
+
+| 领域 | 能力 | 单元/集成 | 真实 OV | 真实 Multica | 真实智能体 | 依据 |
+| --- | --- | :-: | :-: | :-: | :-: | --- |
+| 接入与安全 | 签名验证与安装绑定 | ✅ | ✅ | ✅ | ✅ | 真实栈 R6 经 `/v1/context` 绑定工作区；所有真实运行都经官方 daemon 签名投递 |
+| 接入与安全 | 存储层范围隔离 | ✅ | ✅ | ✅ | ✅ | S7 跨空间读取被 OV 拒绝；R6；matrix 中 B 召回不到 A 的公共记忆，也不搜索 A 与成员的私聊 |
+| 接入与安全 | `ov-*` 门面只许访问自己的空间 | ✅ | ✅ | ✅ | ✅ | S12；R4；matrix 中 B 读取 A 的 URI 返回 `outside_own_space` |
+| 归档 | issue 运行归档（转写与触发输入） | ✅ | ✅ | ✅ | ✅ | S1；R2c；basic 自动抽取；quality 种子任务 |
+| 归档 | 评论按作者归属 | ✅ | ✅ | ✅ | ✅ | S5；R2d；quality 预算更新评论；matrix 成员评论 |
+| 归档 | 私聊归档（成员原话按本人归属） | ✅ | ✅ | ✅ | ✅ | S6；R3a/R3b；10-09 benchmark 私聊召回：规则组 3/3，原生组补上过滤后 2/3，另一个智能体都搜不到 |
+| 归档 | 快速创建、自动化与委派 | ✅ | — | — | ✅ | matrix（10-01、10-08）：快速创建、手动/webhook/cron 自动化、@mention 委派都核对了归档范围 |
+| 归档 | 运行中追加要求 | ✅ | — | — | ✗ | 配套接口测试；OpenCode 适配器返回 412 `task_supplement_unsupported` |
+| 归档 | 归档用 issue 标题代替编号 | ✅ | ✅ | — | ✅ | 10-08 起实体卡和共享卡都不带编号（10-02 六轮全部带编号） |
+| 归档 | 归档省略工具输出里智能体自己的指令 | ✅ | — | — | ◐ | 10-08 matrix 发现智能体用 `multica agent list` 查自己，指令进了归档；已修复，真实运行里还没再出现这条路径 |
+| 归档 | 归档前去掉成员消息里的执行指令和检索结论 | ✅ | ✅ | — | ✅ | 10-08 A/B 各 3 轮：关闭时 3 轮都有抽取因“不要主动记录记忆”放弃写入，开启时 0 次；评审修复后 21 个记忆文件里没有成员写的执行指令 |
+| 抽取与自愈 | 持久化队列与重投判重 | ✅ | ✅ | ✅ | ✅ | S9；R3a 连续私聊后熔断没有打开；接收失败返回 503 |
+| 抽取与自愈 | 抽取监视与新会话重驱 | ✅ | ✅ | ✅ | ✅ | S10；R7 故障注入后在 `-r1` 重驱成功；matrix 共享晋升经两次重驱完成 |
+| 抽取与自愈 | 确认已发布的交付（补丁 0004） | ✅ | — | — | ✅ | Multica 补丁 Go 测试；10-01、10-09 受控 401 后评论恢复，重复确认不重复执行 |
+| 召回 | 多范围召回并绑定调用它的运行 | ✅ | ✅ | ✅ | ✅ | S3 `bound=true`；R2a、R5；basic recall-bound-to-run |
+| 召回 | 只用编号或 UUID 的查询自动补全 | ✅ | — | — | ✅ | basic cross-task-recall |
+| 召回 | 过滤执行指令、检索结论与重复副本 | ✅ | ✅ | — | ✅ | S2；10-08 新会话召回到的私聊偏好摘录已去掉“先调用 memory-recall” |
+| 召回 | 超时返回部分结果并注明 | ✅ | — | ✅ | ✅ | 真实栈在 25 秒向量延迟下按时作答；真实运行中超时如实说明 |
+| 召回 | 识别“检索为空”这类检索结论 | ✅ | — | — | ✅ | 测试含产品规则反例；10-08 A/B 中审计和晋升都识别出卡片里的“记忆检索为空不影响确认” |
+| 主动记忆与共享 | `memory-remember` 主动记忆与后台索引 | ✅ | ✅ | ✅ | ✅ | S4；R2b 与 R2b-recall；basic active-memory-index |
+| 主动记忆与共享 | 共享晋升（质量门槛、按版本幂等） | ✅ | — | — | ✅ | 10-02 六轮、10-08 两轮 B 从共享取回当前事实 8/8；10-09 benchmark B 只凭英文别名取回 9/9 |
+| 主动记忆与共享 | 晋升前去掉执行指令与检索结论 | ✅ | — | — | ✅ | 10-08 A/B 开启组 4 次晋升都去掉了卡片里的检索为空句子 |
+| 定制与观测 | 工作区抽取规则 `memory_rules` | ✅ | ✅ | — | ✅ | 10-08 经安装配置写入，首次提交前生效，quality 16/16；10-09 benchmark 记忆审计质量问题 0 |
+| 定制与观测 | 状态、诊断与模型请求观测 | ✅ | ✅ | — | ✅ | S10、S11；真实运行中统计每次模型请求的认证形态与状态 |
+
+### 真实智能体与真实模型的运行记录
+
+每一轮都由官方 daemon 驱动实际的 OpenCode 智能体，任务转写、工具调用和回复都是智能体自己产生的。每个套件通常只跑 1 轮，是小样本，不能据此推算生产准确率。
+
+| 日期 | 套件 | 条件 | 结果 | 说明 |
+| --- | --- | --- | --- | --- |
+| 09-30 | basic（首轮） | glm-5.3-flash | 11 项核验通过 | 发现只有插件工具时 daemon 不签发凭据，补丁 0002 修复 |
+| 10-01 | matrix（全部入口） | gpt-5.4-mini | 30 项检查通过 | 七类范围都有真实样例；中途修复了委派、快速创建和晋升监视，不是一次全绿 |
+| 10-01 | benchmark | 原环境 | 业务事实 0/27 | 上游 401：OV 743 次请求里 322 次 401，检索失效 |
+| 10-01 | basic · quality 重跑 | 实例级模板（已移除） | 13/13 · 15/15 | OV 381 次、OpenCode 42 次请求都没有 401 |
+| 10-02 | 原生 vs 账号级规则 ×3 | OV 默认值 | 规则组 2/3 全通过 | 原生 13/15、14/15、私聊处停止；规则 15/15、15/15、13/15；$0.80 |
+| 10-08 | 原生 vs 工作区规则（安装配置） | OV 默认值 | 规则 16/16 · 原生 14/15 | 规则在首次提交前生效；原生私聊偏好混入一句执行指令；$0.27 |
+| 10-08 | 归档去掉执行指令 A/B ×3 | 原生抽取 | 开启 2/3 跑完 · 关闭 0/3 | 关闭时 3 轮都有抽取放弃写入，开启时 0 次；$0.50 |
+| 10-08 | quality（新默认值） | 原生抽取 | 13/16 | 归档去掉执行指令生效；三项失败都在私聊，原生抽取把“不写入公共记忆”理解成不要记；$0.07 |
+| 10-08 | basic 与 matrix 回归 | 原生抽取；matrix 第 4 次加补丁 0005 | 13/13 · 27/30 | 前 3 次 matrix 没跑完，第 3 次智能体自我 @ 循环 31 次；第 4 次跑完全程 |
+| 10-09 | benchmark（干净环境） | 工作区规则 | 27/27 · 21/21 | 9 次查询全部答对并引用共享来源，私聊 3/3，没有 401；$0.52 |
+| 10-09 | benchmark 原生对照 | 原生抽取 | 27/27 · 17/20 | 私聊 0/3：“无需主动写记忆”没被过滤；补上后再跑 24/27 · 18/20，私聊 2/3；$0.61、$0.62 |
+| 10-09 | 第一轮评审修复后回归 | basic 原生 · benchmark 工作区规则 | 13/13 · 21/21 | 业务事实 27/27、私聊 3/3；$0.63 |
+| 10-09 | 第二轮评审修复后回归 | basic 原生 · mock 端到端 | 13/13 · 13/13 · 14/14 | 召回绑定、跨任务找回、空召回如实说明、归档卫生都通过；$0.12 |
+
+完整记录见下文“验证”一节列出的报告。
+
+### 原版 Multica、补丁与运行时
+
+- **原版 Multica 开箱可用**：
+  - 评论归档按作者归属；
+  - `memory-recall` 可用，但不知道是哪次运行在调用；
+  - `memory-remember`、`memory-status`、15 个 `ov-*` 工具和共享晋升都可用；
+  - 运行本身不归档，以智能体的收尾评论代表。
+- **补丁 0001–0005**（本仓库维护，部署时应用，见 [`upstream/multica/`](upstream/multica/README.md)）：
+  - 0001：运行转写，私聊、快速创建、自动化、委派归档，召回绑定运行；
+  - 0002：只有插件工具时也签发 daemon 凭据；
+  - 0003：快速创建关联 issue 后保留原运行类型；
+  - 0004：确认已发布的交付；
+  - 0005：同一 issue 上的自我 @ 不再派发。
+- **运行时**：
+  - OpenCode：全部工具可用，真实验证都用它；
+  - kimi 等 ACP 运行时：需要登记直连条目，会绕过门面限制；
+  - pi：不下发 MCP（multica#8961）；
+  - Codex：令牌刷新失败，没有完成全链路验收。
+
+### 待验证与已知风险
+
+- **待真实复现**：归档省略智能体指令、归档前去掉检索结论都已实现并有测试，真实运行里还没再触发这两条路径。评审修复里的故障路径（任务 API 临时出错、状态锁竞争、自动重驱计数、请求体上限、缺少回调）只能靠故障注入触发，由单元和集成测试覆盖。
+- **原生抽取不稳定**：
+  - 成员说“不要记”时可能一条也不写；
+  - 执行指令换个说法就会被记成偏好；
+  - 会把运行记录写进实体卡。
+
+  配了工作区规则的轮次都没有出现这些情况，所以推荐每个工作区配置 `memory_rules`。
+- **智能体自我 @ 循环**：原版 Multica 上可能出现，应用补丁 0005 可避免。
+- **向量检索慢**：benchmark 中向量请求 p95 为 8–12 秒，召回预算 15 秒，偶有超时，召回会如实注明。暂不处理。
+- **未完成**：
+  - OV 0.4.21 → 0.4.22 生产升级没有演练；
+  - 附件版本保留、多实例水平扩展没有做；
+  - Web、桌面、移动端和外部聊天渠道没有逐一验收。
+
+细节见“与功能规格的对照与已知边界”，各阶段的改动见“变更记录”。
+
 ## 快速开始
 
 分两半：**插件后端服务**（本仓库，维护者部署）+ **插件包**（≤2MiB zip，装进 multica 工作区）。
@@ -267,7 +376,7 @@ OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica
 node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV；R7 故障注入需 MOCK_LLM_URL
 ```
 
-最近的记录：[`reports/real-agent-2026-10-09-review-regression.md`](reports/real-agent-2026-10-09-review-regression.md)（独立评审修复后的回归：basic 13/13、benchmark 21/21）、[`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md)（benchmark：工作区规则与原生抽取对照，业务事实都是 27/27）、[`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)（basic 与 matrix 回归、自我 @ 循环）、[`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)（归档前去掉执行指令的 A/B 对比）、[`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)（工作区规则经安装配置生效、标题代替编号的真实验证）、[`reports/real-agent-2026-10-02-native-vs-account-x3.md`](reports/real-agent-2026-10-02-native-vs-account-x3.md)（原生抽取与账号级规则各 3 轮）、[`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)（原生抽取与账号级规则对比、json 输出格式导致的空卡）、[`reports/auth-resilience-2026-10-01.md`](reports/auth-resilience-2026-10-01.md)（鉴权诊断、请求预算与失败恢复）、[`reports/distillation-quality-2026-10-01.md`](reports/distillation-quality-2026-10-01.md)（真实多智能体蒸馏质量）、[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
+最近的记录：[`reports/real-agent-2026-10-09-review-regression.md`](reports/real-agent-2026-10-09-review-regression.md)（两轮独立评审修复后的回归：第一轮后 basic 13/13、benchmark 21/21，第二轮后 mock 端到端 13/13 · 14/14、basic 13/13）、[`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md)（benchmark：工作区规则与原生抽取对照，业务事实都是 27/27）、[`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)（basic 与 matrix 回归、自我 @ 循环）、[`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)（归档前去掉执行指令的 A/B 对比）、[`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)（工作区规则经安装配置生效、标题代替编号的真实验证）、[`reports/real-agent-2026-10-02-native-vs-account-x3.md`](reports/real-agent-2026-10-02-native-vs-account-x3.md)（原生抽取与账号级规则各 3 轮）、[`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)（原生抽取与账号级规则对比、json 输出格式导致的空卡）、[`reports/auth-resilience-2026-10-01.md`](reports/auth-resilience-2026-10-01.md)（鉴权诊断、请求预算与失败恢复）、[`reports/distillation-quality-2026-10-01.md`](reports/distillation-quality-2026-10-01.md)（真实多智能体蒸馏质量）、[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
 
 ## 变更记录
 
