@@ -1,0 +1,183 @@
+From 55c4b5139bb2ed39cd58cf308358149d1c4f59e5 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 8 Oct 2026 15:59:28 +0000
+Subject: [PATCH] fix(comments): stop an agent's own mention from re-queueing
+ it on the same issue
+
+A reply that quotes the handoff's mention of its recipient
+("[@Reviewer](mention://agent/<self>) done") re-fired the recipient after
+every run on that issue. Self-mentions are allowed so that a run can
+notify another issue its agent also owns; the guard against runaway
+loops, hasPendingTaskForIssueAndAgent, only coalesces into a task that is
+still pending, and serial runs never meet one. In a real two-agent
+handoff the receiver ran 31 more times in 13 minutes, until its daemon
+stopped.
+
+A mention of the comment's own author is now suppressed
+(blocked/self_trigger_suppressed) when the comment's server-trusted
+authoring task works on the same issue. Self-mentions on other issues and
+comments without an authoring task are unchanged; other agents named in
+the same comment still run.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KCs3NfEXoHEF5A4cBweWqH
+---
+ server/internal/handler/comment.go            |  23 ++++
+ .../handler/comment_self_mention_test.go      | 104 ++++++++++++++++++
+ 2 files changed, 127 insertions(+)
+ create mode 100644 server/internal/handler/comment_self_mention_test.go
+
+diff --git a/server/internal/handler/comment.go b/server/internal/handler/comment.go
+index 8953919..29f9fe2 100644
+--- a/server/internal/handler/comment.go
++++ b/server/internal/handler/comment.go
+@@ -3310,6 +3310,19 @@ func (h *Handler) resolveMentionedAgentCommentTriggers(ctx context.Context, issu
+ 			blockTarget("agent", m.ID, ReasonTargetUnavailable)
+ 			continue
+ 		}
++		// A run that mentions its own agent on the issue it is working on would
++		// only queue that agent again behind itself. A reply that quotes the
++		// mention it was handed ("[@Reviewer](mention://agent/<self>) done")
++		// then re-fires its author after every run, without end:
++		// hasPendingTaskForIssueAndAgent coalesces a mention only into a task
++		// that is still pending, and serial runs never meet one. Self-mentions
++		// keep their purpose on other issues (a child-issue run notifying the
++		// parent issue its agent also owns); a comment without a trusted
++		// authoring task is unchanged.
++		if authorType == "agent" && authorID == uuidToString(agentUUID) && h.authoringTaskOnIssue(ctx, opts.AuthoringTaskID, issue.ID) {
++			blockTarget("agent", m.ID, ReasonSelfTriggerSuppressed)
++			continue
++		}
+ 		// Load the agent scoped to the current issue's workspace. Using the
+ 		// bare GetAgent here would let a mention resolve to an agent in a
+ 		// different workspace, and the visibility check below would then be
+@@ -3356,6 +3369,16 @@ func (h *Handler) resolveMentionedAgentCommentTriggers(ctx context.Context, issu
+ 	return triggers, targets
+ }
+ 
++// authoringTaskOnIssue reports whether a comment's server-trusted authoring
++// task works on this issue. No task, or one that cannot be read, is false.
++func (h *Handler) authoringTaskOnIssue(ctx context.Context, taskID, issueID pgtype.UUID) bool {
++	if !taskID.Valid {
++		return false
++	}
++	task, err := h.Queries.GetAgentTask(ctx, taskID)
++	return err == nil && task.IssueID.Valid && uuidToString(task.IssueID) == uuidToString(issueID)
++}
++
+ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
+ 	r = h.withWakeupActor(r)
+ 	commentId := chi.URLParam(r, "commentId")
+diff --git a/server/internal/handler/comment_self_mention_test.go b/server/internal/handler/comment_self_mention_test.go
+new file mode 100644
+index 0000000..3cd7925
+--- /dev/null
++++ b/server/internal/handler/comment_self_mention_test.go
+@@ -0,0 +1,104 @@
++package handler
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++)
++
++// seedRunningAgentTask stands in for the run an agent comments from.
++func seedRunningAgentTask(t *testing.T, agentID, issueID string) string {
++	t.Helper()
++	var taskID string
++	if err := testPool.QueryRow(context.Background(), `
++		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, issue_id, started_at)
++		VALUES ($1, $2, 'running', 0, $3, now())
++		RETURNING id
++	`, agentID, handlerTestRuntimeID(t), issueID).Scan(&taskID); err != nil {
++		t.Fatalf("seed running task: %v", err)
++	}
++	return taskID
++}
++
++func postAgentComment(t *testing.T, agentID, taskID, issueID, content string) CommentResponse {
++	t.Helper()
++	w := httptest.NewRecorder()
++	r := withURLParam(newRequest(http.MethodPost, "/api/issues/"+issueID+"/comments", map[string]any{"content": content}), "id", issueID)
++	r.Header.Set("X-Agent-ID", agentID)
++	r.Header.Set("X-Task-ID", taskID)
++	testHandler.CreateComment(w, r)
++	if w.Code != http.StatusCreated {
++		t.Fatalf("CreateComment: expected 201, got %d: %s", w.Code, w.Body.String())
++	}
++	var resp CommentResponse
++	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
++		t.Fatalf("decode comment: %v", err)
++	}
++	return resp
++}
++
++func countAgentIssueTasks(t *testing.T, issueID, agentID string) int {
++	t.Helper()
++	var n int
++	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM agent_task_queue WHERE issue_id = $1 AND agent_id = $2`, issueID, agentID).Scan(&n); err != nil {
++		t.Fatalf("count tasks: %v", err)
++	}
++	return n
++}
++
++// A reply that quotes the handoff's mention of its own author must not queue
++// the author again on the same issue: each such reply would re-fire it after
++// every run. Another agent named in the same comment still runs.
++func TestCreateComment_AgentSelfMentionOnItsOwnIssueDoesNotRequeue(t *testing.T) {
++	if testHandler == nil || testPool == nil {
++		t.Skip("database not available")
++	}
++	reviewerID := createHandlerTestAgent(t, "Self-Mention Reviewer", nil)
++	otherID := createHandlerTestAgent(t, "Self-Mention Other", nil)
++	issueID := createCommentTriggerPreviewIssue(t, "self-mention on own issue", "", "")
++	taskID := seedRunningAgentTask(t, reviewerID, issueID)
++
++	content := fmt.Sprintf("[@Reviewer](mention://agent/%s) reviewed: the retry limit is 7. [@Other](mention://agent/%s) FYI", reviewerID, otherID)
++	resp := postAgentComment(t, reviewerID, taskID, issueID, content)
++
++	self := findCommentOutcome(t, resp.TriggerOutcomes, reviewerID)
++	if self.Status != DispatchBlocked || self.ReasonCode != ReasonSelfTriggerSuppressed {
++		t.Errorf("self-mention outcome = %+v, want blocked/self_trigger_suppressed", self)
++	}
++	if got := countAgentIssueTasks(t, issueID, reviewerID); got != 1 {
++		t.Errorf("reviewer tasks = %d, want 1 (only the run that wrote the comment)", got)
++	}
++	other := findCommentOutcome(t, resp.TriggerOutcomes, otherID)
++	if other.Status != DispatchQueued {
++		t.Errorf("other agent outcome = %+v, want queued", other)
++	}
++	if got := countAgentIssueTasks(t, issueID, otherID); got != 1 {
++		t.Errorf("other agent tasks = %d, want 1", got)
++	}
++}
++
++// Self-mentions stay what they are for: a run on one issue notifying another
++// issue its agent also works on.
++func TestCreateComment_AgentSelfMentionOnAnotherIssueStillQueues(t *testing.T) {
++	if testHandler == nil || testPool == nil {
++		t.Skip("database not available")
++	}
++	agentID := createHandlerTestAgent(t, "Self-Mention Notifier", nil)
++	childID := createCommentTriggerPreviewIssue(t, "self-mention child issue", "", "")
++	parentID := createCommentTriggerPreviewIssue(t, "self-mention parent issue", "", "")
++	taskID := seedRunningAgentTask(t, agentID, childID)
++
++	content := fmt.Sprintf("[@Notifier](mention://agent/%s) the child issue is done, continue here", agentID)
++	resp := postAgentComment(t, agentID, taskID, parentID, content)
++
++	o := findCommentOutcome(t, resp.TriggerOutcomes, agentID)
++	if o.Status != DispatchQueued {
++		t.Errorf("cross-issue self-mention outcome = %+v, want queued", o)
++	}
++	if got := countAgentIssueTasks(t, parentID, agentID); got != 1 {
++		t.Errorf("parent issue tasks = %d, want 1", got)
++	}
++}
+-- 
+2.43.0
+

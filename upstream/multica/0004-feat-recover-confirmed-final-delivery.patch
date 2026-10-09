@@ -1,0 +1,487 @@
+From d1cb259eef62ad3c5976f0b151f13e590db37151 Mon Sep 17 00:00:00 2001
+From: Cloud Zhang <humancloud06@gmail.com>
+Date: Thu, 1 Oct 2026 08:13:12 +0000
+Subject: [PATCH] feat: recover confirmed task delivery without replaying
+ actions
+
+---
+ server/cmd/server/router.go                   |   1 +
+ server/internal/handler/task_delivery.go      |  85 ++++++++++++
+ server/internal/handler/task_delivery_test.go | 123 ++++++++++++++++++
+ server/internal/service/task_delivery.go      |  92 +++++++++++++
+ server/pkg/db/generated/agent.sql.go          |  97 ++++++++++++++
+ server/pkg/db/queries/agent.sql               |  17 +++
+ 6 files changed, 415 insertions(+)
+ create mode 100644 server/internal/handler/task_delivery.go
+ create mode 100644 server/internal/handler/task_delivery_test.go
+ create mode 100644 server/internal/service/task_delivery.go
+
+diff --git a/server/cmd/server/router.go b/server/cmd/server/router.go
+index 33e731634..dee2c232c 100644
+--- a/server/cmd/server/router.go
++++ b/server/cmd/server/router.go
+@@ -2076,6 +2076,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
+ 			// Task messages (user-facing, not daemon auth)
+ 			r.Get("/api/tasks/{taskId}/messages", h.ListTaskMessagesByUser)
+ 			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/retry-source-context", h.RetrySourceContextQuickCreate)
++			r.With(handler.RequireHumanActor).Post("/api/tasks/{taskId}/recover-delivery", h.RecoverTaskDelivery)
+ 
+ 			// Issue quick actions (definitions; running one lives under
+ 			// /api/issues/{id}/quick-actions/{quickActionId}/run)
+diff --git a/server/internal/handler/task_delivery.go b/server/internal/handler/task_delivery.go
+new file mode 100644
+index 000000000..3b48122f8
+--- /dev/null
++++ b/server/internal/handler/task_delivery.go
+@@ -0,0 +1,85 @@
++package handler
++
++import (
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"net/http"
++
++	"github.com/go-chi/chi/v5"
++	"github.com/multica-ai/multica/server/internal/service"
++	db "github.com/multica-ai/multica/server/pkg/db/generated"
++)
++
++type DeliveryRecoveryResponse struct {
++	TaskID    string `json:"task_id"`
++	Status    string `json:"status"`
++	Recovered bool   `json:"recovered"`
++	CommentID string `json:"comment_id"`
++}
++
++func (h *Handler) RecoverTaskDelivery(w http.ResponseWriter, r *http.Request) {
++	userID, ok := requireUserID(w, r)
++	if !ok {
++		return
++	}
++	ws := ctxWorkspaceID(r.Context())
++	wsID, ok := parseUUIDOrBadRequest(w, ws, "workspace_id")
++	if !ok {
++		return
++	}
++	taskID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "taskId"), "task_id")
++	if !ok {
++		return
++	}
++	task, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: taskID, WorkspaceID: wsID})
++	if err != nil {
++		if isNotFound(err) {
++			writeError(w, 404, "task not found")
++		} else {
++			writeError(w, 500, "failed to load task")
++		}
++		return
++	}
++	actorType, actorID := h.resolveActor(r, userID, ws)
++	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{ID: task.AgentID, WorkspaceID: wsID})
++	if err != nil {
++		writeError(w, 404, "task not found")
++		return
++	}
++	if !h.canAccessPrivateAgent(r.Context(), agent, actorType, actorID, ws) {
++		writeError(w, 403, "you do not have access to this agent")
++		return
++	}
++	var body struct {
++		CommentID string `json:"comment_id"`
++		Digest    string `json:"comment_sha256"`
++	}
++	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
++		writeError(w, 400, "invalid recovery receipt")
++		return
++	}
++	commentID, ok := parseUUIDOrBadRequest(w, body.CommentID, "comment_id")
++	if !ok {
++		return
++	}
++	digest, err := hex.DecodeString(body.Digest)
++	if err != nil || len(digest) != 32 {
++		writeError(w, 400, "comment_sha256 must identify the confirmed final comment")
++		return
++	}
++	memberID, ok := parseUUIDOrBadRequest(w, userID, "user_id")
++	if !ok {
++		return
++	}
++	recovered, changed, err := h.TaskService.RecoverDeliveredTask(r.Context(), taskID, wsID, commentID, memberID, body.Digest)
++	if errors.Is(err, service.ErrDeliveryRecoveryConflict) {
++		writeError(w, 409, err.Error())
++		return
++	}
++	if err != nil {
++		writeError(w, 500, "failed to recover delivery")
++		return
++	}
++	writeJSON(w, http.StatusOK, DeliveryRecoveryResponse{TaskID: uuidToString(recovered.ID), Status: recovered.Status, Recovered: changed, CommentID: body.CommentID})
++}
+diff --git a/server/internal/handler/task_delivery_test.go b/server/internal/handler/task_delivery_test.go
+new file mode 100644
+index 000000000..99beb95a1
+--- /dev/null
++++ b/server/internal/handler/task_delivery_test.go
+@@ -0,0 +1,123 @@
++package handler
++
++import (
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"net/http"
++	"testing"
++
++	"github.com/multica-ai/multica/server/internal/testutil"
++)
++
++func TestRecoverTaskDelivery(t *testing.T) {
++	if testHandler == nil {
++		t.Fatal("delivery recovery requires the configured test database")
++	}
++	for _, scenario := range []string{"delivered", "wrong-digest", "wrong-source", "wrong-error", "successor", "waiting-successor", "deferred-successor", "foreign-task", "invalid-digest", "private-agent"} {
++		t.Run(scenario, func(t *testing.T) {
++			agentID := createHandlerTestAgent(t, "Delivery recovery "+scenario, []byte("[]"))
++			issueID := dbfx.Issue(t, "Already delivered "+scenario)
++			taskID := dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "issue_id": issueID, "status": "failed", "error": "Missing Authentication header", "completed_at": testutil.Raw("now()"), "failure_reason": "agent_error.provider_auth_or_access"})
++			sourceID := taskID
++			if scenario == "wrong-source" {
++				sourceID = dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "status": "completed"})
++			}
++			content := "Apache Pulsar，预算8100元，双写五天。来源：viking://user/example/memories/entities/release.md"
++			commentID := dbfx.Insert(t, "comment", testutil.Cols{"workspace_id": testWorkspaceID, "issue_id": issueID, "author_type": "agent", "author_id": agentID, "source_task_id": sourceID, "content": content})
++			sum := sha256.Sum256([]byte(content))
++			digest := hex.EncodeToString(sum[:])
++			if scenario == "private-agent" {
++				dbfx.Exec(t, `UPDATE agent SET permission_mode='private', visibility='private', owner_id=NULL WHERE id=$1`, agentID)
++			}
++			if scenario == "wrong-digest" {
++				digest = hex.EncodeToString(make([]byte, 32))
++			}
++			if scenario == "wrong-error" {
++				dbfx.Exec(t, `UPDATE agent_task_queue SET error='permission denied' WHERE id=$1`, taskID)
++			}
++			if scenario == "successor" {
++				dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "issue_id": issueID, "status": "queued", "rerun_of_task_id": taskID})
++			}
++			if scenario == "waiting-successor" || scenario == "deferred-successor" {
++				status := "waiting_local_directory"
++				if scenario == "deferred-successor" {
++					status = "deferred"
++				}
++				dbfx.Task(t, agentID, testutil.Cols{"runtime_id": handlerTestRuntimeID(t), "issue_id": issueID, "status": status})
++			}
++			if scenario == "foreign-task" {
++				foreign := createForeignWorkspaceAgent(t)
++				var runtime string
++				dbfx.QueryRow(t, `SELECT runtime_id FROM agent WHERE id=$1`, foreign).Scan(&runtime)
++				taskID = dbfx.Task(t, foreign, testutil.Cols{"runtime_id": runtime, "status": "failed", "error": "Missing Authentication header"})
++			}
++			if scenario == "invalid-digest" {
++				digest = "invalid"
++			}
++			callerID := testUserID
++			if scenario == "private-agent" {
++				callerID = createPermissionTestMember(t, "delivery-private-member@example.test")
++			}
++			body := map[string]any{"comment_id": commentID, "comment_sha256": digest}
++			invoke := func(changed bool) int {
++				req := newRequestAs(callerID, http.MethodPost, "/api/tasks/"+taskID+"/recover-delivery", body)
++				req = withURLParam(withChatTestWorkspaceCtx(t, req), "taskId", taskID)
++				want := http.StatusConflict
++				if scenario == "delivered" {
++					want = 200
++				}
++				if scenario == "foreign-task" {
++					want = 404
++				}
++				if scenario == "private-agent" {
++					want = 403
++				}
++				if scenario == "invalid-digest" {
++					want = 400
++				}
++				res := testutil.Call(t, testHandler.RecoverTaskDelivery, req).Want(want)
++				if scenario == "delivered" {
++					var out map[string]any
++					res.JSON(&out)
++					if out["recovered"] != changed {
++						t.Fatalf("recovered=%v, want %v", out["recovered"], changed)
++					}
++					if out["status"] != "completed" {
++						t.Fatalf("response=%v", out)
++					}
++				}
++				return want
++			}
++			invoke(true)
++			if scenario != "delivered" {
++				if taskStatus(t, taskID) != "failed" {
++					t.Fatal("rejected recovery changed task")
++				}
++				return
++			}
++			invoke(false) // The receipt is idempotent; no task/model/tool/comment is replayed.
++			var result []byte
++			var count int
++			dbfx.QueryRow(t, `SELECT result FROM agent_task_queue WHERE id=$1`, taskID).Scan(&result)
++			var parsed map[string]any
++			if json.Unmarshal(result, &parsed) != nil {
++				t.Fatal("invalid recovered result")
++			}
++			if parsed["output"] != content {
++				t.Fatal("recovery did not reuse exact delivered content")
++			}
++			receipt := parsed["delivery_recovery"].(map[string]any)
++			if receipt["previous_error"] != "Missing Authentication header" || receipt["comment_id"] != commentID {
++				t.Fatal("original failure or receipt lost")
++			}
++			dbfx.QueryRow(t, `SELECT count(*) FROM comment WHERE source_task_id=$1`, taskID).Scan(&count)
++			if count != 1 {
++				t.Fatalf("comment count=%d; want unchanged 1", count)
++			}
++			if taskStatus(t, taskID) != "completed" {
++				t.Fatal("delivery not completed")
++			}
++		})
++	}
++}
+diff --git a/server/internal/service/task_delivery.go b/server/internal/service/task_delivery.go
+new file mode 100644
+index 000000000..5f3b2915d
+--- /dev/null
++++ b/server/internal/service/task_delivery.go
+@@ -0,0 +1,92 @@
++package service
++
++import (
++	"context"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"strings"
++	"time"
++
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgtype"
++	"github.com/multica-ai/multica/server/internal/util"
++	db "github.com/multica-ai/multica/server/pkg/db/generated"
++	"github.com/multica-ai/multica/server/pkg/protocol"
++)
++
++var ErrDeliveryRecoveryConflict = errors.New("delivery recovery requires a confirmed final comment from this failed task, with no successor")
++
++// RecoverDeliveredTask is an explicit member decision, never an auth-error retry.
++// The existing comment is the receipt; no model call or tool action is replayed.
++func (s *TaskService) RecoverDeliveredTask(ctx context.Context, taskID, workspaceID, commentID, userID pgtype.UUID, digest string) (*db.AgentTaskQueue, bool, error) {
++	if s.TxStarter == nil {
++		return nil, false, errors.New("delivery recovery requires a transaction")
++	}
++	var task db.AgentTaskQueue
++	changed := false
++	err := s.runInTx(ctx, func(q *db.Queries) error {
++		// Respect comment mutation's issue -> comment lock order, then lock the task.
++		comment, err := q.LockLiveComment(ctx, db.LockLiveCommentParams{ID: commentID, WorkspaceID: workspaceID})
++		if err != nil {
++			if errors.Is(err, pgx.ErrNoRows) {
++				return ErrDeliveryRecoveryConflict
++			}
++			return err
++		}
++		hash := sha256.Sum256([]byte(comment.Content))
++		if hex.EncodeToString(hash[:]) != digest || strings.TrimSpace(comment.Content) == "" {
++			return ErrDeliveryRecoveryConflict
++		}
++		current, err := q.GetAgentTaskForDelegatedFailureUpdate(ctx, taskID)
++		if err != nil {
++			return err
++		}
++		if !current.IssueID.Valid || current.ChatSessionID.Valid || current.AutopilotRunID.Valid || IsTriageTask(current) ||
++			comment.IssueID != current.IssueID || comment.SourceTaskID != current.ID || comment.AuthorType != "agent" || comment.AuthorID != current.AgentID {
++			return ErrDeliveryRecoveryConflict
++		}
++		var result map[string]any
++		_ = json.Unmarshal(current.Result, &result)
++		if result == nil {
++			result = map[string]any{}
++		}
++		if current.Status == "completed" {
++			receipt, _ := result["delivery_recovery"].(map[string]any)
++			if receipt["comment_id"] != util.UUIDToString(commentID) || receipt["comment_sha256"] != digest {
++				return ErrDeliveryRecoveryConflict
++			}
++			task = current
++			return nil
++		}
++		if current.Status != "failed" || !strings.Contains(current.Error.String, "Missing Authentication header") {
++			return ErrDeliveryRecoveryConflict
++		}
++		result["output"] = comment.Content
++		result["delivery_recovery"] = map[string]any{"comment_id": util.UUIDToString(commentID), "comment_sha256": digest,
++			"confirmed_by": util.UUIDToString(userID), "confirmed_at": time.Now().UTC().Format(time.RFC3339Nano),
++			"previous_error": current.Error.String, "previous_failure_reason": current.FailureReason.String, "previous_completed_at": current.CompletedAt}
++		payload, err := json.Marshal(result)
++		if err != nil {
++			return err
++		}
++		task, err = q.CompleteDeliveredAgentTask(ctx, db.CompleteDeliveredAgentTaskParams{ID: taskID, WorkspaceID: workspaceID, Result: payload, ExpectedError: current.Error})
++		if errors.Is(err, pgx.ErrNoRows) {
++			return ErrDeliveryRecoveryConflict
++		}
++		if err != nil {
++			return err
++		}
++		changed = true
++		return SettleTerminalTaskState(ctx, q, task)
++	})
++	if err != nil {
++		return nil, false, err
++	}
++	if changed {
++		s.ReconcileAgentStatus(ctx, task.AgentID)
++		s.broadcastTaskEvent(ctx, protocol.EventTaskCompleted, task, map[string]any{"delivery_recovered": true, "final_comment_id": util.UUIDToString(commentID)})
++	}
++	return &task, changed, nil
++}
+diff --git a/server/pkg/db/generated/agent.sql.go b/server/pkg/db/generated/agent.sql.go
+index 56289d1ef..f021f4a2d 100644
+--- a/server/pkg/db/generated/agent.sql.go
++++ b/server/pkg/db/generated/agent.sql.go
+@@ -2041,6 +2041,103 @@ func (q *Queries) CompleteAgentTask(ctx context.Context, arg CompleteAgentTaskPa
+ 	return i, err
+ }
+ 
++const completeDeliveredAgentTask = `-- name: CompleteDeliveredAgentTask :one
++UPDATE agent_task_queue t
++SET status = 'completed', completed_at = now(), result = $1,
++    error = NULL, failure_reason = NULL, prepare_lease_expires_at = NULL
++WHERE t.id = $2 AND t.status = 'failed' AND t.error = $3
++  AND EXISTS (SELECT 1 FROM agent a WHERE a.id = t.agent_id AND a.workspace_id = $4)
++  AND NOT EXISTS (
++    SELECT 1 FROM agent_task_queue successor WHERE successor.id <> t.id
++    AND ((successor.retry_of_task_id = t.id OR successor.rerun_of_task_id = t.id)
++      OR (successor.issue_id = t.issue_id AND successor.agent_id = t.agent_id
++          AND successor.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')))
++    AND successor.status <> 'cancelled'
++  )
++RETURNING t.id, t.agent_id, t.issue_id, t.status, t.priority, t.dispatched_at, t.started_at, t.completed_at, t.result, t.error, t.created_at, t.context, t.runtime_id, t.session_id, t.work_dir, t.trigger_comment_id, t.chat_session_id, t.autopilot_run_id, t.attempt, t.max_attempts, t.parent_task_id, t.failure_reason, t.trigger_summary, t.force_fresh_session, t.is_leader_task, t.wait_reason, t.initiator_user_id, t.handoff_note, t.prepare_lease_expires_at, t.squad_id, t.runtime_mcp_overlay, t.escalation_for_task_id, t.fire_at, t.originator_user_id, t.runtime_connected_apps, t.coalesced_comment_ids, t.delivered_comment_ids, t.chat_input_task_id, t.chat_finalize_deferred_at, t.originator_source, t.delegated_from_task_id, t.retry_of_task_id, t.rerun_of_task_id, t.rule_version_id, t.trigger_evidence_kind, t.trigger_evidence_ref_id, t.accountable_user_id, t.session_rollout_missing, t.retired_session_id, t.quick_actions_disabled, t.regenerate_quick_actions_for, t.branch_name, t.durable_work_dir, t.channel_context_revision, t.comment_thread_id, t.cancelled_by_type, t.cancelled_by_id, t.cancelled_by_name, t.issue_snapshot
++`
++
++type CompleteDeliveredAgentTaskParams struct {
++	Result        []byte      `json:"result"`
++	ID            pgtype.UUID `json:"id"`
++	ExpectedError pgtype.Text `json:"expected_error"`
++	WorkspaceID   pgtype.UUID `json:"workspace_id"`
++}
++
++// Explicit recovery of a confirmed, already delivered final comment. Preserve
++// the failure in result.delivery_recovery; never replay agent actions.
++func (q *Queries) CompleteDeliveredAgentTask(ctx context.Context, arg CompleteDeliveredAgentTaskParams) (AgentTaskQueue, error) {
++	row := q.db.QueryRow(ctx, completeDeliveredAgentTask,
++		arg.Result,
++		arg.ID,
++		arg.ExpectedError,
++		arg.WorkspaceID,
++	)
++	var i AgentTaskQueue
++	err := row.Scan(
++		&i.ID,
++		&i.AgentID,
++		&i.IssueID,
++		&i.Status,
++		&i.Priority,
++		&i.DispatchedAt,
++		&i.StartedAt,
++		&i.CompletedAt,
++		&i.Result,
++		&i.Error,
++		&i.CreatedAt,
++		&i.Context,
++		&i.RuntimeID,
++		&i.SessionID,
++		&i.WorkDir,
++		&i.TriggerCommentID,
++		&i.ChatSessionID,
++		&i.AutopilotRunID,
++		&i.Attempt,
++		&i.MaxAttempts,
++		&i.ParentTaskID,
++		&i.FailureReason,
++		&i.TriggerSummary,
++		&i.ForceFreshSession,
++		&i.IsLeaderTask,
++		&i.WaitReason,
++		&i.InitiatorUserID,
++		&i.HandoffNote,
++		&i.PrepareLeaseExpiresAt,
++		&i.SquadID,
++		&i.RuntimeMcpOverlay,
++		&i.EscalationForTaskID,
++		&i.FireAt,
++		&i.OriginatorUserID,
++		&i.RuntimeConnectedApps,
++		&i.CoalescedCommentIds,
++		&i.DeliveredCommentIds,
++		&i.ChatInputTaskID,
++		&i.ChatFinalizeDeferredAt,
++		&i.OriginatorSource,
++		&i.DelegatedFromTaskID,
++		&i.RetryOfTaskID,
++		&i.RerunOfTaskID,
++		&i.RuleVersionID,
++		&i.TriggerEvidenceKind,
++		&i.TriggerEvidenceRefID,
++		&i.AccountableUserID,
++		&i.SessionRolloutMissing,
++		&i.RetiredSessionID,
++		&i.QuickActionsDisabled,
++		&i.RegenerateQuickActionsFor,
++		&i.BranchName,
++		&i.DurableWorkDir,
++		&i.ChannelContextRevision,
++		&i.CommentThreadID,
++		&i.CancelledByType,
++		&i.CancelledByID,
++		&i.CancelledByName,
++		&i.IssueSnapshot,
++	)
++	return i, err
++}
++
+ const countDelegatedFailureRecoveryTasks = `-- name: CountDelegatedFailureRecoveryTasks :one
+ SELECT count(*)
+ FROM agent_task_queue
+diff --git a/server/pkg/db/queries/agent.sql b/server/pkg/db/queries/agent.sql
+index 0af074b36..5a5f40c78 100644
+--- a/server/pkg/db/queries/agent.sql
++++ b/server/pkg/db/queries/agent.sql
+@@ -709,6 +709,23 @@ RETURNING *;
+ SELECT * FROM agent_task_queue
+ WHERE id = $1;
+ 
++-- name: CompleteDeliveredAgentTask :one
++-- Explicit recovery of a confirmed, already delivered final comment. Preserve
++-- the failure in result.delivery_recovery; never replay agent actions.
++UPDATE agent_task_queue t
++SET status = 'completed', completed_at = now(), result = @result,
++    error = NULL, failure_reason = NULL, prepare_lease_expires_at = NULL
++WHERE t.id = @id AND t.status = 'failed' AND t.error = @expected_error
++  AND EXISTS (SELECT 1 FROM agent a WHERE a.id = t.agent_id AND a.workspace_id = @workspace_id)
++  AND NOT EXISTS (
++    SELECT 1 FROM agent_task_queue successor WHERE successor.id <> t.id
++    AND ((successor.retry_of_task_id = t.id OR successor.rerun_of_task_id = t.id)
++      OR (successor.issue_id = t.issue_id AND successor.agent_id = t.agent_id
++          AND successor.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')))
++    AND successor.status <> 'cancelled'
++  )
++RETURNING t.*;
++
+ -- name: GetAgentTaskStatus :one
+ -- Hot-path status polling needs only the task status and the owning agent's
+ -- workspace for authorization. Keep this independent of optional source links
+-- 
+2.52.0
+

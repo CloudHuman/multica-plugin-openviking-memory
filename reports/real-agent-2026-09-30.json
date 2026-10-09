@@ -1,0 +1,341 @@
+{
+  "validatedAt": "2026-10-01T03:57:51.785Z",
+  "pluginBaselineCommit": "631d0f0",
+  "multicaBaseCommit": "2b2f98382d66e034bde545e3d28ee9b22adf404d",
+  "multicaCredentialFixCommit": "2672032",
+  "runtime": "OpenCode 1.17.7 via official Multica daemon",
+  "agentModel": "openrouter/z-ai/glm-5.3-flash",
+  "workspaceId": "b780734f-6f93-4f0c-8566-f28dc1acfb18",
+  "agentId": "d8c308f7-00f6-46da-ab64-51682b599ed2",
+  "skillId": "550c243a-f080-4bcf-8e2d-0e018bb76d2b",
+  "checks": [
+    {
+      "id": "four-real-tasks-completed",
+      "ok": true
+    },
+    {
+      "id": "installed-skill-used",
+      "ok": true
+    },
+    {
+      "id": "successful-active-memory-tools",
+      "ok": true
+    },
+    {
+      "id": "active-memory-index-completed",
+      "ok": true
+    },
+    {
+      "id": "four-automatic-extractions-completed",
+      "ok": true
+    },
+    {
+      "id": "cross-task-four-facts-with-published-citation",
+      "ok": true
+    },
+    {
+      "id": "recall-bound-to-real-run",
+      "ok": true
+    },
+    {
+      "id": "no-answer-without-invented-facts",
+      "ok": true
+    },
+    {
+      "id": "actual-runtime-file-read-exercised",
+      "ok": true
+    },
+    {
+      "id": "all-actual-archives-exclude-runtime-prompt",
+      "ok": true
+    },
+    {
+      "id": "all-extracted-files-exclude-runtime-prompt",
+      "ok": true
+    }
+  ],
+  "tasks": [
+    {
+      "identifier": "RAM-1",
+      "taskId": "01a0f598-18d2-7d21-bb34-a07bd8cbe526",
+      "issueId": "01a0f598-18c4-7165-b775-4ec66f23e0aa",
+      "status": "completed",
+      "durationSeconds": 61,
+      "tools": [
+        "bash",
+        "skill",
+        "multica-plugins_openviking_memory_d697f9__memory__recall",
+        "bash",
+        "bash",
+        "multica-plugins_openviking_memory_d697f9__memory__remember",
+        "write",
+        "bash",
+        "bash"
+      ],
+      "toolResults": [
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "status": "ok",
+          "run": {
+            "kind": "issue",
+            "bound": true
+          },
+          "entries": []
+        },
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__remember",
+          "status": "ok"
+        }
+      ],
+      "comments": [
+        {
+          "id": "01a0f598-ea41-7539-bd25-aa4c34b3c6de",
+          "content": "已确认海棠迁移项目的四项约定：\n\n1. 消息队列选型：使用 RocketMQ\n2. 每月预算：3800 元\n3. 双写策略：持续两周\n4. 死信队列告警阈值：积压超过 10000 条时告警\n\n补充说明：\n- 任务开始时按规范进行了记忆召回，未命中与海棠迁移相关的既有约定，本次以任务中给出的已确认方案为准。\n- 已将上述方案以 kind=cases 记录为一条可复用的业务记忆（标题：海棠迁移项目方案约定），内容不含平台说明与内部运行标记。\n\n无需修改代码，任务完成。",
+          "sourceTaskId": "01a0f598-18d2-7d21-bb34-a07bd8cbe526"
+        }
+      ],
+      "messageCount": 21,
+      "extractionGeneration": 0,
+      "archive": {
+        "uri": "viking://user/mcs-13dd66cb6c85/sessions/mc-task-01a0f598-18d2-7d21-bb34-a07bd8cbe526/history/archive_001/messages.jsonl",
+        "characters": 16543,
+        "containsRuntimeBanner": false,
+        "containsCanary": false
+      },
+      "transcriptContainsRuntimeBanner": false,
+      "transcriptContainsCanary": false
+    },
+    {
+      "identifier": "RAM-2",
+      "taskId": "01a0f599-6804-7129-9d9e-dde6d7410a37",
+      "issueId": "01a0f599-67f5-7382-966a-c890e7c0b79f",
+      "status": "completed",
+      "durationSeconds": 31,
+      "tools": [
+        "bash",
+        "skill",
+        "bash",
+        "multica-plugins_openviking_memory_d697f9__memory__recall",
+        "multica-plugins_openviking_memory_d697f9__ov__read",
+        "bash",
+        "write",
+        "bash",
+        "bash"
+      ],
+      "toolResults": [
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "status": "ok",
+          "run": {
+            "kind": "issue",
+            "bound": true
+          },
+          "entries": [
+            {
+              "uri": "viking://user/mcs-9989b81d5ca3/memories/cases/2026-10-01/海棠迁移项目方案约定-2046dd.md",
+              "scope": "agent:b780734f-6f93-4f0c-8566-f28dc1acfb18:d8c308f7-00f6-46da-ab64-51682b599ed2",
+              "score": 0.996
+            }
+          ]
+        }
+      ],
+      "comments": [
+        {
+          "id": "01a0f599-d691-74e2-b5a2-b97514002ea1",
+          "content": "按 openviking-memory skill 召回并核实了来源，海棠迁移项目的四项约定全部有记忆证据，均来自同一条记忆（我的公共记忆，kind: cases，记录于 2026-10-01）：\n\n1. **消息队列**：选型 RocketMQ。\n2. **预算**：每月 3800 元。\n3. **双写周期**：迁移期新旧系统双写，持续两周。\n4. **死信告警**：死信队列积压超过 10000 条时触发告警。\n\n记忆来源 URI：`viking://user/mcs-9989b81d5ca3/memories/cases/2026-10-01/海棠迁移项目方案约定-2046dd.md`\n\n该记忆注明来源为 2026-10-01 海棠迁移方案确认任务中成员给出的已确认方案，适用条件是海棠系统迁移相关的队列、预算与灰度决策场景。按任务要求未记录新记忆、未修改代码。",
+          "sourceTaskId": "01a0f599-6804-7129-9d9e-dde6d7410a37"
+        }
+      ],
+      "messageCount": 21,
+      "extractionGeneration": 0,
+      "archive": {
+        "uri": "viking://user/mcs-13867b8cec30/sessions/mc-task-01a0f599-6804-7129-9d9e-dde6d7410a37/history/archive_001/messages.jsonl",
+        "characters": 17458,
+        "containsRuntimeBanner": false,
+        "containsCanary": false
+      },
+      "transcriptContainsRuntimeBanner": false,
+      "transcriptContainsCanary": false
+    },
+    {
+      "identifier": "RAM-4",
+      "taskId": "01a0f599-e3b3-74e2-8244-054f881fed8e",
+      "issueId": "01a0f599-e39d-7cf0-8376-dd219f8a981b",
+      "status": "completed",
+      "durationSeconds": 40,
+      "tools": [
+        "bash",
+        "skill",
+        "bash",
+        "bash",
+        "multica-plugins_openviking_memory_d697f9__memory__recall",
+        "multica-plugins_openviking_memory_d697f9__memory__recall",
+        "write",
+        "bash",
+        "bash"
+      ],
+      "toolResults": [
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "status": "ok",
+          "run": {
+            "kind": "issue",
+            "bound": true
+          },
+          "entries": []
+        },
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "status": "ok",
+          "run": {
+            "kind": "issue",
+            "bound": true
+          },
+          "entries": []
+        }
+      ],
+      "comments": [
+        {
+          "id": "01a0f59a-e737-74bf-8e98-0027b05cb010",
+          "content": "按 issue 要求先调用了 memory-recall 搜索（两次不同查询：项目名+值班负责人/预定上线日期，以及更宽泛的项目/负责人/排期关键词），检索覆盖了本次任务协作记忆、我的公共记忆和工作区共享记忆。\n\n结论：**没有找到任何关于梧桐项目的记忆**——值班负责人和预定上线日期均无答案。梧桐作为独立项目，我也没有将其与其他项目（如海棠）的记忆做任何套用。\n\n因此这两项信息我无法给出，也不做推测或编造。如有负责人或项目文档可提供，我可以据此补充回答。",
+          "sourceTaskId": "01a0f599-e3b3-74e2-8244-054f881fed8e"
+        }
+      ],
+      "messageCount": 20,
+      "extractionGeneration": 0,
+      "archive": {
+        "uri": "viking://user/mcs-3250b383bb33/sessions/mc-task-01a0f599-e3b3-74e2-8244-054f881fed8e/history/archive_001/messages.jsonl",
+        "characters": 15835,
+        "containsRuntimeBanner": false,
+        "containsCanary": false
+      },
+      "transcriptContainsRuntimeBanner": false,
+      "transcriptContainsCanary": false
+    },
+    {
+      "identifier": "RAM-3",
+      "taskId": "01a0f599-c5b4-706c-af93-ff9a438f67b7",
+      "issueId": "01a0f599-c5a0-7181-ae37-8256a4acaf72",
+      "status": "completed",
+      "durationSeconds": 29,
+      "tools": [
+        "bash",
+        "multica-plugins_openviking_memory_d697f9__memory__recall",
+        "bash",
+        "bash",
+        "read",
+        "write",
+        "bash",
+        "bash"
+      ],
+      "toolResults": [
+        {
+          "tool": "multica-plugins_openviking_memory_d697f9__memory__recall",
+          "status": "ok",
+          "run": {
+            "kind": "issue",
+            "bound": true
+          },
+          "entries": []
+        }
+      ],
+      "comments": [
+        {
+          "id": "01a0f59a-4644-751f-aee9-4d9527bad12d",
+          "content": "平台说明读取诊断完成",
+          "sourceTaskId": "01a0f599-c5b4-706c-af93-ff9a438f67b7"
+        }
+      ],
+      "messageCount": 20,
+      "extractionGeneration": 0,
+      "archive": {
+        "uri": "viking://user/mcs-7fb0cb2d3e24/sessions/mc-task-01a0f599-c5b4-706c-af93-ff9a438f67b7/history/archive_001/messages.jsonl",
+        "characters": 12265,
+        "containsRuntimeBanner": false,
+        "containsCanary": false
+      },
+      "transcriptContainsRuntimeBanner": true,
+      "transcriptContainsCanary": true
+    }
+  ],
+  "extractedFiles": [
+    {
+      "scope": "agent:b780734f-6f93-4f0c-8566-f28dc1acfb18:d8c308f7-00f6-46da-ab64-51682b599ed2",
+      "uri": "viking://user/mcs-9989b81d5ca3/memories/cases/2026-10-01/海棠迁移项目方案约定-2046dd.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f598-18c4-7165-b775-4ec66f23e0aa",
+      "uri": "viking://user/mcs-13dd66cb6c85/memories/entities/项目/海棠迁移项目.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f598-18c4-7165-b775-4ec66f23e0aa",
+      "uri": "viking://user/mcs-13dd66cb6c85/memories/events/2026/10/01/海棠迁移方案确认.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f598-18c4-7165-b775-4ec66f23e0aa",
+      "uri": "viking://user/mcs-13dd66cb6c85/memories/identity.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f598-18c4-7165-b775-4ec66f23e0aa",
+      "uri": "viking://user/mcs-13dd66cb6c85/memories/soul.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-67f5-7382-966a-c890e7c0b79f",
+      "uri": "viking://user/mcs-13867b8cec30/memories/events/2026/10/01/海棠迁移四项约定召回回复.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-67f5-7382-966a-c890e7c0b79f",
+      "uri": "viking://user/mcs-13867b8cec30/memories/identity.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-67f5-7382-966a-c890e7c0b79f",
+      "uri": "viking://user/mcs-13867b8cec30/memories/soul.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-c5a0-7181-ae37-8256a4acaf72",
+      "uri": "viking://user/mcs-7fb0cb2d3e24/memories/identity.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-c5a0-7181-ae37-8256a4acaf72",
+      "uri": "viking://user/mcs-7fb0cb2d3e24/memories/soul.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-e39d-7cf0-8376-dd219f8a981b",
+      "uri": "viking://user/mcs-3250b383bb33/memories/identity.md"
+    },
+    {
+      "scope": "task:b780734f-6f93-4f0c-8566-f28dc1acfb18:01a0f599-e39d-7cf0-8376-dd219f8a981b",
+      "uri": "viking://user/mcs-3250b383bb33/memories/soul.md"
+    }
+  ],
+  "validationCorrections": [
+    {
+      "initialCheck": "cross-task-recall",
+      "initialResult": false,
+      "reason": "The agent posted the citation in its task-attributed issue comment; the original check inspected only the transcript summary. The published comment was fetched and verified.",
+      "correctedResult": true
+    }
+  ],
+  "observedFailures": [
+    {
+      "runtime": "Codex",
+      "error": "Authenticated session refresh failed before model execution."
+    },
+    {
+      "runtime": "OpenCode/GLM-5.3-Flash",
+      "error": "Missing Authentication header after successful memory tools.",
+      "state": "/tmp/ovmem-real-agent-cttcBi"
+    },
+    {
+      "phase": "baseline without credential patch",
+      "error": "Plugin-only claims omit daemon credentials; every real memory tool returned HTTP 401."
+    }
+  ],
+  "state": "/tmp/ovmem-real-agent-WRD9tY",
+  "fileCountClarification": {
+    "totalInspected": 12,
+    "businessMemoryFiles": 4,
+    "nativeBootstrapFiles": 8,
+    "note": "Native identity.md and soul.md are scaffold files, not extracted business memories. Original file inventory is preserved."
+  }
+}

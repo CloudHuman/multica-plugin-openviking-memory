@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { OvMcpClient } from '../src/ov-mcp.mjs';
-import { makeOvToolHandler } from '../src/ov-facade.mjs';
+import { makeOvToolHandler, confineToOwnSpace } from '../src/ov-facade.mjs';
 import { OvClient } from '../src/ov-client.mjs';
 import { ScopeRegistry, scopeKey } from '../src/scopes.mjs';
 import { startFakeOv, tempStateDir, FIXTURE_WS, FIXTURE_AGENT_A, FIXTURE_AGENT_B } from './helpers.mjs';
@@ -26,8 +26,15 @@ async function startFakeOvMcp() {
       return reply({ tools: [{ name: 'search', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } }] });
     }
     if (rpc.method === 'tools/call') {
-      calls.push({ key: key.slice(0, 18), name: rpc.params.name, args: rpc.params.arguments });
+      const args = rpc.params.arguments ?? {};
+      calls.push({ key: key.slice(0, 18), name: rpc.params.name, args });
       if (rpc.params.name === 'boom') return reply({ isError: true, content: [{ type: 'text', text: 'OV tool failed' }] });
+      // A search slowed down by the model provider.
+      if (args.query === 'slow') await new Promise((r) => setTimeout(r, 1_500));
+      // OV writes first, then waits for indexing, and raises when the wait runs out.
+      if (rpc.params.name === 'write' && args.wait) {
+        return reply({ isError: true, content: [{ type: 'text', text: `Error executing tool write: Queue processing timed out after ${args.timeout}s` }] });
+      }
       return reply({ content: [{ type: 'text', text: `result of ${rpc.params.name} in space ${key.slice(0, 14)}` }] });
     }
     res.writeHead(404).end();
@@ -35,6 +42,13 @@ async function startFakeOvMcp() {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return { server, port: server.address().port, baseUrl: `http://127.0.0.1:${server.address().port}`, calls };
 }
+
+const facadeBody = (agentId, tool, args) => ({
+  version: 1, invocation_id: 'i', attempt: 1, occurred_at: new Date().toISOString(),
+  hook_key: `ov-${tool}`, trigger: 'agent', workspace_id: FIXTURE_WS, installation_id: 'inst',
+  actor: agentId ? { type: 'agent', id: agentId } : { type: 'member', id: 'm1' },
+  input: args, config: {},
+});
 
 test('OvMcpClient parses SSE frames, initializes once, extracts text and tool errors', async () => {
   const mcp = await startFakeOvMcp();
@@ -65,31 +79,121 @@ test('facade injects the CALLING agent\'s space key from the signed actor; non-a
     const recB = await registry.ensureScope(scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B), { workspaceId: FIXTURE_WS });
 
     const cfg = { ovBaseUrl: mcp.baseUrl, ovTimeoutMs: 5000 };
-    const handler = makeOvToolHandler({ cfg, ov: ovClient, registry });
+    const handler = makeOvToolHandler({ cfg, registry });
+    const ctx = { workspaceId: FIXTURE_WS };
 
-    const body = (agentId, tool, args) => ({
-      version: 1, invocation_id: 'i', attempt: 1, occurred_at: new Date().toISOString(),
-      hook_key: `ov-${tool}`, trigger: 'agent', workspace_id: FIXTURE_WS, installation_id: 'inst',
-      actor: agentId ? { type: 'agent', id: agentId } : { type: 'member', id: 'm1' },
-      input: args, config: {},
-    });
-
-    const r1 = await handler(body(FIXTURE_AGENT_A, 'search', { query: 'q', unused: null }));
+    const r1 = await handler(facadeBody(FIXTURE_AGENT_A, 'search', { query: 'q', unused: null }), ctx);
     assert.match(r1.output, /result of search/);
     assert.equal(r1.scope, scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_A));
     assert.equal(mcp.calls.at(-1).key, recA.apiKey.slice(0, 18));
-    // args with null stripped
-    assert.deepEqual(mcp.calls.at(-1).args, { query: 'q' });
+    // nulls stripped; the search is rooted in the caller's own space
+    assert.deepEqual(mcp.calls.at(-1).args, { query: 'q', target_uri: 'viking://~/' });
 
-    const r2 = await handler(body(FIXTURE_AGENT_B, 'write', { uri: 'memories/x.md', content: 'hi' }));
+    const r2 = await handler(facadeBody(FIXTURE_AGENT_B, 'write', { uri: 'viking://~/memories/x.md', content: 'hi' }), ctx);
     assert.equal(mcp.calls.at(-1).key, recB.apiKey.slice(0, 18));
     assert.equal(r2.scope, scopeKey('agent', FIXTURE_WS, FIXTURE_AGENT_B));
 
-    // kebab-case hook key maps back to snake_case OV tool name
-    await handler(body(FIXTURE_AGENT_A, 'add-resource', { path: 'p' }));
+    // kebab-case hook key maps back to snake_case OV tool name; resources stay private
+    await handler(facadeBody(FIXTURE_AGENT_A, 'add-resource', { path: 'https://example.com/spec.md' }), ctx);
     assert.equal(mcp.calls.at(-1).name, 'add_resource');
+    assert.equal(mcp.calls.at(-1).args.parent, 'viking://~/resources');
 
-    await assert.rejects(() => handler(body(null, 'search', {})), /only callable by an agent/);
+    await assert.rejects(() => handler(facadeBody(null, 'search', {}), ctx), /only callable by an agent/);
+
+    // agent A cannot address agent B's user space, and nothing reaches OV
+    const before = mcp.calls.length;
+    await assert.rejects(
+      () => handler(facadeBody(FIXTURE_AGENT_A, 'read', { uris: `viking://user/${recB.userId}/memories/x.md` }), ctx),
+      (err) => err.code === 'outside_own_space',
+    );
+    assert.equal(mcp.calls.length, before);
+    // … while its own absolute user root is fine
+    await handler(facadeBody(FIXTURE_AGENT_A, 'read', { uris: [`viking://user/${recA.userId}/memories/x.md`] }), ctx);
+    assert.equal(mcp.calls.length, before + 1);
+  } finally {
+    await new Promise((r) => mcp.server.close(r));
+    await ovRest.stop();
+  }
+});
+
+test('own-space confinement covers every URI-bearing argument of the OV tools', () => {
+  const me = 'agent-user-1';
+  const outside = (tool, input) => {
+    const r = confineToOwnSpace(tool, input, me);
+    assert.ok(r.error, `${tool} ${JSON.stringify(input)} should be refused`);
+  };
+  const inside = (tool, input) => {
+    const r = confineToOwnSpace(tool, input, me);
+    assert.equal(r.error, undefined, `${tool} ${JSON.stringify(input)}: ${r.error}`);
+    return r.args;
+  };
+
+  // account-shared namespaces and other users
+  outside('read', { uris: 'viking://resources/secret.md' });
+  outside('read', { uris: ['viking://~/a.md', 'viking://user/someone-else/memories/b.md'] });
+  outside('find', { query: 'x', target_uri: 'viking://resources' });
+  outside('search', { query: 'x', target_uri: 'viking://agent/skills' });
+  outside('list', { uri: 'viking://user/someone-else' });
+  outside('tree', { uri: 'viking://resources/' });
+  outside('glob', { pattern: '**', uri: 'viking://agent' });
+  outside('grep', { uri: 'viking://resources', pattern: 'x' });
+  outside('write', { uri: 'viking://resources/x.md', content: 'x' });
+  outside('edit', { uri: 'viking://user/someone-else/x.md', old_string: 'a', new_string: 'b' });
+  outside('forget', { uri: 'viking://resources/x' });
+  outside('cancel_watch', { to_uri: 'viking://resources/volcengine/OpenViking' });
+  outside('add_resource', { path: 'https://example.com', to: 'viking://resources/x' });
+  outside('add_resource', { path: 'https://example.com', parent: 'viking://resources' });
+  outside('add_resource', { path: 'viking://resources/other' });
+  outside('add_skill', { data: '---\nname: x\n---' });
+  // traversal, encoded or not, and relative paths
+  outside('read', { uris: `viking://user/${me}/../someone-else/x.md` });
+  outside('read', { uris: `viking://user/${me}/%2e%2e/someone-else/x.md` });
+  outside('read', { uris: 'viking://~/..\\resources' });
+  outside('read', { uris: 'memories/x.md' });
+  // context mode cannot be pointed at resources or skills
+  outside('search', { query: 'x', mode: 'context', context_type: 'resource' });
+
+  // defaults land in the caller's own space
+  assert.equal(inside('find', { query: 'x' }).target_uri, 'viking://~/');
+  assert.equal(inside('search', { query: 'x' }).target_uri, 'viking://~/');
+  assert.deepEqual(inside('search', { query: 'x', mode: 'context' }).context_type, ['memory']);
+  assert.equal(inside('search', { query: 'x', mode: 'context' }).target_uri, undefined, 'OV rejects target_uri in context mode');
+  assert.equal(inside('tree', {}).uri, 'viking://~/');
+  assert.equal(inside('list', { uri: 'viking://' }).uri, 'viking://~/');
+  assert.equal(inside('glob', { pattern: '*.md' }).uri, 'viking://~/');
+  assert.equal(inside('add_resource', { path: 'https://example.com' }).parent, 'viking://~/resources');
+  inside('read', { uris: `viking://user/${me}/memories/x.md` });
+  inside('write', { uri: 'viking://~/memories/notes.md', content: 'x' });
+  inside('cancel_watch', { to_uri: 'viking://~/resources/spec' });
+  inside('health', {});
+});
+
+test('facade answers inside the hook timeout: OV\'s index wait is capped, and a slow OV is a clear error', async () => {
+  const mcp = await startFakeOvMcp();
+  const ovRest = await startFakeOv();
+  try {
+    const registry = new ScopeRegistry({ ov: new OvClient({ baseUrl: ovRest.baseUrl }), rootKey: 'root', stateDir: tempStateDir(), log: () => {} });
+    const ctx = { workspaceId: FIXTURE_WS };
+
+    // wait=true: OV is told to stop waiting well before the hook budget ends,
+    // and a wait that runs out reports the write as done.
+    const patient = makeOvToolHandler({ cfg: { ovBaseUrl: mcp.baseUrl, ovTimeoutMs: 30_000, facadeBudgetMs: 25_000 }, registry });
+    const r = await patient(facadeBody(FIXTURE_AGENT_A, 'write', { uri: 'viking://~/notes/a.md', content: 'x', wait: true, timeout: 600 }), ctx);
+    const sent = mcp.calls.at(-1).args;
+    assert.ok(sent.timeout <= 20 && sent.timeout >= 15, `capped wait: ${sent.timeout}`);
+    assert.match(r.output, /^已写入 viking:\/\/~\/notes\/a\.md;等待索引超过 \d+ 秒,索引仍在后台进行/);
+    // without wait nothing is added
+    await patient(facadeBody(FIXTURE_AGENT_A, 'write', { uri: 'viking://~/notes/b.md', content: 'x' }), ctx);
+    assert.equal(mcp.calls.at(-1).args.timeout, undefined);
+
+    // A search that outlives the budget ends as a tool error the agent can act on.
+    const hurried = makeOvToolHandler({ cfg: { ovBaseUrl: mcp.baseUrl, ovTimeoutMs: 30_000, facadeBudgetMs: 300 }, registry });
+    const started = Date.now();
+    await assert.rejects(
+      () => hurried(facadeBody(FIXTURE_AGENT_A, 'search', { query: 'slow' }), ctx),
+      (err) => err.code === 'ov_timeout' && /没有在 \d+ 秒内返回.*可以稍后重试/.test(err.message),
+    );
+    assert.ok(Date.now() - started < 1_200, 'the hook does not wait for OV past its budget');
   } finally {
     await new Promise((r) => mcp.server.close(r));
     await ovRest.stop();

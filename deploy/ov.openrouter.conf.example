@@ -1,0 +1,81 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 1933,
+    "root_api_key": "${OV_ROOT_KEY}"
+  },
+  "storage": {
+    "workspace": "/app/data",
+    "vectordb": {
+      "name": "context",
+      "backend": "local"
+    },
+    "agfs": {
+      "backend": "local"
+    }
+  },
+  "embedding": {
+    "dense": {
+      "provider": "openai",
+      "api_base": "https://openrouter.ai/api/v1",
+      "api_key": "${OPENROUTER_API_KEY}",
+      "model": "qwen/qwen3-embedding-8b",
+      "dimension": 4096,
+      "input": "text",
+      "extra_body": {
+        "provider": {
+          "order": [
+            "deepinfra",
+            "nebius"
+          ],
+          "allow_fallbacks": true,
+          "data_collection": "deny"
+        }
+      }
+    }
+  },
+  "vlm": {
+    "provider": "openai",
+    "api_base": "https://openrouter.ai/api/v1",
+    "api_key": "${OPENROUTER_API_KEY}",
+    "model": "z-ai/glm-5.3-flash",
+    "temperature": 0.0,
+    "max_retries": 3,
+    "timeout": 180,
+    "extra_headers": {
+      "HTTP-Referer": "https://github.com/CloudHuman/multica-plugin-openviking-memory",
+      "X-Title": "multica-openviking-memory"
+    },
+    "extra_request_body": {
+      "reasoning": {
+        "effort": "low"
+      },
+      "provider": {
+        "order": [
+          "z-ai"
+        ],
+        "allow_fallbacks": true,
+        "quantizations": [
+          "fp8",
+          "bf16",
+          "fp16",
+          "unknown"
+        ],
+        "data_collection": "deny"
+      }
+    }
+  },
+  "rerank": {
+    "provider": "openai",
+    "api_base": "https://openrouter.ai/api/v1/rerank",
+    "api_key": "${OPENROUTER_API_KEY}",
+    "model": "qwen/qwen3-reranker-8b",
+    "threshold": 0.1,
+    "max_input_tokens": 2048,
+    "timeout": 30,
+    "extra_headers": {
+      "HTTP-Referer": "https://github.com/CloudHuman/multica-plugin-openviking-memory",
+      "X-Title": "multica-openviking-memory"
+    }
+  }
+}

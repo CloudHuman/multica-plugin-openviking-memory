@@ -1,0 +1,81 @@
+From cb3dbeecadc87b6e62f4c26a2efcc85fbd5f2c02 Mon Sep 17 00:00:00 2001
+From: Codex Integration <codex-integration@localhost>
+Date: Thu, 1 Oct 2026 05:24:13 +0000
+Subject: [PATCH] fix(plugins): retain quick-create kind after issue linking
+
+A quick-create run links its newly created issue before completion. Preserve its original run kind and member prompt so recall and automatic archiving use the same run scope. Keep chat precedence and issue-backed autopilot behavior.
+---
+ server/internal/handler/plugin_task.go      | 16 ++++++++-------
+ server/internal/handler/plugin_task_test.go | 22 +++++++++++++++++++++
+ 2 files changed, 31 insertions(+), 7 deletions(-)
+
+diff --git a/server/internal/handler/plugin_task.go b/server/internal/handler/plugin_task.go
+index 23ceaac63..8616584a7 100644
+--- a/server/internal/handler/plugin_task.go
++++ b/server/internal/handler/plugin_task.go
+@@ -219,16 +219,12 @@ func (h *Handler) pluginTaskPayload(r *http.Request, caller service.PluginAction
+ }
+ 
+ // pluginTaskKind names what started a run. A chat run is a chat even if the
+-// agent went on to file an issue, and an autopilot run that works an issue is
++// agent went on to file an issue. Quick-create also retains its starting kind
++// after linking the created issue. An autopilot run that works an issue is
+ // reported as an issue run: the issue is where its record belongs.
+ func pluginTaskKind(task db.AgentTaskQueue) string {
+-	switch {
+-	case task.ChatSessionID.Valid:
++	if task.ChatSessionID.Valid {
+ 		return "chat"
+-	case task.IssueID.Valid:
+-		return "issue"
+-	case task.AutopilotRunID.Valid:
+-		return "autopilot"
+ 	}
+ 	if len(task.Context) > 0 {
+ 		var quick service.QuickCreateContext
+@@ -236,6 +232,12 @@ func pluginTaskKind(task db.AgentTaskQueue) string {
+ 			return "quick_create"
+ 		}
+ 	}
++	switch {
++	case task.IssueID.Valid:
++		return "issue"
++	case task.AutopilotRunID.Valid:
++		return "autopilot"
++	}
+ 	return "other"
+ }
+ 
+diff --git a/server/internal/handler/plugin_task_test.go b/server/internal/handler/plugin_task_test.go
+index 15b5b2a58..8efd7b798 100644
+--- a/server/internal/handler/plugin_task_test.go
++++ b/server/internal/handler/plugin_task_test.go
+@@ -263,3 +263,25 @@ func TestPluginTaskUnknownOrUnresolvableIsNotFound(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestPluginTaskQuickCreateKeepsOriginAfterCreatingIssue(t *testing.T) {
++	run := issueRun(t, "quick-create linked issue", 0)
++	quick, err := json.Marshal(service.QuickCreateContext{
++		Type: service.QuickCreateContextType, RequesterID: testUserID,
++		Prompt: "Create a release review with a seven-day window",
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err := testPool.Exec(context.Background(), `UPDATE agent_task_queue SET context = $1 WHERE id = $2`, quick, run.taskID); err != nil {
++		t.Fatal(err)
++	}
++	installationID := installPluginForAction(t, []string{"tasks:read"})
++	recorder, task := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID, installationID, nil, map[string]string{"task_id": run.taskID}))
++	if recorder.Code != http.StatusOK || task.Kind != "quick_create" || task.IssueID == nil || *task.IssueID != run.issueID {
++		t.Fatalf("status=%d task=%+v, want the original quick-create kind with its linked issue", recorder.Code, task)
++	}
++	if len(task.Input) != 1 || task.Input[0].Source != "quick_create" || task.Input[0].Content != "Create a release review with a seven-day window" {
++		t.Fatalf("input=%+v, want the member's original quick-create prompt", task.Input)
++	}
++}
+-- 
+2.52.0
+

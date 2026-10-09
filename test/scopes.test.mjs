@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  scopeKey, resolveReadScopes, resolveArchiveScope, accountIdFor, userIdFor, ScopeRegistry,
+  scopeKey, resolveReadScopes, resolveArchiveScope, accountIdFor, userIdFor, ScopeRegistry, runScopes,
 } from '../src/scopes.mjs';
 import { OvClient } from '../src/ov-client.mjs';
-import { startFakeOv, tempStateDir, FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A, FIXTURE_AGENT_B, FIXTURE_USER } from './helpers.mjs';
+import { startFakeOv, tempStateDir, fixtureTask, FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A, FIXTURE_AGENT_B, FIXTURE_USER } from './helpers.mjs';
 
 test('read-scope matrix mirrors the functional spec', () => {
   const ws = FIXTURE_WS;
@@ -83,4 +83,39 @@ test('registry provisions lazily against OV and persists keys', async () => {
   } finally {
     await ov.stop();
   }
+});
+
+test('runScopes: a run archives where its kind says, and reads only its own scopes', () => {
+  const ws = FIXTURE_WS;
+  const issueRun = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't1' }) });
+  assert.equal(issueRun.archiveScope, scopeKey('task', ws, FIXTURE_ISSUE_ID));
+  assert.deepEqual(issueRun.readScopes, [
+    scopeKey('task', ws, FIXTURE_ISSUE_ID), scopeKey('agent', ws, FIXTURE_AGENT_A), scopeKey('shared', ws),
+  ]);
+  assert.equal(issueRun.delegationScope, null);
+
+  const chatRun = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't2', kind: 'chat', chat_session_id: 'cs-1', chat_user_id: FIXTURE_USER }) });
+  assert.equal(chatRun.archiveScope, scopeKey('dm', ws, FIXTURE_AGENT_A, FIXTURE_USER));
+  assert.equal(chatRun.readScopes.some((s) => s.startsWith('task:')), false, 'a DM run reads no task memory');
+
+  const autopilotRun = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't3', kind: 'autopilot', autopilot_id: 'ap-1' }) });
+  assert.equal(autopilotRun.archiveScope, scopeKey('automation', ws, 'ap-1'));
+
+  const quick = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't4', kind: 'quick_create' }) });
+  assert.equal(quick.archiveScope, scopeKey('run', ws, 't4'));
+
+  const delegated = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't5', agentId: FIXTURE_AGENT_B, delegated_from_agent_id: FIXTURE_AGENT_A }) });
+  assert.equal(delegated.delegationScope, scopeKey('delegation', ws, FIXTURE_AGENT_A, FIXTURE_AGENT_B));
+  assert.ok(delegated.readScopes.includes(delegated.delegationScope));
+  const selfDelegated = runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 't6', delegated_from_agent_id: FIXTURE_AGENT_A }) });
+  assert.equal(selfDelegated.delegationScope, null, 'an agent does not open a channel with itself');
+});
+
+test('runScopes refuses a run that lacks the link its kind needs', () => {
+  const ws = FIXTURE_WS;
+  assert.equal(runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 'x', issueId: null }) }), null);
+  assert.equal(runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 'x', kind: 'chat' }) }), null);
+  assert.equal(runScopes({ workspaceId: ws, task: fixtureTask({ taskId: 'x', kind: 'autopilot' }) }), null);
+  assert.equal(runScopes({ workspaceId: ws, task: { id: 'x', kind: 'issue', issue_id: FIXTURE_ISSUE_ID } }), null, 'no agent');
+  assert.equal(runScopes({ workspaceId: null, task: fixtureTask({ taskId: 'x' }) }), null);
 });

@@ -1,0 +1,1588 @@
+From f88e4fd35ab4d16767d8027878d9114c610876eb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 30 Sep 2026 06:41:14 +0000
+Subject: [PATCH] feat(plugins): task read API and run context for agent hooks
+
+Plugins reacting to task.completed could learn that a run finished but never
+what happened in it, and agent-trigger tools could not tell which run called
+them. This adds the missing read slice to the Plugin Action API:
+
+- GET /v1/tasks/{task_id}: the run (kind, links, attempt, status) and the
+  input that started it (chat message, trigger comment, quick-create prompt,
+  delegation handoff), each withheld unless its own read scope is granted.
+- GET /v1/tasks/{task_id}/messages: the transcript, cursor-paginated, with
+  long fields cut at 32 KiB.
+- New scope chats:read: a chat run's input and transcript are a private
+  conversation, so tasks:read alone never reveals them.
+- Agent-trigger hook bodies carry task_id and issue_id of the calling run,
+  taken from the claimed task row. The callback grant is narrowed to that run
+  for task reads only; issue reads stay as wide as before.
+- Task events narrow the callback grant to the run they report on.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Q7ExVGHb5smYmyoJ2CzYyd
+---
+ packages/views/locales/en/settings.json       |   1 +
+ packages/views/locales/fr/settings.json       |   1 +
+ packages/views/locales/ja/settings.json       |   1 +
+ packages/views/locales/ko/settings.json       |   1 +
+ packages/views/locales/zh-Hans/settings.json  |   1 +
+ .../views/settings/components/plugins-tab.tsx |   1 +
+ server/cmd/server/router.go                   |   2 +
+ server/internal/handler/plugin_action.go      |   3 +
+ server/internal/handler/plugin_agent_hook.go  |   8 +-
+ .../internal/handler/plugin_agent_run_test.go |  77 +++++
+ server/internal/handler/plugin_task.go        | 327 ++++++++++++++++++
+ server/internal/handler/plugin_task_test.go   | 265 ++++++++++++++
+ server/internal/service/plugin_action.go      |   4 +
+ server/internal/service/plugin_agent_tools.go |  22 ++
+ .../internal/service/plugin_event_bridge.go   |  22 ++
+ .../internal/service/plugin_event_dispatch.go |  14 +
+ .../service/plugin_event_dispatch_test.go     |  23 ++
+ server/internal/service/plugin_hook.go        |  27 +-
+ server/internal/service/plugin_token.go       |   6 +-
+ server/pkg/db/generated/chat.sql.go           |  47 +++
+ server/pkg/db/generated/task_message.sql.go   |  48 +++
+ server/pkg/db/queries/chat.sql                |   8 +
+ server/pkg/db/queries/task_message.sql        |   9 +
+ server/pkg/plugincontract/manifest.go         |   7 +
+ server/pkg/publicapi/v1/README.md             |   9 +-
+ server/pkg/publicapi/v1/openapi.yaml          | 155 +++++++++
+ server/pkg/publicapi/v1/routes.go             |   4 +
+ server/pkg/publicapi/v1/types.go              |  60 ++++
+ 28 files changed, 1144 insertions(+), 9 deletions(-)
+ create mode 100644 server/internal/handler/plugin_agent_run_test.go
+ create mode 100644 server/internal/handler/plugin_task.go
+ create mode 100644 server/internal/handler/plugin_task_test.go
+
+diff --git a/packages/views/locales/en/settings.json b/packages/views/locales/en/settings.json
+index 136349d..4b39638 100644
+--- a/packages/views/locales/en/settings.json
++++ b/packages/views/locales/en/settings.json
+@@ -481,6 +481,7 @@
+       "comments_write": "Post comments",
+       "tasks_read": "Read agent runs",
+       "tasks_write": "Start and update agent runs",
++      "chats_read": "Read what members say to agents in direct chats",
+       "agents_read": "Read the agent list",
+       "members_read": "Read the member list",
+       "storage_user": "Store data for each member individually",
+diff --git a/packages/views/locales/fr/settings.json b/packages/views/locales/fr/settings.json
+index 7659b9c..c4acb3e 100644
+--- a/packages/views/locales/fr/settings.json
++++ b/packages/views/locales/fr/settings.json
+@@ -481,6 +481,7 @@
+       "comments_write": "Publier des commentaires",
+       "tasks_read": "Lire les exécutions des agents",
+       "tasks_write": "Démarrer et mettre à jour les exécutions des agents",
++      "chats_read": "Lire ce que les membres disent aux agents dans les discussions directes",
+       "agents_read": "Lire la liste des agents",
+       "members_read": "Lire la liste des membres",
+       "storage_user": "Stocker des données pour chaque membre séparément",
+diff --git a/packages/views/locales/ja/settings.json b/packages/views/locales/ja/settings.json
+index 09f9af4..8f089de 100644
+--- a/packages/views/locales/ja/settings.json
++++ b/packages/views/locales/ja/settings.json
+@@ -478,6 +478,7 @@
+       "comments_write": "コメントを投稿する",
+       "tasks_read": "エージェントの実行を読み取る",
+       "tasks_write": "エージェントの実行を開始・更新する",
++      "chats_read": "ダイレクトチャットでメンバーがエージェントに送った内容を読み取る",
+       "agents_read": "agent 一覧を読み取る",
+       "members_read": "メンバー一覧を読み取る",
+       "storage_user": "メンバーごとにデータを保存する",
+diff --git a/packages/views/locales/ko/settings.json b/packages/views/locales/ko/settings.json
+index c9c848c..2519adc 100644
+--- a/packages/views/locales/ko/settings.json
++++ b/packages/views/locales/ko/settings.json
+@@ -478,6 +478,7 @@
+       "comments_write": "댓글 작성",
+       "tasks_read": "에이전트 실행 읽기",
+       "tasks_write": "에이전트 실행 시작 및 업데이트",
++      "chats_read": "다이렉트 채팅에서 멤버가 에이전트에게 보낸 내용 읽기",
+       "agents_read": "agent 목록 읽기",
+       "members_read": "멤버 목록 읽기",
+       "storage_user": "멤버별로 데이터 저장",
+diff --git a/packages/views/locales/zh-Hans/settings.json b/packages/views/locales/zh-Hans/settings.json
+index f92c7a0..dea4542 100644
+--- a/packages/views/locales/zh-Hans/settings.json
++++ b/packages/views/locales/zh-Hans/settings.json
+@@ -478,6 +478,7 @@
+       "comments_write": "发表评论",
+       "tasks_read": "读取智能体运行",
+       "tasks_write": "启动和更新智能体运行",
++      "chats_read": "读取成员在私聊中对智能体说的内容",
+       "agents_read": "读取智能体列表",
+       "members_read": "读取成员列表",
+       "storage_user": "为每位成员单独存储数据",
+diff --git a/packages/views/settings/components/plugins-tab.tsx b/packages/views/settings/components/plugins-tab.tsx
+index b3c421e..e2d2452 100644
+--- a/packages/views/settings/components/plugins-tab.tsx
++++ b/packages/views/settings/components/plugins-tab.tsx
+@@ -142,6 +142,7 @@ function scopeDescription(scope: string, t: Translate): string {
+     case "comments:write": return t(($) => $.plugins.scopes.comments_write);
+     case "tasks:read": return t(($) => $.plugins.scopes.tasks_read);
+     case "tasks:write": return t(($) => $.plugins.scopes.tasks_write);
++    case "chats:read": return t(($) => $.plugins.scopes.chats_read);
+     case "agents:read": return t(($) => $.plugins.scopes.agents_read);
+     case "members:read": return t(($) => $.plugins.scopes.members_read);
+     case "storage:user": return t(($) => $.plugins.scopes.storage_user);
+diff --git a/server/cmd/server/router.go b/server/cmd/server/router.go
+index adca098..33e7316 100644
+--- a/server/cmd/server/router.go
++++ b/server/cmd/server/router.go
+@@ -106,6 +106,8 @@ func registerPluginActionRoutes(r chi.Router, h *handler.Handler) {
+ 	r.Patch(publicapiv1.PathIssue, h.PatchPluginIssue)
+ 	r.Get(publicapiv1.PathIssueComments, h.ListPluginComments)
+ 	r.Post(publicapiv1.PathIssueComments, h.CreatePluginComment)
++	r.Get(publicapiv1.PathTask, h.GetPluginTask)
++	r.Get(publicapiv1.PathTaskMessages, h.ListPluginTaskMessages)
+ 	r.Get(publicapiv1.PathStorageScope, h.ListPluginStorage)
+ 	r.Get(publicapiv1.PathStorageValue, h.GetPluginStorage)
+ 	r.Put(publicapiv1.PathStorageValue, h.PutPluginStorage)
+diff --git a/server/internal/handler/plugin_action.go b/server/internal/handler/plugin_action.go
+index 6e55bf0..53a7b35 100644
+--- a/server/internal/handler/plugin_action.go
++++ b/server/internal/handler/plugin_action.go
+@@ -161,6 +161,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
+ 	actor := pluginActor{Type: "plugin"}
+ 	var memberUserID pgtype.UUID
+ 	var issueScope pgtype.UUID
++	var taskScope pgtype.UUID
+ 
+ 	switch {
+ 	case strings.HasPrefix(token, "mpc_"):
+@@ -175,6 +176,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
+ 		}
+ 		installationID = grant.InstallationID
+ 		issueScope = grant.IssueID
++		taskScope = grant.TaskID
+ 		if grant.Actor.Type == "member" {
+ 			memberUserID = grant.Actor.ID
+ 		}
+@@ -196,6 +198,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
+ 	// The grant said which issue it was about. Carrying it here is what turns
+ 	// that from a comment into a check — see pluginIssueForUser.
+ 	caller.IssueScope = issueScope
++	caller.TaskScope = taskScope
+ 
+ 	// A callback token that stands for a person is only as good as that
+ 	// person's membership TODAY. Re-checking here means revoking someone's
+diff --git a/server/internal/handler/plugin_agent_hook.go b/server/internal/handler/plugin_agent_hook.go
+index 666e0da..6d84d25 100644
+--- a/server/internal/handler/plugin_agent_hook.go
++++ b/server/internal/handler/plugin_agent_hook.go
+@@ -5,6 +5,7 @@ import (
+ 	"net/http"
+ 
+ 	"github.com/go-chi/chi/v5"
++	"github.com/multica-ai/multica/server/internal/service"
+ )
+ 
+ // The daemon's end of the agent trigger.
+@@ -54,8 +55,11 @@ func (h *Handler) InvokeAgentPluginHook(w http.ResponseWriter, r *http.Request)
+ 		return
+ 	}
+ 
+-	result, err := h.PluginService.InvokeAgentHook(
+-		r.Context(), uuidToString(installation.ID), req.HookKey, task.AgentID, req.Input)
++	// The run comes from the claimed task row, never from the request: the
++	// handler is told which run it serves by the host, not by the model.
++	result, err := h.PluginService.InvokeAgentHookForRun(
++		r.Context(), uuidToString(installation.ID), req.HookKey, task.AgentID,
++		service.AgentHookRun{TaskID: task.ID, IssueID: task.IssueID}, req.Input)
+ 	if err != nil {
+ 		// 200 with an error body, deliberately.
+ 		//
+diff --git a/server/internal/handler/plugin_agent_run_test.go b/server/internal/handler/plugin_agent_run_test.go
+new file mode 100644
+index 0000000..fb5d9bd
+--- /dev/null
++++ b/server/internal/handler/plugin_agent_run_test.go
+@@ -0,0 +1,77 @@
++package handler
++
++import (
++	"context"
++	"encoding/json"
++	"net/http"
++	"testing"
++
++	"github.com/multica-ai/multica/server/internal/service"
++)
++
++// An agent-trigger tool is called from inside one run. The host knows which
++// run from the claimed task row, so it tells the handler — in the signed body,
++// not in tool input the model writes — and narrows the callback grant's task
++// reads to that run. Issue reads are deliberately NOT narrowed: agent tools
++// have always been able to act on other issues, and must keep working.
++func TestAgentHookCarriesItsRunAndNarrowsOnlyTaskReads(t *testing.T) {
++	withCallbackTokens(t)
++	var payload struct {
++		TaskID        string `json:"task_id"`
++		IssueID       string `json:"issue_id"`
++		CallbackToken string `json:"callback_token"`
++	}
++	var grant service.CallbackGrant
++	var resolveErr error
++	sentinel := quietServer(t, func(w http.ResponseWriter, r *http.Request) {
++		_ = json.NewDecoder(r.Body).Decode(&payload)
++		// Resolved during the call: the grant is revoked once it returns.
++		grant, resolveErr = testHandler.PluginService.Callbacks.Resolve(payload.CallbackToken)
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"ok":true}`))
++	})
++	installationID := installExamplePlugin(t, exampleServers{sentinel: sentinel, metrics: metricsServer(t)})
++	run := issueRun(t, "Agent hook run context", 0)
++
++	result, err := testHandler.PluginService.InvokeAgentHookForRun(context.Background(), installationID,
++		"correlate_deploys", parseUUID(run.agentID),
++		service.AgentHookRun{TaskID: parseUUID(run.taskID), IssueID: parseUUID(run.issueID)},
++		json.RawMessage(`{"service":"checkout-api","window_minutes":5}`))
++	if err != nil || result.Status != "ok" {
++		t.Fatalf("invoke: status=%q err=%v", result.Status, err)
++	}
++	if payload.TaskID != run.taskID || payload.IssueID != run.issueID {
++		t.Fatalf("body task_id=%q issue_id=%q, want the calling run %s on %s", payload.TaskID, payload.IssueID, run.taskID, run.issueID)
++	}
++	if resolveErr != nil {
++		t.Fatalf("resolve callback token during the call: %v", resolveErr)
++	}
++	if uuidToString(grant.TaskID) != run.taskID {
++		t.Fatalf("grant task = %s, want %s", uuidToString(grant.TaskID), run.taskID)
++	}
++	if grant.IssueID.Valid {
++		t.Fatalf("grant issue = %s, want none: agent tools must keep reaching other issues", uuidToString(grant.IssueID))
++	}
++}
++
++// The legacy entry point, used by callers that have no run, still sends no
++// run context rather than an empty or zero id.
++func TestAgentHookWithoutARunSendsNoRunContext(t *testing.T) {
++	var raw map[string]any
++	sentinel := quietServer(t, func(w http.ResponseWriter, r *http.Request) {
++		_ = json.NewDecoder(r.Body).Decode(&raw)
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"ok":true}`))
++	})
++	installationID := installExamplePlugin(t, exampleServers{sentinel: sentinel, metrics: metricsServer(t)})
++	if _, err := testHandler.PluginService.InvokeAgentHook(context.Background(), installationID,
++		"correlate_deploys", parseUUID(testUserID), json.RawMessage(`{"service":"x","window_minutes":5}`)); err != nil {
++		t.Fatalf("invoke: %v", err)
++	}
++	if _, present := raw["task_id"]; present {
++		t.Fatalf("task_id present without a run: %v", raw["task_id"])
++	}
++	if _, present := raw["issue_id"]; present {
++		t.Fatalf("issue_id present without a run: %v", raw["issue_id"])
++	}
++}
+diff --git a/server/internal/handler/plugin_task.go b/server/internal/handler/plugin_task.go
+new file mode 100644
+index 0000000..23ceaac
+--- /dev/null
++++ b/server/internal/handler/plugin_task.go
+@@ -0,0 +1,327 @@
++package handler
++
++import (
++	"encoding/base64"
++	"encoding/json"
++	"net/http"
++	"slices"
++	"strconv"
++	"strings"
++	"unicode/utf8"
++
++	"github.com/go-chi/chi/v5"
++	"github.com/jackc/pgx/v5/pgtype"
++	"github.com/multica-ai/multica/server/internal/service"
++	"github.com/multica-ai/multica/server/internal/util"
++	db "github.com/multica-ai/multica/server/pkg/db/generated"
++	"github.com/multica-ai/multica/server/pkg/plugincontract"
++	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
++)
++
++// Read access to agent runs through the Plugin Action API.
++//
++// A run is what a plugin reacting to task.completed actually needs: which
++// agent ran, what it was asked, and what it did. The event carries only ids,
++// and before this there was no way to follow them — so a handler could learn
++// that a run finished but never what happened in it.
++//
++// Reach follows the same three checks as issues. The installation must hold
++// tasks:read; the task must be in the installation's workspace; and a callback
++// token issued about one run or one issue reaches only that run or that
++// issue's runs. Chat runs carry a private conversation, so their input and
++// transcript additionally need chats:read.
++
++// Cut per text field, not per response: one tool output can be megabytes, and
++// a plugin distilling a run has no use for all of it.
++const pluginTaskFieldMaxBytes = 32 << 10
++
++// GetPluginTask — GET /v1/tasks/{task_id}
++func (h *Handler) GetPluginTask(w http.ResponseWriter, r *http.Request) {
++	caller, _, ok := h.pluginCaller(w, r, plugincontract.ScopeTasksRead)
++	if !ok {
++		return
++	}
++	task, ok := h.pluginTaskForCaller(w, r, caller, chi.URLParam(r, "task_id"))
++	if !ok {
++		return
++	}
++	writeJSON(w, http.StatusOK, h.pluginTaskPayload(r, caller, task))
++}
++
++// ListPluginTaskMessages — GET /v1/tasks/{task_id}/messages
++func (h *Handler) ListPluginTaskMessages(w http.ResponseWriter, r *http.Request) {
++	caller, _, ok := h.pluginCaller(w, r, plugincontract.ScopeTasksRead)
++	if !ok {
++		return
++	}
++	task, ok := h.pluginTaskForCaller(w, r, caller, chi.URLParam(r, "task_id"))
++	if !ok {
++		return
++	}
++	if task.ChatSessionID.Valid && !slices.Contains(caller.Scopes, plugincontract.ScopeChatsRead) {
++		publicapiv1.WriteProblem(w, r, http.StatusForbidden, "forbidden",
++			"this run is a chat; reading its transcript requires the "+plugincontract.ScopeChatsRead+" scope")
++		return
++	}
++
++	afterSeq, ok := taskMessagesCursor(w, r, task.ID)
++	if !ok {
++		return
++	}
++	limit, ok := queryInt32(w, r, "limit", publicapiv1.DefaultPageSize, 1, publicapiv1.MaxPageSize)
++	if !ok {
++		return
++	}
++	// One extra row says whether another page follows without a count query.
++	rows, err := h.Queries.ListTaskMessagesPage(r.Context(), db.ListTaskMessagesPageParams{
++		TaskID:    task.ID,
++		AfterSeq:  afterSeq,
++		PageLimit: limit + 1,
++	})
++	if err != nil {
++		publicapiv1.WriteProblem(w, r, http.StatusInternalServerError, "internal_error", "failed to list task messages")
++		return
++	}
++	response := publicapiv1.TaskMessageListResponse{Messages: make([]publicapiv1.TaskMessage, 0, len(rows))}
++	if len(rows) > int(limit) {
++		rows = rows[:limit]
++		response.NextCursor = encodeTaskMessagesCursor(task.ID, rows[len(rows)-1].Seq)
++	}
++	for _, row := range rows {
++		response.Messages = append(response.Messages, publicTaskMessage(row))
++	}
++	writeJSON(w, http.StatusOK, response)
++}
++
++// pluginTaskForCaller resolves a task the caller may read, or writes the
++// problem and reports false. Every refusal is a 404 for the same reason it is
++// on issues: a plugin must not be able to confirm that a run it cannot read
++// exists.
++func (h *Handler) pluginTaskForCaller(w http.ResponseWriter, r *http.Request, caller service.PluginActionCaller, taskRef string) (db.AgentTaskQueue, bool) {
++	notFound := func() (db.AgentTaskQueue, bool) {
++		publicapiv1.WriteProblem(w, r, http.StatusNotFound, "not_found", "task not found")
++		return db.AgentTaskQueue{}, false
++	}
++	taskID, err := util.ParseUUID(taskRef)
++	if err != nil {
++		return notFound()
++	}
++	task, err := h.Queries.GetAgentTask(r.Context(), taskID)
++	if err != nil {
++		if isNotFound(err) {
++			return notFound()
++		}
++		publicapiv1.WriteProblem(w, r, http.StatusInternalServerError, "internal_error", "failed to load task")
++		return db.AgentTaskQueue{}, false
++	}
++	workspaceID, err := h.TaskService.ResolveTaskWorkspaceIDChecked(r.Context(), task)
++	if err != nil {
++		publicapiv1.WriteProblem(w, r, http.StatusInternalServerError, "internal_error", "failed to load task")
++		return db.AgentTaskQueue{}, false
++	}
++	if workspaceID == "" || workspaceID != uuidToString(caller.WorkspaceID) {
++		return notFound()
++	}
++	// A grant about one run reaches that run, and a grant about one issue
++	// reaches that issue's runs. Both narrow; neither widens.
++	if caller.TaskScope.Valid && uuidToString(task.ID) != uuidToString(caller.TaskScope) {
++		return notFound()
++	}
++	if caller.IssueScope.Valid && uuidToString(task.IssueID) != uuidToString(caller.IssueScope) {
++		return notFound()
++	}
++	return task, true
++}
++
++func (h *Handler) pluginTaskPayload(r *http.Request, caller service.PluginActionCaller, task db.AgentTaskQueue) publicapiv1.Task {
++	ctx := r.Context()
++	out := publicapiv1.Task{
++		ID:                  uuidToString(task.ID),
++		WorkspaceID:         uuidToString(caller.WorkspaceID),
++		AgentID:             uuidToString(task.AgentID),
++		Kind:                pluginTaskKind(task),
++		Status:              task.Status,
++		IssueID:             uuidToPtr(task.IssueID),
++		ChatSessionID:       uuidToPtr(task.ChatSessionID),
++		AutopilotRunID:      uuidToPtr(task.AutopilotRunID),
++		OriginatorUserID:    uuidToPtr(task.OriginatorUserID),
++		TriggerCommentID:    uuidToPtr(task.TriggerCommentID),
++		TriggerSummary:      textToPtr(task.TriggerSummary),
++		DelegatedFromTaskID: uuidToPtr(task.DelegatedFromTaskID),
++		RetryOfTaskID:       uuidToPtr(task.RetryOfTaskID),
++		Attempt:             task.Attempt,
++		MaxAttempts:         task.MaxAttempts,
++		FailureReason:       textToPtr(task.FailureReason),
++		Input:               []publicapiv1.TaskInput{},
++		CreatedAt:           timestampToString(task.CreatedAt),
++		StartedAt:           timestampToPtr(task.StartedAt),
++		CompletedAt:         timestampToPtr(task.CompletedAt),
++	}
++	canReadChats := slices.Contains(caller.Scopes, plugincontract.ScopeChatsRead)
++	canReadComments := slices.Contains(caller.Scopes, plugincontract.ScopeCommentsRead)
++
++	if task.ChatSessionID.Valid {
++		if session, err := h.Queries.GetChatSession(ctx, task.ChatSessionID); err == nil {
++			out.ChatUserID = uuidToPtr(session.CreatorID)
++			if canReadChats {
++				if messages, err := h.Queries.ListUserChatMessagesByTask(ctx, task.ID); err == nil {
++					for _, message := range messages {
++						content, cut := capPluginText(message.Content)
++						out.Input = append(out.Input, publicapiv1.TaskInput{
++							Source: "chat_message", AuthorType: "member", AuthorID: uuidToString(session.CreatorID),
++							Content: content, Truncated: cut, CreatedAt: timestampToString(message.CreatedAt),
++						})
++					}
++				}
++			}
++		}
++	}
++	if task.AutopilotRunID.Valid {
++		if run, err := h.Queries.GetAutopilotRun(ctx, task.AutopilotRunID); err == nil {
++			out.AutopilotID = uuidToPtr(run.AutopilotID)
++		}
++	}
++	if task.TriggerCommentID.Valid && canReadComments {
++		// Only a comment on the run's own issue: the trigger id is a row id,
++		// and the issue grant is what makes reading it legitimate.
++		if comment, err := h.Queries.GetComment(ctx, task.TriggerCommentID); err == nil &&
++			uuidToString(comment.IssueID) == uuidToString(task.IssueID) && !comment.DeletedAt.Valid {
++			content, cut := capPluginText(comment.Content)
++			out.Input = append(out.Input, publicapiv1.TaskInput{
++				Source: "comment", AuthorType: comment.AuthorType, AuthorID: uuidToString(comment.AuthorID),
++				Content: content, Truncated: cut, CreatedAt: timestampToString(comment.CreatedAt),
++			})
++		}
++	}
++	if task.DelegatedFromTaskID.Valid {
++		if parent, err := h.Queries.GetAgentTask(ctx, task.DelegatedFromTaskID); err == nil {
++			out.DelegatedFromAgentID = uuidToPtr(parent.AgentID)
++		}
++	}
++	if task.HandoffNote.Valid && task.HandoffNote.String != "" {
++		content, cut := capPluginText(task.HandoffNote.String)
++		input := publicapiv1.TaskInput{Source: "handoff", Content: content, Truncated: cut}
++		if out.DelegatedFromAgentID != nil {
++			input.AuthorType, input.AuthorID = "agent", *out.DelegatedFromAgentID
++		}
++		out.Input = append(out.Input, input)
++	}
++	if out.Kind == "quick_create" {
++		var quick service.QuickCreateContext
++		if err := json.Unmarshal(task.Context, &quick); err == nil && quick.Prompt != "" {
++			content, cut := capPluginText(quick.Prompt)
++			out.Input = append(out.Input, publicapiv1.TaskInput{
++				Source: "quick_create", AuthorType: "member", AuthorID: quick.RequesterID, Content: content, Truncated: cut,
++			})
++		}
++	}
++	return out
++}
++
++// pluginTaskKind names what started a run. A chat run is a chat even if the
++// agent went on to file an issue, and an autopilot run that works an issue is
++// reported as an issue run: the issue is where its record belongs.
++func pluginTaskKind(task db.AgentTaskQueue) string {
++	switch {
++	case task.ChatSessionID.Valid:
++		return "chat"
++	case task.IssueID.Valid:
++		return "issue"
++	case task.AutopilotRunID.Valid:
++		return "autopilot"
++	}
++	if len(task.Context) > 0 {
++		var quick service.QuickCreateContext
++		if err := json.Unmarshal(task.Context, &quick); err == nil && quick.Type == service.QuickCreateContextType {
++			return "quick_create"
++		}
++	}
++	return "other"
++}
++
++func publicTaskMessage(row db.TaskMessage) publicapiv1.TaskMessage {
++	out := publicapiv1.TaskMessage{
++		Seq:       row.Seq,
++		Type:      row.Type,
++		Tool:      row.Tool.String,
++		CallID:    row.CallID.String,
++		CreatedAt: timestampToString(row.CreatedAt),
++	}
++	var cut bool
++	out.Content, cut = capPluginText(row.Content.String)
++	out.Truncated = cut
++	out.Output, cut = capPluginText(row.Output.String)
++	out.Truncated = out.Truncated || cut
++	if len(row.Input) > 0 {
++		var input map[string]any
++		if err := json.Unmarshal(row.Input, &input); err == nil {
++			out.Input = input
++		}
++	}
++	if row.OutputTruncated.Valid {
++		value := row.OutputTruncated.Bool
++		out.OutputTruncated = &value
++	}
++	return out
++}
++
++// capPluginText cuts at a rune boundary so a multi-byte character is never
++// split into invalid UTF-8.
++func capPluginText(value string) (string, bool) {
++	if len(value) <= pluginTaskFieldMaxBytes {
++		return value, false
++	}
++	cut := pluginTaskFieldMaxBytes
++	for cut > 0 && !utf8.RuneStart(value[cut]) {
++		cut--
++	}
++	return value[:cut], true
++}
++
++// Transcript cursors are opaque to callers but bound to one run, so a cursor
++// taken from one run's pages cannot be replayed against another's.
++const taskMessagesCursorPrefix = "task_message:"
++
++func encodeTaskMessagesCursor(taskID pgtype.UUID, seq int32) string {
++	raw := taskMessagesCursorPrefix + uuidToString(taskID) + ":" + strconv.FormatInt(int64(seq), 10)
++	return base64.RawURLEncoding.EncodeToString([]byte(raw))
++}
++
++func taskMessagesCursor(w http.ResponseWriter, r *http.Request, taskID pgtype.UUID) (int32, bool) {
++	raw := r.URL.Query().Get("cursor")
++	if raw == "" {
++		return 0, true
++	}
++	invalid := func() (int32, bool) {
++		publicapiv1.WriteProblem(w, r, http.StatusBadRequest, "invalid_request", "cursor is not valid for this run")
++		return 0, false
++	}
++	decoded, err := base64.RawURLEncoding.DecodeString(raw)
++	if err != nil {
++		return invalid()
++	}
++	prefix := taskMessagesCursorPrefix + uuidToString(taskID) + ":"
++	value, found := strings.CutPrefix(string(decoded), prefix)
++	if !found {
++		return invalid()
++	}
++	seq, err := strconv.ParseInt(value, 10, 32)
++	if err != nil || seq < 0 {
++		return invalid()
++	}
++	return int32(seq), true
++}
++
++func queryInt32(w http.ResponseWriter, r *http.Request, name string, fallback, min, max int32) (int32, bool) {
++	raw := r.URL.Query().Get(name)
++	if raw == "" {
++		return fallback, true
++	}
++	parsed, err := strconv.ParseInt(raw, 10, 32)
++	if err != nil || int32(parsed) < min || int32(parsed) > max {
++		publicapiv1.WriteProblem(w, r, http.StatusBadRequest, "invalid_request",
++			name+" must be an integer between "+strconv.Itoa(int(min))+" and "+strconv.Itoa(int(max)))
++		return 0, false
++	}
++	return int32(parsed), true
++}
+diff --git a/server/internal/handler/plugin_task_test.go b/server/internal/handler/plugin_task_test.go
+new file mode 100644
+index 0000000..15b5b2a
+--- /dev/null
++++ b/server/internal/handler/plugin_task_test.go
+@@ -0,0 +1,265 @@
++package handler
++
++import (
++	"context"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/google/uuid"
++	"github.com/multica-ai/multica/server/internal/service"
++	"github.com/multica-ai/multica/server/internal/testutil"
++	"github.com/multica-ai/multica/server/pkg/plugincontract"
++	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
++)
++
++// Reading agent runs through the Plugin Action API. As with issues, the
++// interesting properties are the refusals: a token about one run must not
++// reach another, a token about one issue must not reach another issue's runs,
++// and a chat's words stay behind their own consent.
++
++func runCallbackToken(t *testing.T, installationID, taskID, issueID string) string {
++	t.Helper()
++	installation, err := testHandler.PluginService.InstallationForWorkspace(
++		context.Background(), parseUUID(testWorkspaceID), installationID)
++	if err != nil {
++		t.Fatalf("load installation: %v", err)
++	}
++	invocation := service.HookInvocation{
++		Installation: installation,
++		Hook:         plugincontract.Hook{Key: "summarize"},
++		Trigger:      plugincontract.TriggerEvent,
++		Actor:        service.HookActor{Type: "plugin", ID: parseUUID(installationID)},
++	}
++	if taskID != "" {
++		invocation.TaskID = parseUUID(taskID)
++	}
++	if issueID != "" {
++		invocation.IssueID = parseUUID(issueID)
++	}
++	token, err := testHandler.PluginService.Callbacks.Issue(context.Background(), invocation)
++	if err != nil {
++		t.Fatalf("issue callback token: %v", err)
++	}
++	return token
++}
++
++type runFixture struct {
++	agentID string
++	issueID string
++	taskID  string
++}
++
++// issueRun creates an agent with one completed run on a fresh issue, started
++// by a member comment, with a transcript of n text messages.
++func issueRun(t *testing.T, title string, n int) runFixture {
++	t.Helper()
++	runtimeID := dbfx.Runtime(t, "plugin-task-runtime-"+uuid.NewString()[:8])
++	agentID := dbfx.Agent(t, "plugin-task-agent-"+uuid.NewString()[:8], runtimeID)
++	issueID := createTestIssue(t, title, "todo", "none")
++	commentID := dbfx.Comment(t, issueID, "please compare Kafka and RocketMQ")
++	taskID := dbfx.Task(t, agentID, testutil.Cols{
++		"issue_id":           issueID,
++		"trigger_comment_id": commentID,
++		"status":             "completed",
++		"runtime_id":         runtimeID,
++	})
++	for seq := 1; seq <= n; seq++ {
++		dbfx.Insert(t, "task_message", testutil.Cols{
++			"task_id": taskID, "seq": seq, "type": "text", "content": "step " + string(rune('0'+seq)),
++		})
++	}
++	return runFixture{agentID: agentID, issueID: issueID, taskID: taskID}
++}
++
++func getPluginTask(t *testing.T, request *http.Request) (*httptest.ResponseRecorder, publicapiv1.Task) {
++	t.Helper()
++	recorder := httptest.NewRecorder()
++	testHandler.GetPluginTask(recorder, request)
++	var task publicapiv1.Task
++	if recorder.Code == http.StatusOK {
++		if err := json.Unmarshal(recorder.Body.Bytes(), &task); err != nil {
++			t.Fatalf("decode task: %v", err)
++		}
++	}
++	return recorder, task
++}
++
++func listPluginTaskMessages(t *testing.T, request *http.Request) (*httptest.ResponseRecorder, publicapiv1.TaskMessageListResponse) {
++	t.Helper()
++	recorder := httptest.NewRecorder()
++	testHandler.ListPluginTaskMessages(recorder, request)
++	var page publicapiv1.TaskMessageListResponse
++	if recorder.Code == http.StatusOK {
++		if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
++			t.Fatalf("decode messages: %v", err)
++		}
++	}
++	return recorder, page
++}
++
++func TestPluginTaskRequiresTasksRead(t *testing.T) {
++	installationID := installPluginForAction(t, []string{"issues:read"})
++	run := issueRun(t, "Plugin task scope", 1)
++
++	recorder, _ := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID,
++		installationID, nil, map[string]string{"task_id": run.taskID}))
++	if recorder.Code != http.StatusForbidden {
++		t.Fatalf("status=%d body=%s, want 403 without tasks:read", recorder.Code, recorder.Body.String())
++	}
++}
++
++func TestPluginTaskReadsIssueRunInputAndPagedTranscript(t *testing.T) {
++	installationID := installPluginForAction(t, []string{"issues:read", "tasks:read", "comments:read"})
++	run := issueRun(t, "Plugin task read", 3)
++	params := map[string]string{"task_id": run.taskID}
++
++	recorder, task := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID, installationID, nil, params))
++	if recorder.Code != http.StatusOK {
++		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++	if task.Kind != "issue" || task.IssueID == nil || *task.IssueID != run.issueID || task.AgentID != run.agentID {
++		t.Fatalf("task = %+v, want an issue run of agent %s on %s", task, run.agentID, run.issueID)
++	}
++	if len(task.Input) != 1 || task.Input[0].Source != "comment" || task.Input[0].Content != "please compare Kafka and RocketMQ" || task.Input[0].AuthorType != "member" {
++		t.Fatalf("input = %+v, want the triggering member comment", task.Input)
++	}
++
++	recorder, page := listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID+"/messages?limit=2", installationID, nil, params))
++	if recorder.Code != http.StatusOK {
++		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++	if len(page.Messages) != 2 || page.Messages[0].Seq != 1 || page.NextCursor == "" {
++		t.Fatalf("first page = %+v, want seq 1..2 and a next cursor", page)
++	}
++	cursor := page.NextCursor
++	recorder, page = listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID+"/messages?cursor="+cursor, installationID, nil, params))
++	if recorder.Code != http.StatusOK || len(page.Messages) != 1 || page.Messages[0].Seq != 3 || page.NextCursor != "" {
++		t.Fatalf("second page status=%d page=%+v, want only seq 3 and no next", recorder.Code, page)
++	}
++
++	// A cursor belongs to its run: replaying it against another run is refused
++	// rather than silently paging someone else's transcript.
++	other := issueRun(t, "Plugin task cursor replay", 3)
++	recorder, _ = listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+other.taskID+"/messages?cursor="+cursor, installationID, nil,
++		map[string]string{"task_id": other.taskID}))
++	if recorder.Code != http.StatusBadRequest {
++		t.Fatalf("replayed cursor status=%d, want 400", recorder.Code)
++	}
++
++	recorder, _ = listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID+"/messages?limit=0", installationID, nil, params))
++	if recorder.Code != http.StatusBadRequest {
++		t.Fatalf("limit=0 status=%d, want 400", recorder.Code)
++	}
++}
++
++// Without comments:read the trigger comment is withheld; the run itself is
++// still readable, because the comment is issue content with its own scope.
++func TestPluginTaskWithholdsCommentInputWithoutCommentsRead(t *testing.T) {
++	installationID := installPluginForAction(t, []string{"tasks:read"})
++	run := issueRun(t, "Plugin task comment scope", 0)
++	recorder, task := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+run.taskID,
++		installationID, nil, map[string]string{"task_id": run.taskID}))
++	if recorder.Code != http.StatusOK {
++		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++	if len(task.Input) != 0 || task.TriggerCommentID == nil {
++		t.Fatalf("input=%+v trigger=%v, want the id without the content", task.Input, task.TriggerCommentID)
++	}
++}
++
++func TestPluginTaskCallbackAboutOneRunCannotReadAnother(t *testing.T) {
++	withCallbackTokens(t)
++	installationID := installPluginForAction(t, []string{"issues:read", "tasks:read"})
++	mine := issueRun(t, "Plugin task narrowed mine", 1)
++	other := issueRun(t, "Plugin task narrowed other", 1)
++	token := runCallbackToken(t, installationID, mine.taskID, "")
++
++	recorder, _ := getPluginTask(t, callbackRequest(token, http.MethodGet, "/v1/tasks/"+other.taskID, nil,
++		map[string]string{"task_id": other.taskID}))
++	if recorder.Code != http.StatusNotFound {
++		t.Fatalf("other run status=%d, want 404: a token about one run must not reach another", recorder.Code)
++	}
++	recorder, _ = listPluginTaskMessages(t, callbackRequest(token, http.MethodGet, "/v1/tasks/"+other.taskID+"/messages", nil,
++		map[string]string{"task_id": other.taskID}))
++	if recorder.Code != http.StatusNotFound {
++		t.Fatalf("other transcript status=%d, want 404", recorder.Code)
++	}
++	recorder, task := getPluginTask(t, callbackRequest(token, http.MethodGet, "/v1/tasks/"+mine.taskID, nil,
++		map[string]string{"task_id": mine.taskID}))
++	if recorder.Code != http.StatusOK || task.ID != mine.taskID {
++		t.Fatalf("own run status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++}
++
++func TestPluginTaskIssueGrantReachesOnlyThatIssuesRuns(t *testing.T) {
++	withCallbackTokens(t)
++	installationID := installPluginForAction(t, []string{"issues:read", "tasks:read"})
++	mine := issueRun(t, "Plugin task issue grant mine", 1)
++	other := issueRun(t, "Plugin task issue grant other", 1)
++	token := runCallbackToken(t, installationID, "", mine.issueID)
++
++	recorder, _ := getPluginTask(t, callbackRequest(token, http.MethodGet, "/v1/tasks/"+other.taskID, nil,
++		map[string]string{"task_id": other.taskID}))
++	if recorder.Code != http.StatusNotFound {
++		t.Fatalf("run on another issue status=%d, want 404", recorder.Code)
++	}
++	recorder, _ = getPluginTask(t, callbackRequest(token, http.MethodGet, "/v1/tasks/"+mine.taskID, nil,
++		map[string]string{"task_id": mine.taskID}))
++	if recorder.Code != http.StatusOK {
++		t.Fatalf("run on the granted issue status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++}
++
++func TestPluginChatRunNeedsChatsReadForWhatWasSaid(t *testing.T) {
++	runtimeID := dbfx.Runtime(t, "plugin-chat-runtime-"+uuid.NewString()[:8])
++	agentID := dbfx.Agent(t, "plugin-chat-agent-"+uuid.NewString()[:8], runtimeID)
++	sessionID := dbfx.ChatSession(t, agentID)
++	taskID := dbfx.Task(t, agentID, testutil.Cols{"chat_session_id": sessionID, "status": "completed", "runtime_id": runtimeID})
++	dbfx.Insert(t, "chat_message", testutil.Cols{
++		"chat_session_id": sessionID, "role": "user", "content": "remember: comments in Chinese", "task_id": taskID,
++	})
++	dbfx.Insert(t, "task_message", testutil.Cols{"task_id": taskID, "seq": 1, "type": "text", "content": "noted"})
++	params := map[string]string{"task_id": taskID}
++
++	withoutChats := installPluginForAction(t, []string{"tasks:read"})
++	recorder, task := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+taskID, withoutChats, nil, params))
++	if recorder.Code != http.StatusOK {
++		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
++	}
++	if task.Kind != "chat" || task.ChatUserID == nil || *task.ChatUserID != testUserID {
++		t.Fatalf("task = %+v, want a chat run of %s", task, testUserID)
++	}
++	if len(task.Input) != 0 {
++		t.Fatalf("input = %+v, want the chat message withheld without chats:read", task.Input)
++	}
++	recorder, _ = listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+taskID+"/messages", withoutChats, nil, params))
++	if recorder.Code != http.StatusForbidden {
++		t.Fatalf("chat transcript status=%d, want 403 without chats:read", recorder.Code)
++	}
++
++	withChats := installPluginForAction(t, []string{"tasks:read", "chats:read"})
++	recorder, task = getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+taskID, withChats, nil, params))
++	if recorder.Code != http.StatusOK || len(task.Input) != 1 || task.Input[0].Source != "chat_message" || task.Input[0].Content != "remember: comments in Chinese" {
++		t.Fatalf("status=%d input=%+v, want the member's chat message", recorder.Code, task.Input)
++	}
++	recorder, page := listPluginTaskMessages(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+taskID+"/messages", withChats, nil, params))
++	if recorder.Code != http.StatusOK || len(page.Messages) != 1 {
++		t.Fatalf("status=%d page=%+v", recorder.Code, page)
++	}
++}
++
++func TestPluginTaskUnknownOrUnresolvableIsNotFound(t *testing.T) {
++	installationID := installPluginForAction(t, []string{"tasks:read"})
++	runtimeID := dbfx.Runtime(t, "plugin-orphan-runtime-"+uuid.NewString()[:8])
++	agentID := dbfx.Agent(t, "plugin-orphan-agent-"+uuid.NewString()[:8], runtimeID)
++	// No issue, chat, autopilot or quick-create context: no workspace to match.
++	orphan := dbfx.Task(t, agentID, testutil.Cols{"status": "completed", "runtime_id": runtimeID})
++	for _, id := range []string{uuid.NewString(), orphan, "not-a-uuid"} {
++		recorder, _ := getPluginTask(t, pluginActionRequest(http.MethodGet, "/v1/tasks/"+id, installationID, nil, map[string]string{"task_id": id}))
++		if recorder.Code != http.StatusNotFound {
++			t.Fatalf("task %s status=%d, want 404", id, recorder.Code)
++		}
++	}
++}
+diff --git a/server/internal/service/plugin_action.go b/server/internal/service/plugin_action.go
+index 5757ff3..e06c8a8 100644
+--- a/server/internal/service/plugin_action.go
++++ b/server/internal/service/plugin_action.go
+@@ -34,6 +34,10 @@ type PluginActionCaller struct {
+ 	// or an invocation that had no issue — and the ordinary workspace and
+ 	// membership checks still apply on top.
+ 	IssueScope pgtype.UUID
++	// TaskScope, when set, is the ONLY agent run this caller may read. Set for a
++	// callback token issued about one run (a task event, or an agent-trigger
++	// tool call made from inside that run).
++	TaskScope pgtype.UUID
+ }
+ 
+ // AuthorizePluginAction performs the two checks that belong to the plugin: the
+diff --git a/server/internal/service/plugin_agent_tools.go b/server/internal/service/plugin_agent_tools.go
+index 637bbc1..3fe66fa 100644
+--- a/server/internal/service/plugin_agent_tools.go
++++ b/server/internal/service/plugin_agent_tools.go
+@@ -129,6 +129,26 @@ func (s *PluginService) AgentHookTools(ctx context.Context, workspaceID pgtype.U
+ // author_type already has a value for that, which is why this trigger needs no
+ // new one.
+ func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hookKey string, agentID pgtype.UUID, input json.RawMessage) (HookResult, error) {
++	return s.InvokeAgentHookForRun(ctx, installationID, hookKey, agentID, AgentHookRun{}, input)
++}
++
++// AgentHookRun is the run an agent-trigger tool was called from. The daemon
++// endpoint knows it from the claimed task row; a handler must not have to take
++// it from tool input, which the model writes.
++type AgentHookRun struct {
++	TaskID  pgtype.UUID
++	IssueID pgtype.UUID
++}
++
++// InvokeAgentHookForRun is InvokeAgentHook with the calling run attached.
++//
++// The run travels as task_id / issue_id in the signed body, so a handler can
++// scope what it does to the run the agent is actually in. The callback grant
++// is narrowed to the run's task only: reads of that run's transcript are what
++// the new task endpoints serve, while issue reads stay exactly as wide as they
++// were for agent-trigger tools, so tools that act on another issue keep
++// working.
++func (s *PluginService) InvokeAgentHookForRun(ctx context.Context, installationID, hookKey string, agentID pgtype.UUID, run AgentHookRun, input json.RawMessage) (HookResult, error) {
+ 	caller, err := s.AuthorizePluginAction(ctx, installationID, pgtype.UUID{}, "")
+ 	if err != nil {
+ 		return HookResult{}, err
+@@ -142,7 +162,9 @@ func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hoo
+ 		Hook:         hook,
+ 		Trigger:      plugincontract.TriggerAgent,
+ 		Actor:        HookActor{Type: "agent", ID: agentID},
++		TaskID:       run.TaskID,
+ 		Input:        rawInputOrNil(input),
++		RunIssueID:   run.IssueID,
+ 	}, 1)
+ }
+ 
+diff --git a/server/internal/service/plugin_event_bridge.go b/server/internal/service/plugin_event_bridge.go
+index 8f4f4cd..396cfa2 100644
+--- a/server/internal/service/plugin_event_bridge.go
++++ b/server/internal/service/plugin_event_bridge.go
+@@ -99,6 +99,28 @@ func issueIDFromPayload(payload any) pgtype.UUID {
+ 	return pgtype.UUID{}
+ }
+ 
++// taskIDFromPayload finds the agent run a task event reports on, so the
++// callback grant issued for the hook can be narrowed to that one run. Only the
++// task events carry a top-level task_id; every other payload yields the zero
++// UUID, which leaves task reads narrowed by the issue grant alone.
++func taskIDFromPayload(payload any) pgtype.UUID {
++	encoded, err := json.Marshal(payload)
++	if err != nil {
++		return pgtype.UUID{}
++	}
++	var shape struct {
++		TaskID string `json:"task_id"`
++	}
++	if err := json.Unmarshal(encoded, &shape); err != nil || shape.TaskID == "" {
++		return pgtype.UUID{}
++	}
++	parsed, err := parseUUIDValue(shape.TaskID)
++	if err != nil {
++		return pgtype.UUID{}
++	}
++	return parsed
++}
++
+ func payloadFlag(payload any, key string) bool {
+ 	if fields, ok := payload.(map[string]any); ok {
+ 		flag, _ := fields[key].(bool)
+diff --git a/server/internal/service/plugin_event_dispatch.go b/server/internal/service/plugin_event_dispatch.go
+index 6285d81..8154a19 100644
+--- a/server/internal/service/plugin_event_dispatch.go
++++ b/server/internal/service/plugin_event_dispatch.go
+@@ -60,6 +60,7 @@ type dispatchJob struct {
+ 	hook         plugincontract.Hook
+ 	eventType    string
+ 	issueID      pgtype.UUID
++	taskID       pgtype.UUID
+ 	payload      any
+ }
+ 
+@@ -234,6 +235,9 @@ func (d *PluginEventDispatcher) run(job dispatchJob) {
+ 	// Only now, past the flag: the id is needed to narrow the callback grant,
+ 	// and finding it means parsing the payload.
+ 	job.issueID = issueIDFromPayload(job.payload)
++	if isTaskEvent(job.eventType) {
++		job.taskID = taskIDFromPayload(job.payload)
++	}
+ 
+ 	installations, err := d.service.Queries.ListWorkspacePluginInstallations(ctx, job.installation.WorkspaceID)
+ 	if err != nil {
+@@ -257,6 +261,15 @@ func (d *PluginEventDispatcher) run(job dispatchJob) {
+ 	}
+ }
+ 
++// isTaskEvent reports whether a plugin event describes one agent run.
++func isTaskEvent(eventType string) bool {
++	switch eventType {
++	case plugincontract.EventTaskStarted, plugincontract.EventTaskCompleted, plugincontract.EventTaskFailed:
++		return true
++	}
++	return false
++}
++
+ func hookWantsEvent(hook plugincontract.Hook, eventType string) bool {
+ 	for _, declared := range hook.Events {
+ 		if declared == eventType {
+@@ -285,6 +298,7 @@ func (d *PluginEventDispatcher) deliver(ctx context.Context, installation db.Plu
+ 		// plugin's own, attributed to the installation.
+ 		Actor:   HookActor{Type: "plugin", ID: installation.ID},
+ 		IssueID: job.issueID,
++		TaskID:  job.taskID,
+ 		Input:   job.payload,
+ 	}
+ 
+diff --git a/server/internal/service/plugin_event_dispatch_test.go b/server/internal/service/plugin_event_dispatch_test.go
+index 9720ecd..98e4761 100644
+--- a/server/internal/service/plugin_event_dispatch_test.go
++++ b/server/internal/service/plugin_event_dispatch_test.go
+@@ -317,3 +317,26 @@ func TestTheIssueIDIsStillFoundOnTheWorker(t *testing.T) {
+ 		t.Fatalf("issue id = %q, want %q", uuidString(found), issueID)
+ 	}
+ }
++
++// Task events narrow the callback grant to the run they report on; nothing
++// else carries a top-level task_id, and must not be narrowed by accident.
++func TestTaskIDFromPayloadOnlyReadsTheRunItReportsOn(t *testing.T) {
++	const task = "0f8fad5b-d9cb-469f-a165-70867728950e"
++	if got := taskIDFromPayload(map[string]any{"task_id": task, "issue_id": "", "status": "completed"}); uuidString(got) != task {
++		t.Fatalf("task event payload: got %q, want %q", uuidString(got), task)
++	}
++	if got := taskIDFromPayload(map[string]any{"comment": map[string]any{"id": task, "source_task_id": task}}); got.Valid {
++		t.Fatal("a comment payload must not narrow the grant to a run")
++	}
++	if got := taskIDFromPayload(map[string]any{"task_id": "not-a-uuid"}); got.Valid {
++		t.Fatal("a malformed task_id must be ignored")
++	}
++	for event, want := range map[string]bool{
++		"task.completed": true, "task.failed": true, "task.started": true,
++		"comment.created": false, "issue.updated": false,
++	} {
++		if isTaskEvent(event) != want {
++			t.Fatalf("isTaskEvent(%q) = %v, want %v", event, !want, want)
++		}
++	}
++}
+diff --git a/server/internal/service/plugin_hook.go b/server/internal/service/plugin_hook.go
+index 334eb0a..b5905d9 100644
+--- a/server/internal/service/plugin_hook.go
++++ b/server/internal/service/plugin_hook.go
+@@ -102,7 +102,17 @@ type HookInvocation struct {
+ 	// callback token so a handler answering about one issue cannot use the same
+ 	// grant to reach across the workspace.
+ 	IssueID pgtype.UUID
+-	Input   any
++	// TaskID is the agent run this call is about: the task an event reports on,
++	// or the task whose agent picked an agent-trigger tool. It is sent so a
++	// handler knows which run it is answering for without trusting client
++	// input, and it narrows the callback grant's task reads to that one run.
++	TaskID pgtype.UUID
++	// RunIssueID is the issue of the run an agent-trigger tool was called from.
++	// It is reported to the handler as issue_id but, unlike IssueID, does not
++	// narrow the callback grant: agent tools have always been able to act on
++	// other issues the installation can see, and they still can.
++	RunIssueID pgtype.UUID
++	Input      any
+ 	// DeliveryID is stable across retries of the same scheduled occurrence.
+ 	// PlannedAt is the canonical UTC cron occurrence, not delivery wall time.
+ 	DeliveryID string
+@@ -128,9 +138,13 @@ type hookRequestBody struct {
+ 	// by the host. Sent because the alternative is every handler reading it out
+ 	// of client-supplied `input` — unvalidated, and absent entirely for the event
+ 	// trigger, where no client was involved at all.
+-	IssueID string           `json:"issue_id,omitempty"`
+-	Actor   hookRequestActor `json:"actor"`
+-	Input   json.RawMessage  `json:"input,omitempty"`
++	IssueID string `json:"issue_id,omitempty"`
++	// TaskID is the agent run this call is about, resolved by the host: the
++	// task an event reports on, or the run whose agent called an agent-trigger
++	// tool. Absent when the call is not about a run.
++	TaskID string           `json:"task_id,omitempty"`
++	Actor  hookRequestActor `json:"actor"`
++	Input  json.RawMessage  `json:"input,omitempty"`
+ 	// Config is the installation's non-secret configuration, the values an
+ 	// administrator typed into the host-rendered form. Sent because the handler
+ 	// has no other way to read them — the Action API deliberately has no config
+@@ -403,6 +417,11 @@ func (s *PluginService) buildHookBody(ctx context.Context, invocation HookInvoca
+ 	}
+ 	if invocation.IssueID.Valid {
+ 		body.IssueID = uuidString(invocation.IssueID)
++	} else if invocation.RunIssueID.Valid {
++		body.IssueID = uuidString(invocation.RunIssueID)
++	}
++	if invocation.TaskID.Valid {
++		body.TaskID = uuidString(invocation.TaskID)
+ 	}
+ 	body.Config = nonSecretConfig(invocation.Installation)
+ 	if invocation.Input != nil {
+diff --git a/server/internal/service/plugin_token.go b/server/internal/service/plugin_token.go
+index 2d4451c..3970d4f 100644
+--- a/server/internal/service/plugin_token.go
++++ b/server/internal/service/plugin_token.go
+@@ -138,7 +138,10 @@ type CallbackGrant struct {
+ 	Actor HookActor
+ 	// IssueID narrows an event callback to the issue that produced it. Zero
+ 	// when the invocation had no issue.
+-	IssueID   pgtype.UUID
++	IssueID pgtype.UUID
++	// TaskID narrows task reads to the one run the invocation was about. Zero
++	// when the invocation had no run.
++	TaskID    pgtype.UUID
+ 	ExpiresAt time.Time
+ }
+ 
+@@ -187,6 +190,7 @@ func (c *CallbackTokens) Issue(ctx context.Context, invocation HookInvocation) (
+ 		Trigger:        invocation.Trigger,
+ 		Actor:          invocation.Actor,
+ 		IssueID:        invocation.IssueID,
++		TaskID:         invocation.TaskID,
+ 		ExpiresAt:      time.Now().Add(callbackTokenTTL),
+ 	}
+ 
+diff --git a/server/pkg/db/generated/chat.sql.go b/server/pkg/db/generated/chat.sql.go
+index 94ccc38..cb11417 100644
+--- a/server/pkg/db/generated/chat.sql.go
++++ b/server/pkg/db/generated/chat.sql.go
+@@ -2572,6 +2572,53 @@ func (q *Queries) ListUnownedChannelChatContextRevisions(ctx context.Context, ch
+ 	return items, nil
+ }
+ 
++const listUserChatMessagesByTask = `-- name: ListUserChatMessagesByTask :many
++SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids FROM chat_message
++WHERE task_id = $1 AND role = 'user'
++ORDER BY created_at ASC, id ASC
++`
++
++// The member-typed input a chat task was created to answer. Rows are bound to
++// their task by LinkChatMessageToTask, so this is exactly the turn's input and
++// never an earlier or later turn of the same session.
++func (q *Queries) ListUserChatMessagesByTask(ctx context.Context, taskID pgtype.UUID) ([]ChatMessage, error) {
++	rows, err := q.db.Query(ctx, listUserChatMessagesByTask, taskID)
++	if err != nil {
++		return nil, err
++	}
++	defer rows.Close()
++	items := []ChatMessage{}
++	for rows.Next() {
++		var i ChatMessage
++		if err := rows.Scan(
++			&i.ID,
++			&i.ChatSessionID,
++			&i.Role,
++			&i.Content,
++			&i.TaskID,
++			&i.CreatedAt,
++			&i.FailureReason,
++			&i.ElapsedMs,
++			&i.MessageKind,
++			&i.ChannelMediaPendingUntil,
++			&i.ChannelIngested,
++			&i.QuickActions,
++			&i.ChannelContextRevision,
++			&i.ChannelOutboundType,
++			&i.ChannelOutboundInstallationID,
++			&i.ChannelOutboundChatID,
++			&i.ChannelOutboundMessageIds,
++		); err != nil {
++			return nil, err
++		}
++		items = append(items, i)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, err
++	}
++	return items, nil
++}
++
+ const lockChatSessionForAppend = `-- name: LockChatSessionForAppend :one
+ SELECT id FROM chat_session
+ WHERE id = $1
+diff --git a/server/pkg/db/generated/task_message.sql.go b/server/pkg/db/generated/task_message.sql.go
+index a0c7dac..4f78301 100644
+--- a/server/pkg/db/generated/task_message.sql.go
++++ b/server/pkg/db/generated/task_message.sql.go
+@@ -261,6 +261,54 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
+ 	return items, nil
+ }
+ 
++const listTaskMessagesPage = `-- name: ListTaskMessagesPage :many
++SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id FROM task_message
++WHERE task_id = $1 AND seq > $2
++ORDER BY seq ASC
++LIMIT $3
++`
++
++type ListTaskMessagesPageParams struct {
++	TaskID    pgtype.UUID `json:"task_id"`
++	AfterSeq  int32       `json:"after_seq"`
++	PageLimit int32       `json:"page_limit"`
++}
++
++// Bounded page of a run transcript for the Public API: callers resume with the
++// last seq they received, so a long run is read in pages instead of one
++// response the size of every tool output the run ever produced.
++func (q *Queries) ListTaskMessagesPage(ctx context.Context, arg ListTaskMessagesPageParams) ([]TaskMessage, error) {
++	rows, err := q.db.Query(ctx, listTaskMessagesPage, arg.TaskID, arg.AfterSeq, arg.PageLimit)
++	if err != nil {
++		return nil, err
++	}
++	defer rows.Close()
++	items := []TaskMessage{}
++	for rows.Next() {
++		var i TaskMessage
++		if err := rows.Scan(
++			&i.ID,
++			&i.TaskID,
++			&i.Seq,
++			&i.Type,
++			&i.Tool,
++			&i.Content,
++			&i.Input,
++			&i.Output,
++			&i.CreatedAt,
++			&i.OutputTruncated,
++			&i.CallID,
++		); err != nil {
++			return nil, err
++		}
++		items = append(items, i)
++	}
++	if err := rows.Err(); err != nil {
++		return nil, err
++	}
++	return items, nil
++}
++
+ const listTaskMessagesSince = `-- name: ListTaskMessagesSince :many
+ SELECT id, task_id, seq, type, tool, content, input, output, created_at, output_truncated, call_id FROM task_message
+ WHERE task_id = $1 AND seq > $2
+diff --git a/server/pkg/db/queries/chat.sql b/server/pkg/db/queries/chat.sql
+index 9687de4..d3a7302 100644
+--- a/server/pkg/db/queries/chat.sql
++++ b/server/pkg/db/queries/chat.sql
+@@ -1725,3 +1725,11 @@ WHERE workspace_id = $1
+   AND status = 'active'
+ ORDER BY created_at ASC
+ LIMIT 1;
++
++-- name: ListUserChatMessagesByTask :many
++-- The member-typed input a chat task was created to answer. Rows are bound to
++-- their task by LinkChatMessageToTask, so this is exactly the turn's input and
++-- never an earlier or later turn of the same session.
++SELECT * FROM chat_message
++WHERE task_id = $1 AND role = 'user'
++ORDER BY created_at ASC, id ASC;
+diff --git a/server/pkg/db/queries/task_message.sql b/server/pkg/db/queries/task_message.sql
+index 237c191..e2d98a6 100644
+--- a/server/pkg/db/queries/task_message.sql
++++ b/server/pkg/db/queries/task_message.sql
+@@ -96,3 +96,12 @@ ORDER BY seq ASC;
+ -- name: DeleteTaskMessages :exec
+ DELETE FROM task_message
+ WHERE task_id = $1;
++
++-- name: ListTaskMessagesPage :many
++-- Bounded page of a run transcript for the Public API: callers resume with the
++-- last seq they received, so a long run is read in pages instead of one
++-- response the size of every tool output the run ever produced.
++SELECT * FROM task_message
++WHERE task_id = sqlc.arg('task_id') AND seq > sqlc.arg('after_seq')
++ORDER BY seq ASC
++LIMIT sqlc.arg('page_limit');
+diff --git a/server/pkg/plugincontract/manifest.go b/server/pkg/plugincontract/manifest.go
+index 249d578..b65308b 100644
+--- a/server/pkg/plugincontract/manifest.go
++++ b/server/pkg/plugincontract/manifest.go
+@@ -106,6 +106,12 @@ const (
+ 	ScopeNetPrefix = "net:"
+ )
+ 
++// ScopeChatsRead is the consent to read what a member said to an agent in a
++// direct chat. Chat runs are tasks, but their input is a private conversation
++// rather than workspace issue content, so tasks:read alone never reveals it: a
++// plugin must be granted this scope as well.
++const ScopeChatsRead = "chats:read"
++
+ // Product events an `event`-triggered hook may subscribe to.
+ const (
+ 	EventIssueCreated       = eventcontract.EventIssueCreated
+@@ -124,6 +130,7 @@ var fixedScopes = map[string]bool{
+ 	ScopeCommentsWrite:    true,
+ 	ScopeTasksRead:        true,
+ 	ScopeTasksWrite:       true,
++	ScopeChatsRead:        true,
+ 	ScopeAgentsRead:       true,
+ 	ScopeMembersRead:      true,
+ 	ScopeStorageUser:      true,
+diff --git a/server/pkg/publicapi/v1/README.md b/server/pkg/publicapi/v1/README.md
+index 03843ce..a4578df 100644
+--- a/server/pkg/publicapi/v1/README.md
++++ b/server/pkg/publicapi/v1/README.md
+@@ -47,9 +47,14 @@ endpoint-specific concurrency rules.
+ 
+ ## Rollout ledger
+ 
+-The migrated slice is Issue read/content update and Comment read/create. Context
++The migrated slice is Issue read/content update, Comment read/create, and Task
++(agent run) read: `GET /tasks/{task_id}` for the run and the input that started
++it, and `GET /tasks/{task_id}/messages` for its transcript, cursor-paginated.
++Task reads need `tasks:read`; a chat run's input and transcript additionally
++need `chats:read`. A callback token issued about one run (a task event, or an
++agent-trigger tool called from inside a run) reads only that run. Context
+ and Storage remain Plugin extensions; Hook and invocation delivery remain on
+ the bridge. Projects, Members, Issue search/create/transition, Agents, Squads,
+-Skills, Tasks/Runs, and Autopilots are subsequent vertical slices. Each slice
++Skills, Task writes, and Autopilots are subsequent vertical slices. Each slice
+ adds its Public contract first, then explicitly opts the safe Plugin subset into
+ the capability ledger.
+diff --git a/server/pkg/publicapi/v1/openapi.yaml b/server/pkg/publicapi/v1/openapi.yaml
+index 856fa1f..ff5fc17 100644
+--- a/server/pkg/publicapi/v1/openapi.yaml
++++ b/server/pkg/publicapi/v1/openapi.yaml
+@@ -165,6 +165,58 @@ paths:
+           description: Deleted
+         default:
+           $ref: "#/components/responses/Problem"
++  /tasks/{task_id}:
++    parameters:
++      - $ref: "#/components/parameters/TaskID"
++    get:
++      operationId: getTask
++      summary: Get an agent run and the input that started it
++      description: >-
++        A callback token issued about one run (a task event, or an agent tool
++        called from inside a run) reads only that run; one issued about an
++        issue reads only that issue's runs. Chat input additionally requires
++        chats:read and is omitted without it.
++      x-multica-contract: shared_resource
++      x-multica-scope: tasks:read
++      responses:
++        "200":
++          description: Task
++          content:
++            application/json:
++              schema:
++                $ref: "#/components/schemas/Task"
++        default:
++          $ref: "#/components/responses/Problem"
++  /tasks/{task_id}/messages:
++    parameters:
++      - $ref: "#/components/parameters/TaskID"
++    get:
++      operationId: listTaskMessages
++      summary: List a run transcript in seq order, one page at a time
++      description: >-
++        Chat runs additionally require chats:read. Long text fields are cut at
++        32 KiB and flagged truncated.
++      x-multica-contract: shared_resource
++      x-multica-scope: tasks:read
++      parameters:
++        - name: cursor
++          in: query
++          required: false
++          description: Opaque next_cursor from the previous page of this run
++          schema: { type: string }
++        - name: limit
++          in: query
++          required: false
++          schema: { type: integer, format: int32, minimum: 1, maximum: 200, default: 50 }
++      responses:
++        "200":
++          description: Transcript page
++          content:
++            application/json:
++              schema:
++                $ref: "#/components/schemas/TaskMessageListResponse"
++        default:
++          $ref: "#/components/responses/Problem"
+ components:
+   securitySchemes:
+     pluginBearer:
+@@ -179,6 +231,13 @@ components:
+       description: Issue UUID or workspace identifier such as MUL-123
+       schema:
+         type: string
++    TaskID:
++      name: task_id
++      in: path
++      required: true
++      description: Agent run (task) UUID
++      schema:
++        type: string
+     StorageScope:
+       name: scope
+       in: path
+@@ -406,3 +465,99 @@ components:
+       required: [value]
+       properties:
+         value: { type: string, maxLength: 102400 }
++    Task:
++      type: object
++      required:
++        - id
++        - workspace_id
++        - agent_id
++        - kind
++        - status
++        - issue_id
++        - chat_session_id
++        - chat_user_id
++        - autopilot_id
++        - autopilot_run_id
++        - originator_user_id
++        - trigger_comment_id
++        - trigger_summary
++        - delegated_from_task_id
++        - delegated_from_agent_id
++        - retry_of_task_id
++        - attempt
++        - max_attempts
++        - failure_reason
++        - input
++        - created_at
++        - started_at
++        - completed_at
++      properties:
++        id: { type: string }
++        workspace_id: { type: string }
++        agent_id: { type: string }
++        kind:
++          type: string
++          enum: [issue, chat, autopilot, quick_create, other]
++        status: { type: string }
++        issue_id: { type: [string, "null"] }
++        chat_session_id: { type: [string, "null"] }
++        chat_user_id: { type: [string, "null"] }
++        autopilot_id: { type: [string, "null"] }
++        autopilot_run_id: { type: [string, "null"] }
++        originator_user_id: { type: [string, "null"] }
++        trigger_comment_id: { type: [string, "null"] }
++        trigger_summary: { type: [string, "null"] }
++        delegated_from_task_id: { type: [string, "null"] }
++        delegated_from_agent_id: { type: [string, "null"] }
++        retry_of_task_id: { type: [string, "null"] }
++        attempt: { type: integer, format: int32 }
++        max_attempts: { type: integer, format: int32 }
++        failure_reason: { type: [string, "null"] }
++        input:
++          type: array
++          items:
++            $ref: "#/components/schemas/TaskInput"
++        created_at: { type: string, format: date-time }
++        started_at: { type: [string, "null"], format: date-time }
++        completed_at: { type: [string, "null"], format: date-time }
++    TaskInput:
++      type: object
++      required: [source, content]
++      properties:
++        source:
++          type: string
++          enum: [chat_message, comment, quick_create, handoff]
++        author_type: { type: string, enum: [member, agent, plugin, system] }
++        author_id: { type: string }
++        content: { type: string }
++        truncated: { type: boolean }
++        created_at: { type: string, format: date-time }
++    TaskMessage:
++      type: object
++      required: [seq, type, created_at]
++      properties:
++        seq: { type: integer, format: int32 }
++        type: { type: string }
++        tool: { type: string }
++        call_id: { type: string }
++        content: { type: string }
++        input: { type: object, additionalProperties: true }
++        output: { type: string }
++        output_truncated:
++          type: boolean
++          description: Whether the recorded tool output was already cut when the daemon reported it; omitted when unknown.
++        truncated:
++          type: boolean
++          description: Whether this response cut content or output at 32 KiB.
++        created_at: { type: string, format: date-time }
++    TaskMessageListResponse:
++      type: object
++      required: [messages]
++      properties:
++        messages:
++          type: array
++          items:
++            $ref: "#/components/schemas/TaskMessage"
++        next_cursor:
++          type: string
++          description: Present when more messages follow; pass it as cursor.
+diff --git a/server/pkg/publicapi/v1/routes.go b/server/pkg/publicapi/v1/routes.go
+index f0f39d9..fb92a30 100644
+--- a/server/pkg/publicapi/v1/routes.go
++++ b/server/pkg/publicapi/v1/routes.go
+@@ -16,6 +16,8 @@ const (
+ 	PathIssueComments = "/issues/{issue_ref}/comments"
+ 	PathStorageScope  = "/storage/{scope}"
+ 	PathStorageValue  = "/storage/{scope}/{key}"
++	PathTask          = "/tasks/{task_id}"
++	PathTaskMessages  = "/tasks/{task_id}/messages"
+ )
+ 
+ type ContractKind string
+@@ -60,6 +62,8 @@ var Operations = []Operation{
+ 	{Method: http.MethodPatch, Path: PathIssue, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "issues:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
+ 	{Method: http.MethodGet, Path: PathIssueComments, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "comments:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
+ 	{Method: http.MethodPost, Path: PathIssueComments, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "comments:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
++	{Method: http.MethodGet, Path: PathTask, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "tasks:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
++	{Method: http.MethodGet, Path: PathTaskMessages, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "tasks:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
+ 	{Method: http.MethodGet, Path: PathStorageScope, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
+ 	{Method: http.MethodGet, Path: PathStorageValue, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
+ 	{Method: http.MethodPut, Path: PathStorageValue, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
+diff --git a/server/pkg/publicapi/v1/types.go b/server/pkg/publicapi/v1/types.go
+index 6d24e7b..3de499b 100644
+--- a/server/pkg/publicapi/v1/types.go
++++ b/server/pkg/publicapi/v1/types.go
+@@ -104,3 +104,63 @@ type StorageValueResponse struct {
+ type PutStorageValueRequest struct {
+ 	Value string `json:"value"`
+ }
++
++// Task is one agent run. Kind says what started it, and only the link that
++// kind implies is guaranteed: an issue run has issue_id, a chat run has
++// chat_session_id and chat_user_id, an autopilot run has autopilot_id.
++type Task struct {
++	ID                   string      `json:"id"`
++	WorkspaceID          string      `json:"workspace_id"`
++	AgentID              string      `json:"agent_id"`
++	Kind                 string      `json:"kind"`
++	Status               string      `json:"status"`
++	IssueID              *string     `json:"issue_id"`
++	ChatSessionID        *string     `json:"chat_session_id"`
++	ChatUserID           *string     `json:"chat_user_id"`
++	AutopilotID          *string     `json:"autopilot_id"`
++	AutopilotRunID       *string     `json:"autopilot_run_id"`
++	OriginatorUserID     *string     `json:"originator_user_id"`
++	TriggerCommentID     *string     `json:"trigger_comment_id"`
++	TriggerSummary       *string     `json:"trigger_summary"`
++	DelegatedFromTaskID  *string     `json:"delegated_from_task_id"`
++	DelegatedFromAgentID *string     `json:"delegated_from_agent_id"`
++	RetryOfTaskID        *string     `json:"retry_of_task_id"`
++	Attempt              int32       `json:"attempt"`
++	MaxAttempts          int32       `json:"max_attempts"`
++	FailureReason        *string     `json:"failure_reason"`
++	Input                []TaskInput `json:"input"`
++	CreatedAt            string      `json:"created_at"`
++	StartedAt            *string     `json:"started_at"`
++	CompletedAt          *string     `json:"completed_at"`
++}
++
++// TaskInput is what a person or another agent asked for when the run began:
++// the chat message, the triggering comment, the quick-create prompt or the
++// delegation handoff note. Sources the caller was not granted are omitted.
++type TaskInput struct {
++	Source     string `json:"source"`
++	AuthorType string `json:"author_type,omitempty"`
++	AuthorID   string `json:"author_id,omitempty"`
++	Content    string `json:"content"`
++	Truncated  bool   `json:"truncated,omitempty"`
++	CreatedAt  string `json:"created_at,omitempty"`
++}
++
++// TaskMessage is one transcript entry, in the run's own seq order.
++type TaskMessage struct {
++	Seq             int32          `json:"seq"`
++	Type            string         `json:"type"`
++	Tool            string         `json:"tool,omitempty"`
++	CallID          string         `json:"call_id,omitempty"`
++	Content         string         `json:"content,omitempty"`
++	Input           map[string]any `json:"input,omitempty"`
++	Output          string         `json:"output,omitempty"`
++	OutputTruncated *bool          `json:"output_truncated,omitempty"`
++	Truncated       bool           `json:"truncated,omitempty"`
++	CreatedAt       string         `json:"created_at"`
++}
++
++type TaskMessageListResponse struct {
++	Messages []TaskMessage `json:"messages"`
++	PageInfo
++}

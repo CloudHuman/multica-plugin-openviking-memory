@@ -15,7 +15,19 @@ if (!baseUrl || !key) {
   process.exit(2);
 }
 
-const SKIP = new Set(); // expose the full native surface; own-space confinement is structural
+// add_skill writes to the account-shared viking://agent/skills by default; the
+// facade refuses it, so it is not offered as a tool either.
+const SKIP = new Set(['add_skill']);
+const PREFIX = '[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] ';
+
+function capBytes(text, max) {
+  let out = '';
+  for (const ch of text) {
+    if (Buffer.byteLength(out + ch, 'utf8') > max) break;
+    out += ch;
+  }
+  return out;
+}
 const SHORT_TIMEOUT = new Set(['health']);
 
 const client = new OvMcpClient({ baseUrl, key });
@@ -30,7 +42,8 @@ for (const tool of tools) {
   hooks.push({
     key: hookKey,
     name: `OV ${tool.name}`,
-    description: `[OpenViking 原生工具·仅限你自己的公共记忆空间] ${String(tool.description ?? tool.name).slice(0, 900)}`,
+    // multica caps descriptions at 2000 BYTES; cut on a character boundary.
+    description: capBytes(`${PREFIX}${String(tool.description ?? tool.name)}`, 2000),
     input_schema: tool.inputSchema ?? { type: 'object', properties: {} },
     triggers: ['agent'],
     transport: { type: 'http', url: `https://host.docker.internal:8790/hooks/${hookKey}` },

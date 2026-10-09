@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { renameSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { requestDiagnostic, redactError, authorizationSecrets } from './diagnostics.mjs';
 
 /** Short deterministic hex digest used for OV account/user ids. */
 export function shortHash(value, len = 12) {
@@ -63,6 +64,8 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   let res;
+  let text;
+  let phase = 'headers';
   try {
     res = await doFetch(url, {
       method,
@@ -73,14 +76,18 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ac.signal,
     });
+    phase = 'body';
+    text = await res.text();
   } catch (err) {
-    const e = new Error(`request failed: ${method} ${url}: ${err.message}`);
-    e.code = 'NETWORK';
+    const target = new URL(url);
+    const secrets = [...authorizationSecrets(headers), target.username, target.password].filter(Boolean);
+    const e = new Error(`request failed: ${method} ${target.origin}${target.pathname}: ${redactError(err.message, secrets)}`);
+    e.code = ac.signal.aborted ? 'ETIMEDOUT' : 'NETWORK';
+    e.diagnostic = requestDiagnostic(url, { method, headers, response: res, phase });
     throw e;
   } finally {
     clearTimeout(timer);
   }
-  const text = await res.text();
   let json = null;
   if (text) {
     try {
@@ -90,19 +97,24 @@ export async function fetchJson(url, { method = 'GET', headers = {}, body, timeo
     }
   }
   if (!res.ok) {
+    const target = new URL(url);
     const e = new Error(
-      `HTTP ${res.status} ${method} ${url}: ${json?.error?.message ?? text?.slice(0, 300) ?? '(empty)'}`,
+      `HTTP ${res.status} ${method} ${target.origin}${target.pathname}: ${redactError(json?.error?.message ?? text?.slice(0, 300) ?? '(empty)', authorizationSecrets(headers))}`,
     );
     e.status = res.status;
     e.body = json;
     e.code = json?.error?.code ?? String(res.status);
+    e.diagnostic = requestDiagnostic(url, { method, headers, response: res, phase: 'response' });
     throw e;
   }
   return json;
 }
 
-/** Retry with exponential backoff for transient failures (network / 5xx / 429). */
-export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor = 3, jitter = 0.3, shouldRetry } = {}) {
+/**
+ * Retry with exponential backoff for transient failures (network / 5xx / 429).
+ * `deadline` (epoch ms) is the caller's budget: no retry starts after it.
+ */
+export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor = 3, jitter = 0.3, shouldRetry, deadline = Infinity } = {}) {
   let lastErr;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -114,8 +126,30 @@ export async function withRetry(fn, { attempts = 3, baseDelayMs = 1_000, factor 
       const wanted = shouldRetry ? shouldRetry(err) : true;
       if (attempt === attempts || !(transient && wanted)) throw err;
       const delay = baseDelayMs * Math.pow(factor, attempt - 1) * (1 + Math.random() * jitter);
+      if (Date.now() + delay >= deadline) throw err;
       await sleep(Math.min(delay, 60_000));
     }
   }
   throw lastErr;
+}
+
+/** A request's timeout: its usual `capMs`, but never past `deadline` (epoch ms). */
+export const timeLeft = (deadline, capMs) => (Number.isFinite(deadline) ? Math.max(1, Math.min(capMs, deadline - Date.now())) : capMs);
+
+/**
+ * Settles like `promise`, or rejects with code 'deadline' once `deadline`
+ * (epoch ms) has passed, whichever comes first. The work itself goes on;
+ * callers that can abort it also pass the deadline down.
+ */
+export function beforeDeadline(promise, deadline) {
+  if (!Number.isFinite(deadline)) return promise;
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const e = new Error('time budget exhausted');
+      e.code = 'deadline';
+      reject(e);
+    }, Math.max(0, deadline - Date.now()));
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
 }

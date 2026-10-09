@@ -1,0 +1,190 @@
+{
+  "date": "2026-10-01",
+  "branch": "fix/review-hardening",
+  "base_commit": "91d02f1a755a0eb8c8a2ad7e33508d1775f141b6",
+  "tested_worktree_changes": true,
+  "unit_tests": {
+    "tests": 94,
+    "pass": 94,
+    "fail": 0
+  },
+  "models": {
+    "extraction": "z-ai/glm-5.3-flash",
+    "embedding": "qwen/qwen3-embedding-8b",
+    "dimension": 4096,
+    "reranker": "qwen/qwen3-reranker-8b",
+    "live_probes": "passed"
+  },
+  "real_stack": {
+    "model_mode": "real",
+    "flavor": "patched",
+    "run": "muot4s5g",
+    "finished_at": "2026-10-01T00:42:33.913Z",
+    "results": [
+      {
+        "id": "S0",
+        "name": "plugin package published and installed in two workspaces (patched multica)",
+        "ok": true,
+        "detail": "ws1=e45b52e7-c5e0-4e52-89e3-a00132c16798 ws2=0c726b67-beaa-4a5b-b13b-c7ccfae090e6"
+      },
+      {
+        "id": "R1",
+        "name": "member comment → comment.created → archived as human feedback → extracted → searchable",
+        "ok": true,
+        "detail": "author=member scope=task memories=1"
+      },
+      {
+        "id": "R2a",
+        "name": "in-run memory-recall finds the issue's collaboration memory (bound to the calling run)",
+        "ok": true,
+        "detail": "bound=true kind=issue entries=1 "
+      },
+      {
+        "id": "R2b",
+        "name": "memory-remember writes the agent's public memory, and a repeat is idempotent",
+        "ok": true,
+        "detail": "first=remembered second=already_remembered"
+      },
+      {
+        "id": "R2b-recall",
+        "name": "memory-remember → background index → in-run memory-recall returns the exact file and original five-dimension template",
+        "ok": true,
+        "detail": "scope=agent original content preserved"
+      },
+      {
+        "id": "R2c",
+        "name": "task.completed → run transcript read from the task API → archived complete → extracted → searchable",
+        "ok": true,
+        "detail": "accepted kind=issue completeness=complete memories=1"
+      },
+      {
+        "id": "R2d",
+        "name": "the run's closing agent comment is not archived a second time (the run archive covers it)",
+        "ok": true,
+        "detail": "agent comment covered by its run archive"
+      },
+      {
+        "id": "R3a",
+        "name": "6 chat runs later, memory-archive still receives events (breaker closed)",
+        "ok": true,
+        "detail": "chat outcomes: accepted"
+      },
+      {
+        "id": "R3b",
+        "name": "chat runs preserve attributed member input and retrievable preferences in the private agent×member scope",
+        "ok": true,
+        "detail": "scopes=dm member peer_id=true dm memories=2"
+      },
+      {
+        "id": "R4",
+        "name": "ov-* facade: shared namespaces and other agents' spaces are refused, the own space works",
+        "ok": true,
+        "detail": "A→resources=outside_own_space A→own=ok B→A's space=outside_own_space B list=ok"
+      },
+      {
+        "id": "R5",
+        "name": "memory-recall is bound to the calling run: another issue named by the model is not searched",
+        "ok": true,
+        "detail": "bound=true searched X=false notes=[\"issue_id OVA-1 不属于当前运行;召回范围保持为当前运行\"]"
+      },
+      {
+        "id": "R6",
+        "name": "tenant isolation: workspace 2 sees none of workspace 1, and its secret cannot reach workspace 1",
+        "ok": true,
+        "detail": "ws2 status mentions ws1=false forged=403 impersonated=401 inst2 bound via=context"
+      }
+    ]
+  },
+  "quality": {
+    "passed": 8,
+    "total": 8,
+    "recall_median_ms": 3383.0,
+    "recall_max_ms": 4091,
+    "cases": [
+      {
+        "name": "business conclusion and cost",
+        "query": "消息中间件最终选择了什么？每月预计费用是多少？",
+        "elapsedMs": 3680,
+        "entries": 1,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 0.996
+      },
+      {
+        "name": "numeric requirement",
+        "query": "死信队列的积压达到多少条需要触发告警？",
+        "elapsedMs": 2795,
+        "entries": 1,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 0.996
+      },
+      {
+        "name": "migration detail",
+        "query": "灰度迁移应该双写多久？",
+        "elapsedMs": 2595,
+        "entries": 2,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 0.988
+      },
+      {
+        "name": "actively remembered convention",
+        "query": "中间件选型比较需要考虑哪五个维度？",
+        "elapsedMs": 3292,
+        "entries": 2,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 1
+      },
+      {
+        "name": "private-chat preference",
+        "query": "用户要求代码注释用哪种语言？",
+        "elapsedMs": 4018,
+        "entries": 1,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 0.996
+      },
+      {
+        "name": "repeated private-chat preference",
+        "query": "接口应该采用哪种命名方式？",
+        "elapsedMs": 3474,
+        "entries": 1,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": 1
+      },
+      {
+        "name": "unrelated query",
+        "query": "办公室养的金鱼叫什么名字？",
+        "elapsedMs": 4091,
+        "entries": 0,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": null
+      },
+      {
+        "name": "missing decision",
+        "query": "生产数据库应该选 PostgreSQL 还是 MySQL？最终决定是什么？",
+        "elapsedMs": 3011,
+        "entries": 0,
+        "timedOutScopes": 0,
+        "passed": true,
+        "topScore": null
+      }
+    ]
+  },
+  "stock_contract": {
+    "status": "passed",
+    "model_mode": "real",
+    "multica": "simulated stock contract",
+    "passed": 14,
+    "total": 14
+  },
+  "limitations": [
+    "Small fixture sample, not production recall accuracy.",
+    "No long-running load test.",
+    "Six observed model 401 failures recovered through redrive; root cause not established."
+  ]
+}

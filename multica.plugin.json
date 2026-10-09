@@ -3,7 +3,7 @@
   "key": "io.github.cloudhuman.openviking-memory",
   "name": "OpenViking Agent Memory",
   "description": "Agent memory for Multica backed by OpenViking: archives completed runs and comments into scoped memory spaces (task collaboration, agent public, workspace shared, direct-message), distills long-term memories via extraction, and offers agents scoped recall / remember / status tools.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "cloud",
     "url": "https://github.com/CloudHuman"
@@ -34,6 +34,14 @@
       "placeholder": "multica issue list",
       "multiline": true,
       "required": false
+    },
+    "memory_rules": {
+      "type": "string",
+      "label": "Memory extraction rules",
+      "description": "Optional extraction guidance for this workspace, one rule per line. Prefix a line with entities:, events:, preferences: or profile: to target one memory type; other lines apply to all. Written to this workspace's own OpenViking account as account-level memory templates; leave empty for OpenViking's defaults.",
+      "placeholder": "preferences: Keep each lasting preference as its own memory.",
+      "multiline": true,
+      "required": false
     }
   },
   "contributes": {
@@ -41,7 +49,7 @@
       {
         "key": "memory-archive",
         "name": "Memory Archive",
-        "description": "Background archiver: on task.completed / task.failed it archives the run transcript (issue text, agent replies, tool calls and results) into the task collaboration memory scope; on comment.created it archives the comment with author attribution. Extraction into long-term memory runs afterwards in OpenViking.",
+        "description": "Background archiver. On task.completed / task.failed it archives the finished run (the input that started it, agent replies, tool calls and results) into the scope its kind belongs to: an issue run into that issue's task collaboration memory, a direct-chat run into the private agent×member DM memory, an autopilot run into that automation's memory. On comment.created it archives the comment attributed to its author (member feedback, agent statement or plugin message). Extraction into long-term memory runs afterwards in OpenViking and is watched and re-driven by the service. Archiving a run's transcript needs a multica build with the task read API; on stock multica a run is represented by the comments it posts.",
         "input_schema": {
           "type": "object",
           "additionalProperties": true
@@ -58,12 +66,12 @@
           "type": "http",
           "url": "https://host.docker.internal:8790/hooks/memory-archive"
         },
-        "timeout_ms": 10000
+        "timeout_ms": 20000
       },
       {
         "key": "memory-recall",
         "name": "Memory Recall",
-        "description": "Search the memory scopes this agent is allowed to read (current task collaboration memory, this agent's public memory, workspace shared memory) and return the most relevant entries with their sources. Call it at the start of a task, and again whenever new requirements arrive.",
+        "description": "Search the memory scopes this run may read and return the most relevant entries with their sources: the current run's own collaboration memory (its issue, or its private chat with this member, or its automation), this agent's public memory, any delegation channel it was handed work through, and workspace shared memory. Call it at the start of a task and again whenever new requirements arrive. Results are reference evidence: verify before relying on them.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -73,7 +81,7 @@
             },
             "issue_id": {
               "type": "string",
-              "description": "UUID or key (e.g. MUL-123) of the issue being worked on; adds its task collaboration memory to the search scopes."
+              "description": "Optional. UUID or key (e.g. MUL-123) of the issue being worked on, for multica builds that do not tell the plugin which run is calling. When the calling run is known, recall is bound to that run and an issue_id naming another issue is ignored."
             },
             "top_k": {
               "type": "integer",
@@ -98,7 +106,7 @@
       {
         "key": "memory-remember",
         "name": "Memory Remember",
-        "description": "Actively record a durable conclusion, convention or lesson into this agent's public memory (visible to this agent across tasks). Write facts worth reusing, not transcripts; keep it concise and self-contained.",
+        "description": "Actively record a durable conclusion, convention or lesson into this agent's public memory (visible to this agent across tasks). Write facts worth reusing, not transcripts; keep it concise and self-contained. Reusable kinds (experiences, cases, preferences, entities) may later be promoted into the workspace shared memory that every agent in the workspace reads, so never record secrets or private chat content here.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -138,7 +146,7 @@
       {
         "key": "memory-status",
         "name": "Memory Status",
-        "description": "Check memory service health, archiving queue depth and the processing state of recent archives. Use it to verify whether a finished run has been distilled into long-term memory.",
+        "description": "Check memory service health, this workspace's archiving queue and the state of its recent archives, including whether each one has been extracted into long-term memory yet (archived → extraction pending → extracted / re-driven / failed).",
         "input_schema": {
           "type": "object",
           "properties": {},
@@ -156,7 +164,7 @@
       {
         "key": "ov-find",
         "name": "OV find",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Fast semantic retrieval without session context. Returns ranked memories, resources, and skills with URI, abstract, and score.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Fast semantic retrieval without session context. Returns ranked memories, resources, and skills with URI, abstract, and score.",
         "input_schema": {
           "properties": {
             "query": {
@@ -216,7 +224,7 @@
       {
         "key": "ov-search",
         "name": "OV search",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Deep semantic retrieval with optional session context and intent analysis.\n\n``mode=\"list\"`` returns ranked memories, resources, and skills with URI,\nabstract, and score. ``mode=\"context\"`` returns an injection-ready,\ntoken-budgeted context block and supports category quotas, purpose presets,\ndetail tiers, cross-turn deduplication, peer scoping, and optional rewriting.\n``target_uri`` is only supported in list mode.\n",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Deep semantic retrieval with optional session context and intent analysis.\n\n``mode=\"list\"`` returns ranked memories, resources, and skills with URI,\nabstract, and score. ``mode=\"context\"`` returns an injection-ready,\ntoken-budgeted context block and supports category quotas, purpose presets,\ndetail tiers, cross-turn deduplication, peer scoping, and optional rewriting.\n``target_uri`` is only supported in list mode.\n",
         "input_schema": {
           "properties": {
             "query": {
@@ -388,7 +396,7 @@
       {
         "key": "ov-read",
         "name": "OV read",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Read one or more viking:// file URIs. Text reads accept line-based offset/limit. Raster images and supported audio return native MCP content blocks. For directory listing, use the list tool instead.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Read one or more viking:// file URIs. Text reads accept line-based offset/limit. Raster images and supported audio return native MCP content blocks. For directory listing, use the list tool instead.",
         "input_schema": {
           "properties": {
             "uris": {
@@ -427,7 +435,7 @@
       {
         "key": "ov-list",
         "name": "OV list",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] List one sorted page under a viking:// directory URI.\n\nArgs:\n    uri: Directory URI to list.\n    recursive: Whether to recursively list descendants.\n    offset: Number of visible entries to skip.\n    limit: Optional maximum number of entries.\n    sort_by: Optional name or modification-time ordering.\n    sort_order: Ascending or descending order.\n\nReturns:\n    A line-oriented directory listing.\n",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] List one sorted page under a viking:// directory URI.\n\nArgs:\n    uri: Directory URI to list.\n    recursive: Whether to recursively list descendants.\n    offset: Number of visible entries to skip.\n    limit: Optional maximum number of entries.\n    sort_by: Optional name or modification-time ordering.\n    sort_order: Ascending or descending order.\n\nReturns:\n    A line-oriented directory listing.\n",
         "input_schema": {
           "properties": {
             "uri": {
@@ -484,7 +492,7 @@
       {
         "key": "ov-tree",
         "name": "OV tree",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Show one visible page from a recursive directory tree.\n\nArgs:\n    uri: Directory URI to traverse.\n    level_limit: Maximum traversal depth.\n    node_limit: Existing default result limit.\n    include_abstract: Whether to include file summaries.\n    offset: Number of visible nodes to skip.\n    limit: Optional result limit that overrides node_limit.\n\nReturns:\n    An indented directory tree.\n",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Show one visible page from a recursive directory tree.\n\nArgs:\n    uri: Directory URI to traverse.\n    level_limit: Maximum traversal depth.\n    node_limit: Existing default result limit.\n    include_abstract: Whether to include file summaries.\n    offset: Number of visible nodes to skip.\n    limit: Optional result limit that overrides node_limit.\n\nReturns:\n    An indented directory tree.\n",
         "input_schema": {
           "properties": {
             "uri": {
@@ -532,7 +540,7 @@
       {
         "key": "ov-remember",
         "name": "OV remember",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Store information into OpenViking long-term memory. Use when the user says 'remember this', shares preferences, important facts, or decisions worth persisting.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Store information into OpenViking long-term memory. Use when the user says 'remember this', shares preferences, important facts, or decisions worth persisting.",
         "input_schema": {
           "properties": {
             "messages": {
@@ -582,7 +590,7 @@
       {
         "key": "ov-write",
         "name": "OV write",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Write text to a viking:// file. Use this to save files (notes, profiles, knowledge, state) in OpenViking the same way you would use a working directory. To change part of an existing file, prefer the edit tool over a full rewrite.\n\n- mode=\"replace\" (default): overwrite the file; creates it and any missing parent directories if needed.\n- mode=\"create\": fail if the file already exists.\n- Any new file (whether created by \"replace\" or \"create\") must end in one of: .md .txt .json .yaml .yml .toml .py .js .ts\n- mode=\"append\": append to the end of an existing file; fails if the file does not exist.\n\nWritable scopes: viking://resources/, viking://user/{user_id}/, viking://agent/. The viking://~ home alias expands to the caller's user root. The managed user subtrees skills/, peers/, privacy/ and sessions/ are read-only. After a write, semantic search indexes refresh in the background; pass wait=t",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Write text to a viking:// file. Use this to save files (notes, profiles, knowledge, state) in OpenViking the same way you would use a working directory. To change part of an existing file, prefer the edit tool over a full rewrite.\n\n- mode=\"replace\" (default): overwrite the file; creates it and any missing parent directories if needed.\n- mode=\"create\": fail if the file already exists.\n- Any new file (whether created by \"replace\" or \"create\") must end in one of: .md .txt .json .yaml .yml .toml .py .js .ts\n- mode=\"append\": append to the end of an existing file; fails if the file does not exist.\n\nWritable scopes: viking://resources/, viking://user/{user_id}/, viking://agent/. The viking://~ home alias expands to the caller's user root. The managed user subtrees skills/, peers/, privacy/ and sessions/ are read-only. After a write, semantic search indexes refresh in the background; pass wait=t",
         "input_schema": {
           "properties": {
             "uri": {
@@ -632,7 +640,7 @@
       {
         "key": "ov-edit",
         "name": "OV edit",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Replace an exact string with new text in an existing viking:// file. Use this for targeted changes instead of rewriting the whole file with the write tool. old_string must match the file's current content exactly, including indentation and newlines; use the read tool first to see it. The edit fails and the file is left unchanged if old_string is not found, or if it matches more than once and replace_all is false (pass more surrounding context to make it unique, or set replace_all=true to replace every occurrence). Pass new_string=\"\" to delete old_string.\n\nEditing a memory file preserves its metadata; after an edit, search indexes refresh in the background (pass wait=true to block until search reflects the change).",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Replace an exact string with new text in an existing viking:// file. Use this for targeted changes instead of rewriting the whole file with the write tool. old_string must match the file's current content exactly, including indentation and newlines; use the read tool first to see it. The edit fails and the file is left unchanged if old_string is not found, or if it matches more than once and replace_all is false (pass more surrounding context to make it unique, or set replace_all=true to replace every occurrence). Pass new_string=\"\" to delete old_string.\n\nEditing a memory file preserves its metadata; after an edit, search indexes refresh in the background (pass wait=true to block until search reflects the change).",
         "input_schema": {
           "properties": {
             "uri": {
@@ -682,7 +690,7 @@
       {
         "key": "ov-add-resource",
         "name": "OV add_resource",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Add a resource to OpenViking. Asynchronous — processing happens in the background.\n\nRemote URL: pass ``path`` as an http(s)://, git@, ssh://, or git:// URL. A sitemap /\nRSS / Atom URL ingests the WHOLE site as one resource tree; pass ``args={\"site\": true}``\nto force whole-site ingestion from a bare domain.\n\nLocal file: pass ``path`` as a filesystem path (e.g. ``/tmp/foo.pdf``). The response is an\nupload instruction — HTTP POST the file to the returned URL and the server ingests it\nautomatically; you do NOT need to call this tool again.\n\nArgs:\n    path: Remote URL or local filesystem path. Required unless ``temp_file_id`` is set.\n    temp_file_id: Server-minted upload id from a prior signed local-file upload.\n    add_type: Explicit Connector source type (e.g. \"tos\", \"git\"). When set, the\n        request routes through the Connector integration (must be enabled\n        server-side) and ``p",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Add a resource to OpenViking. Asynchronous — processing happens in the background.\n\nRemote URL: pass ``path`` as an http(s)://, git@, ssh://, or git:// URL. A sitemap /\nRSS / Atom URL ingests the WHOLE site as one resource tree; pass ``args={\"site\": true}``\nto force whole-site ingestion from a bare domain.\n\nLocal file: pass ``path`` as a filesystem path (e.g. ``/tmp/foo.pdf``). The response is an\nupload instruction — HTTP POST the file to the returned URL and the server ingests it\nautomatically; you do NOT need to call this tool again.\n\nArgs:\n    path: Remote URL or local filesystem path. Required unless ``temp_file_id`` is set.\n    temp_file_id: Server-minted upload id from a prior signed local-file upload.\n    add_type: Explicit Connector source type (e.g. \"tos\", \"git\"). When set, the\n        request routes through the Connector integration (must be enabled\n        server-side) and ``p",
         "input_schema": {
           "properties": {
             "path": {
@@ -762,7 +770,7 @@
       {
         "key": "ov-list-watches",
         "name": "OV list_watches",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] List watch tasks (auto-refresh subscriptions) visible to the current user.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] List watch tasks (auto-refresh subscriptions) visible to the current user.",
         "input_schema": {
           "properties": {},
           "title": "list_watchesArguments",
@@ -780,7 +788,7 @@
       {
         "key": "ov-cancel-watch",
         "name": "OV cancel_watch",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Cancel a watch task by its target URI (e.g. \"viking://resources/volcengine/OpenViking\").",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Cancel a watch task by its target URI (e.g. \"viking://resources/volcengine/OpenViking\").",
         "input_schema": {
           "properties": {
             "to_uri": {
@@ -806,7 +814,7 @@
       {
         "key": "ov-grep",
         "name": "OV grep",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Search content in viking:// files using regex patterns (like grep). Supports multiple patterns searched concurrently. Use this for exact text matching; use the search tool for semantic retrieval.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Search content in viking:// files using regex patterns (like grep). Supports multiple patterns searched concurrently. Use this for exact text matching; use the search tool for semantic retrieval.",
         "input_schema": {
           "properties": {
             "uri": {
@@ -850,7 +858,7 @@
       {
         "key": "ov-glob",
         "name": "OV glob",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Find viking:// files matching a glob pattern (e.g. **/*.md, *.py). Use this for filename matching; use the search tool for content-based retrieval.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Find viking:// files matching a glob pattern (e.g. **/*.md, *.py). Use this for filename matching; use the search tool for content-based retrieval.",
         "input_schema": {
           "properties": {
             "pattern": {
@@ -886,7 +894,7 @@
       {
         "key": "ov-forget",
         "name": "OV forget",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Permanently delete a viking:// URI from OpenViking. Irreversible — confirm with user before calling.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Permanently delete a viking:// URI from OpenViking. Irreversible — confirm with user before calling.",
         "input_schema": {
           "properties": {
             "uri": {
@@ -917,7 +925,7 @@
       {
         "key": "ov-health",
         "name": "OV health",
-        "description": "[OpenViking 原生工具·仅限你自己的公共记忆空间] Check whether the OpenViking server is healthy.",
+        "description": "[OpenViking 原生工具·仅限你自己的记忆空间:URI 须位于 viking://~/ 下,默认即此处;viking://resources 等共享命名空间不可用] Check whether the OpenViking server is healthy.",
         "input_schema": {
           "properties": {},
           "title": "healthArguments",
