@@ -46,15 +46,41 @@ function stripRuntimeBriefValue(value) {
 // carries the agent's instructions, its own system prompt, which is never
 // archived: in the 10-08 matrix it brought the platform canary into a run
 // archive. The value is replaced and the rest of the record kept; a value cut
-// off by a size limit is replaced up to where it ends.
+// off by a size limit is replaced up to where it ends. Only agent records:
+// the output of a `multica agent …` call, a record under an `agent`/`agents`
+// key, or one with a `runtime_id`. Business JSON with an "instructions" field
+// (a recipe, a form, an API spec) is archived as written.
 const AGENT_INSTRUCTIONS = /("instructions"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|$)/g;
 export const INSTRUCTIONS_OMITTED = '[智能体指令已省略]';
+export const AGENT_COMMAND = /\bmultica\s+agents?\b/i;
+const AGENT_KEYS = new Set(['agent', 'agents']);
+const agentRecord = (value, parentKey) => AGENT_KEYS.has(parentKey) || Object.hasOwn(value, 'runtime_id');
 
-export function withoutAgentInstructions(value) {
-  if (typeof value === 'string') return value.replace(AGENT_INSTRUCTIONS, `$1"${INSTRUCTIONS_OMITTED}"`);
-  if (Array.isArray(value)) return value.map(withoutAgentInstructions);
+function hasAgentRecord(value, parentKey = '') {
+  if (Array.isArray(value)) return value.some((item) => hasAgentRecord(item, parentKey));
+  if (!value || typeof value !== 'object') return false;
+  if (typeof value.instructions === 'string' && agentRecord(value, parentKey)) return true;
+  return Object.entries(value).some(([key, item]) => hasAgentRecord(item, key));
+}
+
+export function withoutAgentInstructions(value, { agentOutput = false, parentKey = '' } = {}) {
+  if (typeof value === 'string') {
+    let doc;
+    try { doc = JSON.parse(value); } catch { doc = undefined; }
+    // A JSON document encoded once more as a JSON string.
+    if (typeof doc === 'string') {
+      const inner = withoutAgentInstructions(doc, { agentOutput });
+      return inner === doc ? value : JSON.stringify(inner);
+    }
+    const cutAgentRecord = doc === undefined && /"runtime_id"\s*:/.test(value);
+    if (!agentOutput && !hasAgentRecord(doc) && !cutAgentRecord) return value;
+    return value.replace(AGENT_INSTRUCTIONS, `$1"${INSTRUCTIONS_OMITTED}"`);
+  }
+  if (Array.isArray(value)) return value.map((item) => withoutAgentInstructions(item, { agentOutput, parentKey }));
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, key === 'instructions' && typeof item === 'string' ? INSTRUCTIONS_OMITTED : withoutAgentInstructions(item)]));
+    const isAgent = agentOutput || agentRecord(value, parentKey);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
+      key === 'instructions' && typeof item === 'string' && isAgent ? INSTRUCTIONS_OMITTED : withoutAgentInstructions(item, { agentOutput, parentKey: key })]));
   }
   return value;
 }
@@ -190,6 +216,9 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
   const droppedCalls = new Set(
     ordered.filter((m) => m.type === 'tool_use' && drop(m.tool, m.input)).map((m) => m.call_id).filter(Boolean),
   );
+  const agentCalls = new Set(
+    ordered.filter((m) => m.type === 'tool_use' && AGENT_COMMAND.test(toolInputToText(m.input))).map((m) => m.call_id).filter(Boolean),
+  );
   let dropped = 0;
   let evidence = 0;
   for (const m of ordered) {
@@ -249,7 +278,7 @@ export function buildRunMessages({ taskId, agentId, kind = 'issue', issue, task,
       }
       case 'tool_result': {
         if (droppedCalls.has(m.call_id) || drop(m.tool, m.output)) { dropped++; continue; }
-        const clean = withoutAgentInstructions(stripRuntimeBriefValue(m.output));
+        const clean = withoutAgentInstructions(stripRuntimeBriefValue(m.output), { agentOutput: agentCalls.has(m.call_id) });
         const output = clean && typeof clean === 'object' ? JSON.stringify(clean) : clean;
         messages.push({
           role: 'user',

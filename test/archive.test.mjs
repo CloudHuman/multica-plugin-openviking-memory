@@ -96,7 +96,8 @@ test('an agent record listed by a tool is archived without the agent\'s instruct
       { seq: 1, type: 'tool_use', tool: 'bash', call_id: 'c', input: { command: 'multica agent list --output json' } },
       { seq: 2, type: 'tool_result', tool: 'bash', call_id: 'c', output: listed },
       { seq: 3, type: 'tool_result', tool: 'bash', call_id: 'd', output: { agent: { name: 'Reviewer', instructions: 'PLATFORM_ONLY_CANARY' } } },
-      { seq: 4, type: 'tool_result', tool: 'bash', call_id: 'e', output: `${listed.slice(0, listed.indexOf('PLATFORM_ONLY'))}PLATFORM_ONLY_CAN` },
+      { seq: 4, type: 'tool_use', tool: 'bash', call_id: 'e', input: { command: 'multica agent get a1 --output json' } },
+      { seq: 5, type: 'tool_result', tool: 'bash', call_id: 'e', output: `${listed.slice(0, listed.indexOf('PLATFORM_ONLY'))}PLATFORM_ONLY_CAN` },
     ], cfg,
   });
   const outputs = messages.filter(m => m.message_kind === 'tool_transport').map(m => m.parts[0].tool_output);
@@ -108,6 +109,25 @@ test('an agent record listed by a tool is archived without the agent\'s instruct
   assert.match(outputs[0], /"name": "Real memory auditor"/, 'the rest of the record stays');
   assert.match(outputs[0], /"status": "idle"/);
   assert.match(outputs[1], /"name":"Reviewer"/);
+});
+
+test('business JSON with an instructions field is archived as written; agent records double-encoded are not', () => {
+  const recipe = JSON.stringify({ name: '番茄炒蛋', instructions: '先炒蛋，再下番茄，最后加盐。' });
+  const agents = JSON.stringify([{ id: 'a1', name: 'Reviewer', runtime_id: 'rt-1', instructions: 'PLATFORM_ONLY_CANARY' }]);
+  const { messages } = buildRunMessages({
+    taskId: 'business-json', agentId: 'a1', issue: fixtureIssue(),
+    transcript: [
+      { seq: 1, type: 'tool_use', tool: 'bash', call_id: 'r', input: { command: 'cat recipe.json' } },
+      { seq: 2, type: 'tool_result', tool: 'bash', call_id: 'r', output: recipe },
+      { seq: 3, type: 'tool_result', tool: 'read', call_id: 'f', output: { form: { instructions: '请用黑色墨水填写。' } } },
+      { seq: 4, type: 'tool_result', tool: 'bash', call_id: 'g', output: JSON.stringify(agents) },
+    ], cfg,
+  });
+  const outputs = messages.filter(m => m.message_kind === 'tool_transport').map(m => m.parts[0].tool_output);
+  assert.equal(outputs[0], recipe);
+  assert.match(outputs[1], /请用黑色墨水填写/);
+  assert.doesNotMatch(outputs[2], /PLATFORM_ONLY_CANARY/, 'a runtime_id marks an agent record, at any encoding depth');
+  assert.match(JSON.parse(outputs[2]), /"name":"Reviewer"/);
 });
 
 test('agent comments and chat replies filter runtime instructions without changing member messages', () => {
