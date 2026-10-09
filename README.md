@@ -82,6 +82,8 @@
 
 按“能做什么”和“验证到哪一层”梳理当前状态。分支 `fix/review-hardening`，版本 0.3.0，OpenViking 0.4.22。
 
+交互版见 [`docs/overview.html`](docs/overview.html)，包括架构图、可按领域筛选的能力矩阵和各轮对比图表。GitHub 上只显示源码，需要下载后用浏览器打开。
+
 **关键数字**
 
 - **记忆范围**：功能规格的七类范围都已实现，每类都有真实智能体样例。
@@ -354,6 +356,7 @@ multica 以新 invocation_id 重投同一条记录时，插件返回 `duplicate`
 multica.plugin.json       插件清单（4 编排钩子 + 15 ov-* 门面 + skill）
 skills/openviking-memory/  智能体记忆使用规范（随 zip 安装）
 docs/diagrams/            README 架构图（SVG 源）
+docs/overview.html        项目全景页（浏览器打开）
 src/                      config · hmac · installations 安装绑定 · multica/ov 客户端
                           scopes 范围引擎 · recall · archive · pipeline · queue · ledger
                           extraction-watch 抽取监视 · state-lock 租约

@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenViking 记忆插件全景</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field ledger. Summary figures first, then the mechanism, then the
+   capability × verification matrix as the centrepiece, evidence, open items. */
+:root {
+  --bg: #f2f5f6;
+  --surface: #fbfcfc;
+  --ink: #0f1b22;
+  --ink-2: #3c4a52;
+  --muted: #66747c;
+  --line: #dde4e7;
+  --line-strong: #c3ced3;
+  --accent: #0b6e78;
+  --accent-soft: #dcedef;
+  --series-a: #2a78d6;
+  --series-b: #eb6834;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --good-ink: #006300;
+  --critical-ink: #b42525;
+  --chip: #e8edef;
+  --font-display: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --font-body: "Noto Sans SC", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: 2.125rem;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1215; --surface: #141a1e; --ink: #e8eef1; --ink-2: #c2cdd3; --muted: #8b989f;
+    --line: #243037; --line-strong: #33424a; --accent: #4fb3bd; --accent-soft: #14302f;
+    --series-a: #3987e5; --series-b: #d95926; --good-ink: #0ca30c; --critical-ink: #ec6b6b; --chip: #1c252a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1215; --surface: #141a1e; --ink: #e8eef1; --ink-2: #c2cdd3; --muted: #8b989f;
+  --line: #243037; --line-strong: #33424a; --accent: #4fb3bd; --accent-soft: #14302f;
+  --series-a: #3987e5; --series-b: #d95926; --good-ink: #0ca30c; --critical-ink: #ec6b6b; --chip: #1c252a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: var(--step-0); line-height: 1.7; }
+.page { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 56px; }
+@media (max-width: 520px) { .page { padding-inline: 16px; padding-block: 28px 56px; gap: 44px; } }
+h1, h2 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; margin: 0; letter-spacing: 0.01em; }
+h1 { font-size: var(--step-3); line-height: 1.25; }
+h2 { font-size: var(--step-2); line-height: 1.3; }
+h3 { font-size: var(--step-1); margin: 0; font-weight: 700; }
+p { margin: 0; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.eyebrow { font-size: var(--step--1); letter-spacing: 0.08em; color: var(--muted); font-weight: 500; }
+.lede { color: var(--ink-2); max-width: 68ch; }
+section { display: grid; gap: 20px; min-width: 0; }
+.section-head { display: grid; gap: 6px; }
+.section-head p { color: var(--ink-2); max-width: 70ch; }
+
+/* Header */
+header.top { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: var(--step--1); }
+.meta span { display: inline-flex; gap: 6px; align-items: baseline; }
+.meta b { color: var(--ink-2); font-weight: 500; }
+
+/* KPI tiles */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.kpi .label { font-size: var(--step--1); color: var(--muted); }
+.kpi .value { font-size: 1.875rem; font-weight: 700; line-height: 1.2; }
+.kpi .value small { font-size: 0.95rem; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.kpi .note { font-size: var(--step--1); color: var(--ink-2); }
+
+/* Figures */
+figure { margin: 0; display: grid; gap: 12px; min-width: 0; }
+figcaption { color: var(--ink-2); font-size: var(--step--1); max-width: 80ch; }
+.diagram-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.diagram-wrap svg { display: block; min-width: 860px; width: 100%; height: auto; color: var(--ink); }
+.dg-box { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+.dg-panel { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+.dg-chip { fill: var(--chip); stroke: none; }
+.dg-chip-new { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.dg-title { font: 700 14px var(--font-body); fill: currentColor; }
+.dg-sub { font: 400 11.5px var(--font-body); fill: var(--muted); }
+.dg-text { font: 400 12px var(--font-body); fill: currentColor; }
+.dg-label { font: 500 11.5px var(--font-body); fill: var(--ink-2); }
+.dg-num { font: 700 11px var(--font-mono); fill: var(--surface); }
+.dg-numdot { fill: var(--accent); }
+.dg-arrow { stroke: var(--ink-2); stroke-width: 1.4; fill: none; }
+.dg-ah { fill: var(--ink-2); }
+.dg-ah-accent { fill: var(--accent); }
+.dg-arrow-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+.dg-deny { stroke: var(--critical); stroke-width: 1.4; fill: none; }
+.dg-deny-text { font: 700 11px var(--font-mono); fill: var(--critical-ink); }
+.key-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 24px; font-size: var(--step--1); color: var(--ink-2); }
+.key-list li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; }
+.num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--surface); font: 700 11px var(--font-mono); margin-top: 2px; }
+
+/* Lifecycle */
+.flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; counter-reset: step; }
+.flow li { counter-increment: step; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px; align-content: start; min-width: 0; }
+.flow li::before { content: counter(step, decimal-leading-zero); font: 500 11px var(--font-mono); color: var(--accent); }
+.flow li b { font-weight: 700; font-size: var(--step-0); }
+.flow li span { font-size: var(--step--1); color: var(--ink-2); }
+.states { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: var(--step--1); color: var(--ink-2); }
+.state { border: 1px solid var(--line-strong); border-radius: 999px; padding: 1px 10px; background: var(--surface); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+table { border-collapse: collapse; width: 100%; font-size: var(--step--1); }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 700; color: var(--ink-2); background: var(--bg); position: sticky; top: 0; }
+tbody tr:last-child td { border-bottom: 0; }
+td .sub { display: block; color: var(--muted); }
+.num-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scope-table td:first-child { font-weight: 700; white-space: nowrap; }
+.scope-table, .runs { min-width: 680px; }
+.matrix { min-width: 700px; }
+.uri { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-2); word-break: break-all; }
+
+/* Verification glyphs */
+.g { display: inline-block; width: 13px; height: 13px; border-radius: 50%; vertical-align: -1px; flex: none; }
+.g-pass { background: var(--accent); }
+.g-part { background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.g-none { box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.g-no { width: 13px; height: 13px; border-radius: 0; background: none; position: relative; }
+.g-no::before, .g-no::after { content: ""; position: absolute; left: 6px; top: -1px; width: 1.8px; height: 15px; background: var(--critical); border-radius: 1px; }
+.g-no::before { transform: rotate(45deg); } .g-no::after { transform: rotate(-45deg); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--step--1); color: var(--ink-2); align-items: center; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Coverage meters */
+.coverage { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.meter { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+.meter-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.meter-head b { font-size: var(--step-0); }
+.meter-head span { font-size: 1.25rem; font-weight: 700; }
+.meter-head span small { font-size: var(--step--1); color: var(--muted); font-weight: 500; }
+.meter p { font-size: var(--step--1); color: var(--muted); }
+.track { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; display: flex; gap: 2px; }
+.track i { display: block; height: 100%; background: var(--accent); }
+.track i.part { background: color-mix(in srgb, var(--accent) 45%, var(--accent-soft)); }
+
+/* Filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters button { font: inherit; font-size: var(--step--1); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.filters button:hover { border-color: var(--accent); }
+button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Matrix */
+.matrix th.lvl, .matrix td.lvl { text-align: center; width: 92px; }
+.matrix th.lvl small { display: block; font-weight: 400; color: var(--muted); font-size: 0.72rem; line-height: 1.35; }
+.matrix td.cap b { font-size: var(--step-0); }
+.matrix td.cap .tag { font: 500 0.7rem var(--font-body); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 2px; white-space: nowrap; }
+.matrix td.cap .ev { display: block; color: var(--muted); margin-top: 2px; }
+.matrix tr.area td { background: var(--bg); font-weight: 700; color: var(--ink-2); padding-block: 6px; letter-spacing: 0.04em; }
+.matrix td.lvl span.g { cursor: default; }
+
+/* Chart */
+.chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 12px; display: grid; gap: 12px; min-width: 0; }
+.chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: center; }
+.chart-head .legend .sw, .round-side .legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.toggle { font: inherit; font-size: var(--step--1); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+#cmp-chart svg { display: block; width: 100%; height: auto; }
+.ax { font: 400 11px var(--font-body); fill: var(--muted); }
+.row-label { font: 500 12.5px var(--font-body); fill: var(--ink); }
+.val-label { font: 500 11.5px var(--font-body); fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.grid-line { stroke: var(--line); stroke-width: 1; }
+.base-line { stroke: var(--line-strong); stroke-width: 1; }
+.bar-a { fill: var(--series-a); }
+.bar-b { fill: var(--series-b); }
+.bar-hit { fill: transparent; cursor: default; }
+.bar-hit:hover + .bar-mark, .bar-hit:focus + .bar-mark { opacity: 0.8; }
+.tooltip { position: fixed; z-index: 10; pointer-events: none; background: var(--ink); color: var(--surface); border-radius: 6px; padding: 6px 10px; font-size: var(--step--1); line-height: 1.5; max-width: 300px; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
+.tooltip strong { font-size: var(--step-0); display: block; }
+.side-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.note-card { border-left: 3px solid var(--line-strong); padding: 4px 0 4px 12px; font-size: var(--step--1); color: var(--ink-2); display: grid; gap: 2px; align-content: start; }
+.note-card b { color: var(--ink); font-size: var(--step-0); }
+
+/* 10-08 round: per-check results beside small comparisons, each bar on its own stated scale */
+.round { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 880px) { .round { grid-template-columns: minmax(0, 1fr); } }
+.round-side { display: grid; gap: 12px; min-width: 0; }
+.checks { min-width: 440px; }
+.checks td { padding-block: 7px; }
+.checks td .id { display: block; font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 520px) { .checks { min-width: 0; } .checks th, .checks td { padding-inline: 10px; } .checks .arm { display: none; } }
+.checks td.st, .checks th.st { white-space: nowrap; width: 1%; }
+@media (max-width: 520px) { .bench .hist, .bench td .id { display: none; } }
+.checks caption.foot { caption-side: bottom; text-align: left; padding: 8px 14px; font-size: var(--step--1); font-weight: 700; color: var(--ink); background: var(--bg); border-top: 1px solid var(--line-strong); }
+.checks tfoot td { font-weight: 700; color: var(--ink); background: var(--bg); border-top: 1px solid var(--line-strong); border-bottom: 0; font-variant-numeric: tabular-nums; }
+.multiples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 440px) { .multiples { grid-template-columns: minmax(0, 1fr); } }
+.mini { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.mini h3 { font-size: var(--step--1); line-height: 1.5; }
+.mini .bars { display: grid; gap: 6px; }
+.mini .bar { display: grid; grid-template-columns: 2.6em minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--step--1); color: var(--ink-2); }
+.mini.wide .bar { grid-template-columns: 5em minmax(0, 1fr) auto; }
+.mini.wider .bar { grid-template-columns: 6.8em minmax(0, 1fr) auto; }
+.mini .tr { height: 10px; background: var(--chip); border-radius: 3px; overflow: hidden; }
+.mini .tr i { display: block; height: 100%; border-radius: 0 3px 3px 0; }
+.mini .tr i.a { background: var(--series-a); }
+.mini .tr i.b { background: var(--series-b); }
+.mini .v { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 500; }
+.mini .scale { font-size: 0.72rem; color: var(--muted); }
+
+/* Run log */
+.result { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 0 9px; font-size: 0.75rem; font-weight: 500; border: 1px solid var(--line-strong); color: var(--ink-2); white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.pill.ok::before { background: var(--good); }
+.pill.warn::before { background: var(--warning); }
+.pill.bad::before { background: var(--critical); }
+
+/* Two-column compare */
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.compare > div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.compare ul, .todo ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: var(--step--1); color: var(--ink-2); }
+.compare li b, .todo li b { color: var(--ink); }
+
+/* Open items */
+.todo { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.todo > div { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.todo h3 { display: flex; gap: 8px; align-items: center; font-size: var(--step-0); }
+.todo h3 .pill { font-weight: 500; }
+
+/* Timeline */
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-left: 2px solid var(--line-strong); margin-left: 6px; }
+.timeline li { position: relative; padding: 0 0 16px 20px; display: grid; gap: 2px; font-size: var(--step--1); color: var(--ink-2); }
+.timeline li::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 2px var(--accent); }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li:last-child::before { background: var(--accent); }
+.timeline b { color: var(--ink); font-size: var(--step-0); }
+.timeline .when { font-family: var(--font-mono); color: var(--muted); font-size: 0.78rem; }
+footer { color: var(--muted); font-size: var(--step--1); border-top: 1px solid var(--line); padding-top: 16px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="top">
+  <div class="eyebrow">MULTICA 插件 · OPENVIKING 长期记忆</div>
+  <h1>OpenViking 记忆插件全景</h1>
+  <p class="lede">让 Multica 工作区里的智能体拥有按范围隔离的长期记忆：任务开始前召回相关记忆，执行中随时查写，运行结束后由 OpenViking 把业务记录蒸馏成可检索的长期记忆。下面按“能做什么”和“验证到哪一层”梳理当前状态。</p>
+  <div class="meta">
+    <span>分支 <b class="mono">fix/review-hardening</b></span>
+    <span>提交 <b class="mono">b8e9e31</b></span>
+    <span>版本 <b class="mono">0.3.0</b></span>
+    <span>OpenViking <b class="mono">0.4.22</b></span>
+    <span>更新于 <b>2026-10-09</b></span>
+  </div>
+</header>
+
+<section aria-labelledby="kpi-h">
+  <h2 id="kpi-h" class="sr">关键数字</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="label">记忆范围</div><div class="value">7<small>/ 7 类</small></div><div class="note">功能规格的七类范围都已实现，每类都有真实智能体样例</div></div>
+    <div class="kpi"><div class="label">真实智能体验证</div><div class="value" id="kpi-l4">22<small>/ 24 项能力</small></div><div class="note">另 1 项受运行时限制（运行中追加要求），1 项修复后待真实复现</div></div>
+    <div class="kpi"><div class="label">回归测试</div><div class="value">190<small>/ 190</small></div><div class="note">23 个测试文件，Node 20 / 22 / 24 跑 CI；mock 端到端 patched 13/13、stock 14/14</div></div>
+    <div class="kpi"><div class="label">交付物</div><div class="value">19<small>个钩子</small></div><div class="note">归档事件 1 个、记忆工具 3 个、OpenViking 原生工具门面 15 个，外加 1 个 skill</div></div>
+    <div class="kpi"><div class="label">代码体量</div><div class="value">4,613<small>行</small></div><div class="note">24 个模块，零 npm 依赖，Node ≥ 20 直接运行</div></div>
+  </div>
+</section>
+
+<section aria-labelledby="arch-h">
+  <div class="section-head">
+    <div class="eyebrow">怎么工作</div>
+    <h2 id="arch-h">三层分工与七条连线</h2>
+    <p>Multica 负责发出事件和把工具交给智能体，插件服务负责验签、取材、排队、召回和隔离，OpenViking 负责存储、抽取和检索。插件本身不修改 OpenViking 的实例配置。</p>
+  </div>
+  <figure>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1000 452" role="img" aria-label="架构图：Multica 通过签名事件和工具调用与插件服务通信，插件按需读取 Multica 的运行详情，再以每个范围一把 key 写入和检索 OpenViking 的独立用户空间；OpenViking 调用模型服务完成抽取、向量和重排。">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="dg-ah" d="M0 0 L10 5 L0 10 z"/></marker>
+          <marker id="ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="dg-ah-accent" d="M0 0 L10 5 L0 10 z"/></marker>
+        </defs>
+
+        <!-- Multica -->
+        <rect class="dg-box" x="16" y="20" width="210" height="300" rx="10"/>
+        <text class="dg-title" x="34" y="48">Multica 工作区</text>
+        <text class="dg-sub" x="34" y="66">插件系统 v1</text>
+        <rect class="dg-chip" x="32" y="84" width="178" height="40" rx="6"/>
+        <text class="dg-text" x="44" y="101">智能体运行</text><text class="dg-sub" x="44" y="116">OpenCode 等运行时</text>
+        <rect class="dg-chip" x="32" y="132" width="178" height="40" rx="6"/>
+        <text class="dg-text" x="44" y="149">官方 daemon</text><text class="dg-sub" x="44" y="164">领取任务、转发工具调用</text>
+        <rect class="dg-chip" x="32" y="180" width="178" height="40" rx="6"/>
+        <text class="dg-text" x="44" y="197">事件与工具注入</text><text class="dg-sub" x="44" y="212">安装后自动给全部智能体</text>
+        <rect class="dg-chip" x="32" y="228" width="178" height="40" rx="6"/>
+        <text class="dg-text" x="44" y="245">任务读取 API</text><text class="dg-sub" x="44" y="260">补丁 0001，尚未进主线</text>
+        <rect class="dg-chip" x="32" y="276" width="178" height="32" rx="6"/>
+        <text class="dg-text" x="44" y="297">skill：何时召回与记录</text>
+
+        <!-- Plugin -->
+        <rect class="dg-box" x="372" y="20" width="268" height="412" rx="10"/>
+        <text class="dg-title" x="390" y="48">插件服务（本仓库）</text>
+        <text class="dg-sub" x="390" y="66">Node 单进程 · 状态目录单写者租约</text>
+        <rect class="dg-chip" x="388" y="84" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="105">验签 · 安装绑定唯一工作区</text>
+        <rect class="dg-chip" x="388" y="124" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="145">取材 · 清理运行说明 · 按作者归属</text>
+        <rect class="dg-chip" x="388" y="164" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="185">持久化归档队列（重投判重）</text>
+        <rect class="dg-chip" x="388" y="204" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="225">抽取监视 · 失败在新会话重驱</text>
+        <rect class="dg-chip" x="388" y="244" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="265">范围引擎 · 召回合并、过滤、带出处</text>
+        <rect class="dg-chip" x="388" y="284" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="305">共享晋升（质量门槛，夜间定时）</text>
+        <rect class="dg-chip" x="388" y="324" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="345">ov-* 门面：只许访问自己的空间</text>
+        <rect class="dg-chip-new" x="388" y="364" width="236" height="32" rx="6"/><text class="dg-text" x="400" y="385">工作区抽取规则 memory_rules（新）</text>
+        <text class="dg-sub" x="390" y="418">状态：memory-status · /admin/status</text>
+
+        <!-- OpenViking -->
+        <rect class="dg-box" x="760" y="20" width="224" height="300" rx="10"/>
+        <text class="dg-title" x="778" y="48">OpenViking 0.4.22</text>
+        <text class="dg-sub" x="778" y="66">一个工作区 = 一个账号</text>
+        <rect class="dg-panel" x="774" y="80" width="196" height="186" rx="8"/>
+        <text class="dg-sub" x="786" y="99">每类范围一个独立用户空间</text>
+        <rect class="dg-chip" x="786" y="108" width="84" height="26" rx="5"/><text class="dg-text" x="794" y="126">任务协作</text>
+        <rect class="dg-chip" x="876" y="108" width="84" height="26" rx="5"/><text class="dg-text" x="884" y="126">智能体公共</text>
+        <rect class="dg-chip" x="786" y="140" width="84" height="26" rx="5"/><text class="dg-text" x="794" y="158">工作区共享</text>
+        <rect class="dg-chip" x="876" y="140" width="84" height="26" rx="5"/><text class="dg-text" x="884" y="158">私聊配对</text>
+        <rect class="dg-chip" x="786" y="172" width="84" height="26" rx="5"/><text class="dg-text" x="794" y="190">运行</text>
+        <rect class="dg-chip" x="876" y="172" width="84" height="26" rx="5"/><text class="dg-text" x="884" y="190">自动化</text>
+        <rect class="dg-chip" x="786" y="204" width="84" height="26" rx="5"/><text class="dg-text" x="794" y="222">委派通道</text>
+        <text class="dg-deny-text" x="884" y="222">✕ 跨空间 403</text>
+        <text class="dg-sub" x="778" y="292">抽取 → 分层索引（摘要/概览/全文）</text>
+        <text class="dg-sub" x="778" y="308">账号级记忆模板（每个工作区可定制）</text>
+
+        <!-- Models -->
+        <rect class="dg-box" x="760" y="352" width="224" height="80" rx="10"/>
+        <text class="dg-title" x="778" y="378">模型服务（OpenRouter）</text>
+        <text class="dg-sub" x="778" y="398">抽取 glm-5.3-flash · 向量 qwen3-embedding-8b</text>
+        <text class="dg-sub" x="778" y="416">重排 qwen3-reranker-8b</text>
+
+        <!-- Arrows Multica -> plugin -->
+        <path class="dg-arrow" d="M226 100 H368" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="246" cy="88" r="9"/><text class="dg-num" x="246" y="92" text-anchor="middle">1</text>
+        <text class="dg-label" x="262" y="92">事件（签名）</text>
+        <path class="dg-arrow" d="M226 150 H368" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="246" cy="138" r="9"/><text class="dg-num" x="246" y="142" text-anchor="middle">2</text>
+        <text class="dg-label" x="262" y="142">工具调用（签名）</text>
+        <path class="dg-arrow" d="M368 250 H230" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="246" cy="238" r="9"/><text class="dg-num" x="246" y="242" text-anchor="middle">3</text>
+        <text class="dg-label" x="262" y="242">读取运行详情</text>
+
+        <!-- Arrows plugin -> OV -->
+        <path class="dg-arrow" d="M640 120 H756" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="660" cy="108" r="9"/><text class="dg-num" x="660" y="112" text-anchor="middle">4</text>
+        <text class="dg-label" x="676" y="112">归档并提交</text>
+        <path class="dg-arrow" d="M640 200 H756" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="660" cy="188" r="9"/><text class="dg-num" x="660" y="192" text-anchor="middle">5</text>
+        <text class="dg-label" x="676" y="192">检索与读取</text>
+        <path class="dg-arrow-accent" d="M640 380 H700 V296 H756" marker-end="url(#ah-accent)"/>
+        <circle class="dg-numdot" cx="660" cy="368" r="9"/><text class="dg-num" x="660" y="372" text-anchor="middle">6</text>
+        <text class="dg-label" x="676" y="372">账号级模板</text>
+
+        <!-- OV -> models -->
+        <path class="dg-arrow" d="M872 320 V348" marker-end="url(#ah)"/>
+        <circle class="dg-numdot" cx="892" cy="334" r="9"/><text class="dg-num" x="892" y="338" text-anchor="middle">7</text>
+        <text class="dg-label" x="908" y="338">模型调用</text>
+      </svg>
+    </div>
+    <figcaption>插件与两侧的每条连线都有固定用途。智能体只能经由插件触达 OpenViking；每个范围用自己的 key 读写，存储层拒绝跨空间访问。</figcaption>
+  </figure>
+  <ul class="key-list" aria-label="连线说明">
+    <li><span class="num">1</span><span><b>事件</b>：任务完成或失败、新评论（task.completed / task.failed / comment.created），签名投递；接收失败返回 503 供 Multica 重投。</span></li>
+    <li><span class="num">2</span><span><b>工具调用</b>：memory-recall / remember / status 和 15 个 ov-* 工具。插件从签名体可信地得知调用者，补丁版还带调用它的运行。</span></li>
+    <li><span class="num">3</span><span><b>读取运行详情</b>：运行类型、触发输入和转写。需要任务读取 API（补丁 0001）；stock Multica 上只能以收尾评论代表一次运行。</span></li>
+    <li><span class="num">4</span><span><b>归档并提交</b>：写入对应范围的会话再提交，由 OpenViking 异步抽取。每个范围一把 key。</span></li>
+    <li><span class="num">5</span><span><b>检索与读取</b>：按当前运行可读的范围并行检索，合并、过滤、去重，返回全文和来源 URI。</span></li>
+    <li><span class="num">6</span><span><b>账号级模板</b>：工作区在插件配置里填写抽取规则时，插件把它写进该工作区自己的账号，只影响这个工作区；清空即恢复默认。</span></li>
+    <li><span class="num">7</span><span><b>模型调用</b>：抽取、向量和重排都由 OpenViking 自己调用模型服务，插件不经手。</span></li>
+  </ul>
+</section>
+
+<section aria-labelledby="life-h">
+  <div class="section-head">
+    <div class="eyebrow">一条记录的去向</div>
+    <h2 id="life-h">从运行结束到下次被召回</h2>
+    <p>这是一次 issue 任务的真实顺序。状态是分开记录的：归档成功不等于抽取完成，抽取完成也不等于已经能检索到。</p>
+  </div>
+  <ol class="flow">
+    <li><b>运行结束</b><span>Multica 发出签名事件</span></li>
+    <li><b>取材</b><span>读取运行类型、触发输入和转写，去掉平台运行说明</span></li>
+    <li><b>持久化入队</b><span>先落盘再应答，重复投递只对应一个作业</span></li>
+    <li><b>提交到 OpenViking</b><span>写入该 issue 的任务协作空间</span></li>
+    <li><b>模型抽取</b><span>OpenViking 生成实体、事件、偏好等记忆</span></li>
+    <li><b>监视与重驱</b><span>失败时把记录放进新会话再抽取，默认最多 2 次</span></li>
+    <li><b>下次召回</b><span>新任务开始时 memory-recall 绑定当次运行，带出处返回</span></li>
+    <li><b>共享晋升</b><span>夜间把可复用记忆经质量门槛晋升到工作区共享</span></li>
+  </ol>
+  <div class="states" aria-label="抽取状态">抽取状态：<span class="state">pending</span><span class="state">done</span><span class="state">redriven</span><span class="state">failed</span><span class="state">timeout</span>可在 memory-status（本工作区）和 /admin/status（全部）查看。</div>
+</section>
+
+<section aria-labelledby="scope-h">
+  <div class="section-head">
+    <div class="eyebrow">隔离不靠提示词</div>
+    <h2 id="scope-h">七类记忆范围</h2>
+    <p>一个工作区对应一个 OpenViking 账号，七类场景各占一个独立用户空间。智能体甲读不到乙的公共记忆，是因为存储层直接返回 403。</p>
+  </div>
+  <div class="table-wrap">
+    <table class="scope-table">
+      <thead><tr><th scope="col">范围</th><th scope="col">什么时候写入</th><th scope="col">谁能读</th><th scope="col">需要补丁</th><th scope="col">真实智能体样例</th></tr></thead>
+      <tbody>
+        <tr><td>任务协作</td><td>issue 运行结束、评论（成员算人类反馈，智能体算智能体陈述）</td><td>在这个 issue 上工作的运行</td><td>运行转写需要；评论不需要</td><td>basic、quality、matrix</td></tr>
+        <tr><td>智能体公共</td><td>memory-remember、ov-* 写入</td><td>这个智能体自己</td><td>不需要</td><td>basic 主动记忆、matrix</td></tr>
+        <tr><td>工作区共享</td><td>夜间晋升可复用类别（经验、案例、偏好、实体）</td><td>工作区内所有智能体</td><td>不需要</td><td>quality：10-02 六轮里 B 都取回了当前事实</td></tr>
+        <tr><td>私聊配对</td><td>私聊运行，成员原话按本人归属</td><td>这个智能体与这位成员</td><td>需要（chats:read）</td><td>quality 私聊偏好、matrix 新会话</td></tr>
+        <tr><td>运行</td><td>快速创建等单次运行</td><td>这次运行</td><td>需要</td><td>matrix 快速创建</td></tr>
+        <tr><td>自动化</td><td>自动化运行（手动、webhook、cron）</td><td>这个自动化</td><td>需要</td><td>matrix 三种触发</td></tr>
+        <tr><td>委派通道</td><td>委派交接（@mention 评论）</td><td>发送方与接收方</td><td>需要</td><td>matrix A→B 交接</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="uri">示例：viking://user/mcs-5a9dec525437/memories/entities/项目/苍鹭.md（10-02 一次真实运行里任务协作空间的实体卡）</p>
+</section>
+
+<section aria-labelledby="matrix-h">
+  <div class="section-head">
+    <div class="eyebrow">做到什么程度</div>
+    <h2 id="matrix-h">能力 × 验证层级</h2>
+    <p>同一项能力在越靠右的层级通过，越接近真实使用。每一行下方写明依据，悬停或聚焦格子可看该层级的说明。</p>
+  </div>
+  <div class="coverage" id="coverage" aria-label="各层级覆盖"></div>
+  <div class="legend" aria-label="图例">
+    <span><i class="g g-pass" aria-hidden="true"></i>已通过</span>
+    <span><i class="g g-part" aria-hidden="true"></i>部分验证</span>
+    <span><i class="g g-none" aria-hidden="true"></i>这一层未覆盖</span>
+    <span><i class="g g-no" aria-hidden="true"></i>运行时不支持</span>
+  </div>
+  <div class="filters" role="group" aria-label="按领域筛选" id="filters"></div>
+  <div class="table-wrap">
+    <table class="matrix" id="matrix">
+      <thead>
+        <tr>
+          <th scope="col">能力</th>
+          <th scope="col" class="lvl">单元/集成<small>测试替身</small></th>
+          <th scope="col" class="lvl">真实 OV<small>mock 模型 + 模拟 Multica</small></th>
+          <th scope="col" class="lvl">真实 Multica<small>真实 OV，协议样例驱动</small></th>
+          <th scope="col" class="lvl">真实智能体<small>官方 daemon + 真实模型</small></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="bench-h">
+  <div class="section-head">
+    <div class="eyebrow">最新一轮真实验证 · 2026-10-09</div>
+    <h2 id="bench-h">benchmark：工作区规则与原生抽取对照，业务事实都是 27/27</h2>
+    <p>10-01 的 benchmark 在 401 环境里得 0/27，不能说明召回能力。10-09 在新的 OpenViking 数据目录上、Multica 打了补丁 0001–0005，用同样的三个项目、9 次独立查询跑了两组：一组按推荐配置经安装配置写入工作区规则，一组不配规则、用 OV 原生抽取。</p>
+  </div>
+  <div class="round">
+    <div class="table-wrap">
+      <table class="checks bench">
+        <thead><tr><th scope="col">指标</th><th scope="col" class="st hist">10-01（401 环境）</th><th scope="col" class="st">10-09 工作区规则</th><th scope="col" class="st">10-09 原生抽取</th></tr></thead>
+        <tbody>
+            <tr><td>正确业务事实 / 计划事实<span class="id">queue · budget · days</span></td><td class="st hist"><span class="pill bad">0 / 27</span></td><td class="st"><span class="pill ok">27 / 27</span></td><td class="st"><span class="pill ok">27 / 27</span></td></tr>
+            <tr><td>当前事实及共享来源均正确<span class="id">facts-*</span></td><td class="st hist"><span class="pill bad">0 / 9</span></td><td class="st"><span class="pill ok">9 / 9</span></td><td class="st"><span class="pill ok">9 / 9</span></td></tr>
+            <tr><td>查询交付（含受控 401 后恢复）<span class="id">delivery-recovery</span></td><td class="st hist">9 / 9</td><td class="st"><span class="pill ok">8 / 9 → 9 / 9</span></td><td class="st"><span class="pill ok">8 / 9 → 9 / 9</span></td></tr>
+            <tr><td>私聊新会话召回<span class="id">private-recall-*</span></td><td class="st hist"><span class="pill bad">0 / 3</span></td><td class="st"><span class="pill ok">3 / 3</span></td><td class="st"><span class="pill bad">0 / 3</span></td></tr>
+            <tr><td>另一智能体搜不到这段私聊<span class="id">benchmark-private-isolation</span></td><td class="st hist">—</td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>记忆审计质量问题<span class="id">benchmark-reusable-memory-hygiene</span></td><td class="st hist">0</td><td class="st"><span class="pill ok">0（21 个文件）</span></td><td class="st"><span class="pill ok">0（15 个文件）</span></td></tr>
+            <tr><td>工作区规则在首次提交前生效<span class="id">memory-rules-applied</span></td><td class="st hist">—</td><td class="st"><span class="pill ok">通过</span></td><td class="st">—</td></tr>
+            <tr><td>OV 请求中的 401</td><td class="st hist"><span class="pill bad">322 / 743</span></td><td class="st"><span class="pill ok">0 / 720</span></td><td class="st"><span class="pill ok">0 / 709</span></td></tr>
+        </tbody>
+        <tfoot><tr><td>检查合计</td><td class="st hist">—</td><td class="st">21 / 21</td><td class="st">17 / 20</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="round-side">
+      <div class="legend">
+        <span><i class="sw" style="background: var(--series-a)"></i>10-09 原生抽取</span>
+        <span><i class="sw" style="background: var(--series-b)"></i>10-09 工作区规则</span>
+      </div>
+      <div class="multiples">
+        <div class="mini">
+          <h3>正确业务事实</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生抽取：27 / 27"><span>原生</span><span class="tr"><i class="a" style="width: 100.0%"></i></span><span class="v">27 / 27</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：27 / 27"><span>规则</span><span class="tr"><i class="b" style="width: 100.0%"></i></span><span class="v">27 / 27</span></div>
+          </div>
+          <div class="scale">刻度 0–27 项</div>
+        </div>
+        <div class="mini">
+          <h3>私聊新会话召回</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生抽取：0 / 3"><span>原生</span><span class="tr"><i class="a" style="width: 0.0%"></i></span><span class="v">0 / 3</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：3 / 3"><span>规则</span><span class="tr"><i class="b" style="width: 100.0%"></i></span><span class="v">3 / 3</span></div>
+          </div>
+          <div class="scale">刻度 0–3 次</div>
+        </div>
+      </div>
+      <div class="side-notes">
+        <div class="note-card"><b>对照说明了什么</b>业务事实两组都是满分，B 只凭英文别名就从共享记忆答出更新后的预算并引用来源，27/27 不能归功于规则。规则的差别在私聊偏好（3/3 对 0/3）和记忆形态：原生组把 B 的 3 次查询记成事件，同一项目的实体卡叫法不一。</div>
+        <div class="note-card"><b>原生组私聊 0/3</b>成员说了“无需主动写记忆”，归档前的过滤只认“不要主动记录记忆”，没去掉；原生抽取据此一条也没写。过滤补上这类说法（af43d14）后又跑了一轮原生组：私聊偏好写入，召回 2/3，没过的那次是检索超时。</div>
+        <div class="note-card"><b>修复后仍有的问题</b>原生抽取又把私聊查询里的“只根据记忆回复”记成偏好，把查询任务的输出格式写进 B 任务空间的一张实体卡，规则组没有这些问题。决定：过滤不再为新说法逐条追加，交给工作区规则，尽量不影响 OV 的独立性。</div>
+        <div class="note-card"><b>记录为 8/9 的那一次</b>白鹭第 2 次三项都对，引用的也是召回到的那张共享卡，只是把中文路径写成了百分号编码；检查脚本已改为解码后比较。</div>
+        <div class="note-card"><b>请求与花费</b>两组都没有 401，OV 重排偶有 503（上游临时错误，3 次和 10 次）。各约 21 分钟；规则组 $0.52，原生组 $0.61，修复后的原生组 $0.62。每组只有 1 轮，差别不说明哪种更省。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="reg-h">
+  <div class="section-head">
+    <div class="eyebrow">真实验证 · 2026-10-08 回归</div>
+    <h2 id="reg-h">basic 与 matrix 回归：完整一轮 27/30，插件没有回归</h2>
+    <p>basic 13/13。matrix 前 3 次都没跑完，停下的原因都在测试脚本、Multica 平台和模型行为上。按决定给 Multica 打上补丁 0005 后，全新跑了第 4 次，跑完全程。下表是第 4 次的结果，其中第二次交接在同一工作区上单独重测过一次。</p>
+  </div>
+  <div class="round">
+    <div class="table-wrap">
+      <table class="checks">
+        <thead><tr><th scope="col">入口或边界</th><th scope="col" class="st">检查</th><th scope="col" class="st">第 4 次</th></tr></thead>
+        <tbody>
+            <tr><td>basic 全部检查<span class="id">basic</span></td><td class="st">13</td><td class="st"><span class="pill ok">13 / 13</span></td></tr>
+            <tr><td>官方 daemon 注册 OpenCode<span class="id">runtime</span></td><td class="st">1</td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>主动记忆与各自公共空间<span class="id">active-write-agent-A · agent-public-isolation</span></td><td class="st">2</td><td class="st"><span class="pill ok">2 / 2</span></td></tr>
+            <tr><td>原生读取门面拒绝越界<span class="id">actual-facade-cross-agent-denial</span></td><td class="st">1</td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>同一 issue 改派给 B，靠任务记忆找回<span class="id">multi-agent-collaboration</span></td><td class="st">2</td><td class="st"><span class="pill ok">2 / 2</span></td></tr>
+            <tr><td>成员评论、重跑、唤醒<span class="id">member-comment · rerun · wakeup</span></td><td class="st">3</td><td class="st"><span class="pill ok">3 / 3</span></td></tr>
+            <tr><td>@mention 委派进入 A→B 通道<span class="id">real-delegation-*</span></td><td class="st">3</td><td class="st"><span class="pill ok">3 / 3</span></td></tr>
+            <tr><td>第二次交接，B 从通道找回数字<span class="id">delegation-cross-task-recall</span></td><td class="st">1</td><td class="st"><span class="pill ok">重测通过</span></td></tr>
+            <tr><td>私聊配对记忆与隔离<span class="id">chat-*</span></td><td class="st">3</td><td class="st"><span class="pill ok">3 / 3</span></td></tr>
+            <tr><td>快速创建<span class="id">quick-create-*</span></td><td class="st">2</td><td class="st"><span class="pill warn">1 / 2 没建出 issue</span></td></tr>
+            <tr><td>自动化：手动、webhook、定时、建 issue<span class="id">autopilot-*</span></td><td class="st">5</td><td class="st"><span class="pill ok">5 / 5</span></td></tr>
+            <tr><td>并发运行互不串任务<span class="id">actual-parallel-runs-isolated</span></td><td class="st">1</td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>共享晋升不带私聊，B 从共享召回<span class="id">shared-*</span></td><td class="st">3</td><td class="st"><span class="pill ok">3 / 3</span></td></tr>
+            <tr><td>收尾审计：归档、提示词、记忆质量<span class="id">matrix-*-hygiene · matrix-memory-quality</span></td><td class="st">3</td><td class="st"><span class="pill warn">1 / 3</span></td></tr>
+        </tbody>
+        <tfoot><tr><td>matrix 第 4 次</td><td class="st">30</td><td class="st">27 / 30</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="round-side">
+      <div class="legend">
+        <span><i class="sw" style="background: var(--series-a)"></i>正常运行</span>
+        <span><i class="sw" style="background: var(--series-b)"></i>B 自我 @ 循环</span>
+      </div>
+      <div class="multiples">
+        <div class="mini wider">
+          <h3>非缓存输入 token</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="第 3 次中的循环 31 次运行：217 万"><span>第 3 次循环</span><span class="tr"><i class="b" style="width: 90.3%"></i></span><span class="v">217 万</span></div>
+            <div class="bar" role="img" aria-label="第 3 次其余 21 次运行：44 万"><span>第 3 次其余</span><span class="tr"><i class="a" style="width: 18.3%"></i></span><span class="v">44 万</span></div>
+            <div class="bar" role="img" aria-label="第 4 次 25 次运行：52 万"><span>第 4 次</span><span class="tr"><i class="a" style="width: 21.8%"></i></span><span class="v">52 万</span></div>
+          </div>
+          <div class="scale">刻度 0–240 万；第 4 次没有出现循环</div>
+        </div>
+        <div class="mini wide">
+          <h3>四次 matrix 的花费</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="第 1 次：$0.37"><span>第 1 次</span><span class="tr"><i class="a" style="width: 13.0%"></i></span><span class="v">$0.37</span></div>
+            <div class="bar" role="img" aria-label="第 2 次：$0.39"><span>第 2 次</span><span class="tr"><i class="a" style="width: 13.8%"></i></span><span class="v">$0.39</span></div>
+            <div class="bar" role="img" aria-label="第 3 次：$2.59"><span>第 3 次</span><span class="tr"><i class="b" style="width: 92.4%"></i></span><span class="v">$2.59</span></div>
+            <div class="bar" role="img" aria-label="第 4 次：$0.45"><span>第 4 次</span><span class="tr"><i class="a" style="width: 16.1%"></i></span><span class="v">$0.45</span></div>
+          </div>
+          <div class="scale">刻度 $0–2.8；第 3 次约 $1.9 花在循环上；第 4 次含第二次交接重测；basic $0.09</div>
+        </div>
+      </div>
+      <div class="side-notes">
+        <div class="note-card"><b>插件这边</b>第 4 次中，改派、评论、重跑、唤醒、委派、私聊、四种自动化、并发和共享晋升都通过；归档用标题代替编号、去掉执行指令、清理后晋升都没有破坏这些入口。</div>
+        <div class="note-card"><b>这轮修了什么</b>Multica 补丁 0005：同一 issue 上 @ 自己不再派发。插件：归档时省略工具输出里智能体自己的指令。测试脚本 7 处：8 KB 预览误判、取错接收方、协作漏洞、两次交接的描述、循环保护、收尾审计参数。</div>
+        <div class="note-card"><b>剩下的 3 项失败</b>快速创建：模型先执行命令后写文件。归档卫生：智能体指令进了归档，已修，待真实复现。记忆质量：原生抽取把运行记录写进 2 张实体卡，召回和晋升会去掉。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="r1008-h">
+  <div class="section-head">
+    <div class="eyebrow">真实验证 · 2026-10-08</div>
+    <h2 id="r1008-h">原生抽取与工作区规则（安装配置），各跑 1 轮</h2>
+    <p>规则这次走生产路径：经 Multica 的配置接口写入安装配置 <span class="mono">memory_rules</span>，Multica 随事件投递，插件在首次提交前写进该工作区账户的模板。两轮都用推荐的 OpenViking 配置和同一组模型，只跑 1 轮，差别仅供参考。</p>
+  </div>
+  <div class="round">
+    <div class="table-wrap">
+      <table class="checks">
+        <thead><tr><th scope="col">检查</th><th scope="col" class="st">原生</th><th scope="col" class="st">工作区规则</th></tr></thead>
+        <tbody>
+            <tr><td>官方 daemon 注册 OpenCode<span class="id">runtime</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>自动抽取保留三项业务事实<span class="id">automatic-fact-fidelity</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>持久偏好被保留（两轮都单独成条）<span class="id">lasting-preference-retained</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>种子任务没有走主动写入<span class="id">no-active-write-shortcut</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>8100 为当前值、7600 标为历史<span class="id">current-entity-update</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>历史预算记在事件里<span class="id">historical-budget-retained</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>实体卡 URI 不变<span class="id">entity-category-stable</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>更新后的卡再次晋升到共享<span class="id">updated-uri-repromoted</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>B 从共享记忆取回当前事实<span class="id">real-B-current-shared-recall</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>B 的任务正常交付<span class="id">real-B-task-delivery</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>私聊周报版式被抽取<span class="id">dm-distilled-peer-layout</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>新私聊召回到版式<span class="id">real-DM-layout-recall</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>审计覆盖私聊配对空间<span class="id">peer-audit-coverage</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>可复用记忆里没有执行指令<span class="id">reusable-memory-hygiene</span></td><td class="st"><span class="pill bad">失败</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>运行时标记被过滤<span class="id">runtime-markers-filtered</span></td><td class="st"><span class="pill ok">通过</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+            <tr><td>规则在首次提交前生效<span class="id">memory-rules-applied</span></td><td class="st"><span class="pill">不适用</span></td><td class="st"><span class="pill ok">通过</span></td></tr>
+        </tbody>
+        <tfoot><tr><td>合计</td><td class="st">14 / 15</td><td class="st">16 / 16</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="round-side">
+      <div class="legend">
+        <span><i class="sw" style="background: var(--series-a)"></i>原生抽取</span>
+        <span><i class="sw" style="background: var(--series-b)"></i>工作区规则（安装配置）</span>
+      </div>
+      <div class="multiples">
+        <div class="mini">
+          <h3>带工作区规则的抽取请求</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生：0 / 12"><span>原生</span><span class="tr"><i class="a" style="width: 0.0%"></i></span><span class="v">0 / 12</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：12 / 12"><span>规则</span><span class="tr"><i class="b" style="width: 100.0%"></i></span><span class="v">12 / 12</span></div>
+          </div>
+          <div class="scale">刻度 0–12 次</div>
+        </div>
+        <div class="mini">
+          <h3>抽取系统提示词（较长的一种）</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生：30,308"><span>原生</span><span class="tr"><i class="a" style="width: 86.6%"></i></span><span class="v">30,308</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：32,845"><span>规则</span><span class="tr"><i class="b" style="width: 93.8%"></i></span><span class="v">32,845</span></div>
+          </div>
+          <div class="scale">刻度 0–35,000 字符，多约 8%</div>
+        </div>
+        <div class="mini">
+          <h3>出现超时范围的召回</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生：1 / 5"><span>原生</span><span class="tr"><i class="a" style="width: 20.0%"></i></span><span class="v">1 / 5</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：2 / 5"><span>规则</span><span class="tr"><i class="b" style="width: 40.0%"></i></span><span class="v">2 / 5</span></div>
+          </div>
+          <div class="scale">刻度 0–5 次；向量 p95 19 秒、27 秒</div>
+        </div>
+        <div class="mini">
+          <h3>单轮花费</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="原生：$0.135"><span>原生</span><span class="tr"><i class="a" style="width: 90.3%"></i></span><span class="v">$0.135</span></div>
+            <div class="bar" role="img" aria-label="工作区规则：$0.134"><span>规则</span><span class="tr"><i class="b" style="width: 89.6%"></i></span><span class="v">$0.134</span></div>
+          </div>
+          <div class="scale">刻度 $0–0.15</div>
+        </div>
+      </div>
+      <div class="side-notes">
+        <div class="note-card"><b>两轮都做到的</b>卡片不再带 issue 编号；持久偏好单独成条；B 从共享记忆取回 8100、Pulsar 和五天双写。</div>
+        <div class="note-card"><b>唯一的失败</b>原生把“回复前先调用 memory-recall 核实证据”写进了私聊周报偏好。新会话召回到的摘录已去掉这句；规则模式没有写进这句。</div>
+        <div class="note-card"><b>本轮没有触发的</b>卡片本身干净，四次晋升都原样通过；“检索为空”只留在事件里。清理后晋升和这条过滤目前只有测试覆盖。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="ab-h">
+  <div class="section-head">
+    <div class="eyebrow">实验开关 A/B · 2026-10-08</div>
+    <h2 id="ab-h">归档前去掉成员消息里的执行指令，各跑 3 轮</h2>
+    <p>两组都用 OpenViking 原生抽取，交替运行 quality 套件。开启后，成员消息和任务描述里“请先调用 memory-recall”“不要主动记录记忆”这类固定句子在归档前去掉，事实、长期约定和智能体自己的话原样保留。按这次结果，开关已改为默认开启。</p>
+  </div>
+  <div class="round">
+    <div class="table-wrap">
+      <table class="checks">
+        <caption class="foot">花费：关闭 $0.153（两轮提前停止），开启 $0.345，共 $0.497</caption>
+        <thead><tr><th scope="col">轮次</th><th scope="col" class="st arm">归档</th><th scope="col" class="st">结果</th><th scope="col">情况</th></tr></thead>
+        <tbody>
+            <tr><td class="num-cell">off-r1</td><td class="st arm">按原文</td><td class="st"><span class="pill bad">3/4 · 停止</span></td><td>种子任务的抽取回答“用户明确指示不要记录记忆”，空提交，没有卡片可晋升</td></tr>
+            <tr><td class="num-cell">on-r1</td><td class="st arm">去掉指令</td><td class="st"><span class="pill warn">14/15</span></td><td>跑完；唯一失败是卡片里的“检索为空”句子，晋升时已去掉</td></tr>
+            <tr><td class="num-cell">off-r2</td><td class="st arm">按原文</td><td class="st"><span class="pill bad">3/4 · 停止</span></td><td>种子任务的抽取以“不要主动记录记忆”为由空提交</td></tr>
+            <tr><td class="num-cell">on-r2</td><td class="st arm">去掉指令</td><td class="st"><span class="pill bad">3/4 · 停止</span></td><td>没有拒绝，但种子任务只写了事件，没有卡片可晋升</td></tr>
+            <tr><td class="num-cell">off-r3</td><td class="st arm">按原文</td><td class="st"><span class="pill bad">10/11 · 停止</span></td><td>私聊那次抽取空提交，周报版式丢失</td></tr>
+            <tr><td class="num-cell">on-r3</td><td class="st arm">去掉指令</td><td class="st"><span class="pill warn">14/15</span></td><td>跑完；失败原因同 on-r1</td></tr>
+        </tbody>
+              </table>
+    </div>
+    <div class="round-side">
+      <div class="legend">
+        <span><i class="sw" style="background: var(--series-a)"></i>按原文归档（关闭）</span>
+        <span><i class="sw" style="background: var(--series-b)"></i>去掉执行指令（开启）</span>
+      </div>
+      <div class="multiples">
+        <div class="mini">
+          <h3>因“不要记录记忆”放弃写入的抽取</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="关闭：3 次"><span>关闭</span><span class="tr"><i class="a" style="width: 100.0%"></i></span><span class="v">3 次</span></div>
+            <div class="bar" role="img" aria-label="开启：0 次"><span>开启</span><span class="tr"><i class="b" style="width: 0.0%"></i></span><span class="v">0 次</span></div>
+          </div>
+          <div class="scale">刻度 0–3 次</div>
+        </div>
+        <div class="mini">
+          <h3>跑完全部 15 项检查</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="关闭：0 轮"><span>关闭</span><span class="tr"><i class="a" style="width: 0.0%"></i></span><span class="v">0 轮</span></div>
+            <div class="bar" role="img" aria-label="开启：2 轮"><span>开启</span><span class="tr"><i class="b" style="width: 66.7%"></i></span><span class="v">2 轮</span></div>
+          </div>
+          <div class="scale">刻度 0–3 轮</div>
+        </div>
+        <div class="mini">
+          <h3>持久偏好被保留</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="关闭：1 轮"><span>关闭</span><span class="tr"><i class="a" style="width: 33.3%"></i></span><span class="v">1 轮</span></div>
+            <div class="bar" role="img" aria-label="开启：2 轮"><span>开启</span><span class="tr"><i class="b" style="width: 66.7%"></i></span><span class="v">2 轮</span></div>
+          </div>
+          <div class="scale">刻度 0–3 轮</div>
+        </div>
+        <div class="mini">
+          <h3>私聊版式被抽取</h3>
+          <div class="bars">
+            <div class="bar" role="img" aria-label="关闭：0 轮"><span>关闭</span><span class="tr"><i class="a" style="width: 0.0%"></i></span><span class="v">0 轮</span></div>
+            <div class="bar" role="img" aria-label="开启：2 轮"><span>开启</span><span class="tr"><i class="b" style="width: 66.7%"></i></span><span class="v">2 轮</span></div>
+          </div>
+          <div class="scale">刻度 0–3 轮；跑到私聊的：关闭 1 轮、开启 2 轮</div>
+        </div>
+      </div>
+      <div class="side-notes">
+        <div class="note-card"><b>关闭时</b>三轮各丢了一次抽取：两次是种子任务直接回答“用户明确指示不要记录记忆”，一次是私聊空提交。</div>
+        <div class="note-card"><b>开启时</b>没有一次因这句放弃写入；私聊版式两次都抽出，偏好里只有版式和私聊范围。事实保真两组都是 3/3。</div>
+        <div class="note-card"><b>还剩的问题</b>开启组的两次失败来自成员原文里的“历史检索为空不影响确认”，晋升时已去掉。每组只有 3 轮，比例不能外推。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="cmp-h">
+  <div class="section-head">
+    <div class="eyebrow">真实模型下的蒸馏质量</div>
+    <h2 id="cmp-h">原生抽取与账号级规则，各跑 3 轮</h2>
+    <p>2026-10-02 在 OpenViking 默认配置下交替运行 quality 套件。两种模式只差测试账号上的抽取规则，结果按修正后的验证器统计。</p>
+  </div>
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="legend">
+        <span><i class="sw" style="background: var(--series-a)"></i>原生抽取</span>
+        <span><i class="sw" style="background: var(--series-b)"></i>账号级规则</span>
+      </div>
+      <button class="toggle" id="cmp-toggle" type="button" aria-pressed="false">查看表格</button>
+    </div>
+    <div id="cmp-chart" aria-label="原生抽取与账号级规则在 3 轮中各项通过的轮数"></div>
+    <div id="cmp-table" hidden></div>
+  </div>
+  <div class="side-notes">
+    <div class="note-card"><b>规则的收益</b>持久偏好单独成条（0/3 → 2/3），私聊偏好不会因为“不写入公共记忆”而漏记（2/3 → 3/3）。</div>
+    <div class="note-card"><b>规则没挡住的</b>两种模式下实体卡里都还带 issue 编号。插件随后改为归档时用标题代替编号，10-08 两轮的卡片都不再带编号。</div>
+    <div class="note-card"><b>代价</b>每次抽取的系统提示词从约 28K 增加到约 34K 字符（+22%）。单轮 quality 花费约 $0.11–0.15。</div>
+  </div>
+</section>
+
+<section aria-labelledby="runs-h">
+  <div class="section-head">
+    <div class="eyebrow">真实运行记录</div>
+    <h2 id="runs-h">用真实智能体和真实模型跑过的轮次</h2>
+    <p>每一轮都由官方 daemon 驱动实际的 OpenCode 智能体，任务转写、工具调用和回复都是智能体自己产生的。</p>
+  </div>
+  <div class="table-wrap">
+    <table class="runs">
+      <thead><tr><th scope="col">日期</th><th scope="col">套件</th><th scope="col">条件</th><th scope="col">结果</th><th scope="col">说明</th></tr></thead>
+      <tbody>
+        <tr><td class="num-cell">09-30</td><td>basic（首轮）</td><td>glm-5.3-flash</td><td class="result"><span class="pill ok">11 项核验通过</span></td><td>发现只有插件工具时 daemon 不签发凭据，补丁 0002 修复</td></tr>
+        <tr><td class="num-cell">10-01</td><td>matrix（全部入口）</td><td>gpt-5.4-mini</td><td class="result"><span class="pill ok">30 项检查通过</span></td><td>七类范围都有真实样例；中途修复委派、快速创建和晋升监视，不是一次全绿</td></tr>
+        <tr><td class="num-cell">10-01</td><td>benchmark（扩大评测）</td><td>原环境</td><td class="result"><span class="pill bad">业务事实 0/27</span></td><td>上游 401：OpenViking 743 次请求里 322 次 401，检索失效；尚未在干净环境重跑</td></tr>
+        <tr><td class="num-cell">10-01</td><td>basic · quality</td><td>实例级模板（已移除）</td><td class="result"><span class="pill warn">12/13 · 9/11</span></td><td>688 次带认证请求没有 401；暴露召回兜底和两处验证器问题</td></tr>
+        <tr><td class="num-cell">10-01</td><td>basic · quality 重跑</td><td>实例级模板（已移除）</td><td class="result"><span class="pill ok">13/13 · 15/15</span></td><td>OpenViking 381 次、OpenCode 42 次请求都没有 401</td></tr>
+        <tr><td class="num-cell">10-01</td><td>原生 vs 规则（json 输出格式）</td><td>推荐配置（旧）</td><td class="result"><span class="pill warn">quality 原生中途停止</span></td><td>查明 json 输出格式偶发生成空实体卡，推荐配置随后改回 OpenViking 默认值；1,136 次请求没有 401</td></tr>
+        <tr><td class="num-cell">10-02</td><td>原生 vs 规则 ×3</td><td>OpenViking 默认值</td><td class="result"><span class="pill ok">规则 2/3 全通过</span></td><td>原生 13/15、14/15、私聊处停止；规则 15/15、15/15、13/15；共 $0.80</td></tr>
+        <tr><td class="num-cell">10-08</td><td>原生 vs 工作区规则（安装配置）</td><td>OpenViking 默认值</td><td class="result"><span class="pill ok">规则 16/16</span> <span class="pill warn">原生 14/15</span></td><td>规则在首次提交前生效；两轮卡片都没有编号；原生私聊偏好混入一句执行指令；没有 401；共 $0.27</td></tr>
+        <tr><td class="num-cell">10-08</td><td>归档去掉执行指令 A/B ×3</td><td>原生抽取</td><td class="result"><span class="pill ok">开启 2/3 跑完</span> <span class="pill bad">关闭 0/3</span></td><td>关闭时 3 轮都有抽取因“不要主动记录记忆”放弃写入；开启时 0 次，私聊版式 2/2 被抽取；共 $0.50</td></tr>
+        <tr><td class="num-cell">10-08</td><td>quality（新默认值）</td><td>原生抽取</td><td class="result"><span class="pill warn">13/16</span></td><td>归档去掉执行指令生效，套件新流程跑完全程；三项失败都在私聊：原生抽取把“不写入公共记忆”理解成不要记；$0.07</td></tr>
+        <tr><td class="num-cell">10-08</td><td>basic 回归</td><td>原生抽取</td><td class="result"><span class="pill ok">13/13</span></td><td>10-01 之后首次重跑；$0.09</td></tr>
+        <tr><td class="num-cell">10-08</td><td>matrix 回归 ×4</td><td>原生抽取；第 4 次加补丁 0005</td><td class="result"><span class="pill ok">第 4 次 27/30</span></td><td>前 3 次没跑完，问题在测试脚本、平台和模型行为；第 3 次 B 自我 @ 循环 31 次；第 4 次跑完全程，修了归档里的智能体指令；第 4 次 $0.45–0.75</td></tr>
+        <tr><td class="num-cell">10-09</td><td>benchmark（干净环境）</td><td>工作区规则（安装配置）</td><td class="result"><span class="pill ok">27/27 · 21/21</span></td><td>10-01 在 401 环境里是 0/27；这次 9 次查询全部答对并引用共享来源，私聊 3/3，没有 401；$0.52</td></tr>
+        <tr><td class="num-cell">10-09</td><td>benchmark 原生对照</td><td>原生抽取</td><td class="result"><span class="pill warn">27/27 · 17/20</span></td><td>业务事实同样全对；私聊 0/3：“无需主动写记忆”没被过滤，抽取一条也没写（已修）；$0.61</td></tr>
+        <tr><td class="num-cell">10-09</td><td>benchmark 原生（修复后）</td><td>原生抽取</td><td class="result"><span class="pill warn">24/27 · 18/20</span></td><td>私聊偏好写入、召回 2/3（1 次检索超时）；海燕 1 次执行模型没作答；又把“只根据记忆回复”记成偏好；$0.62</td></tr>
+        <tr><td class="num-cell">10-09</td><td>评审修复后回归</td><td>basic 原生 · benchmark 工作区规则</td><td class="result"><span class="pill ok">13/13 · 21/21</span></td><td>业务事实 27/27、私聊 3/3；21 个记忆文件里没有成员写的执行指令；共 $0.63</td></tr>
+        <tr><td class="num-cell">10-09</td><td>第二轮评审修复后回归</td><td>basic 原生 · mock 端到端</td><td class="result"><span class="pill ok">13/13 · 13/13 · 14/14</span></td><td>召回绑定、跨任务找回、空召回如实说明、归档卫生都通过；mock 补丁版与原版契约全过；$0.12</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="dep-h">
+  <div class="section-head">
+    <div class="eyebrow">依赖与边界</div>
+    <h2 id="dep-h">原版 Multica 能用什么，补丁补上什么</h2>
+  </div>
+  <div class="compare">
+    <div>
+      <h3>原版 Multica 开箱可用</h3>
+      <ul>
+        <li><b>评论归档</b>：成员反馈、智能体陈述、插件消息按作者归属</li>
+        <li><b>memory-recall</b>：可用，但不知道是哪次运行在调用，可由 issue_id 指定</li>
+        <li><b>memory-remember、memory-status、15 个 ov-* 工具、共享晋升</b></li>
+        <li><b>运行本身不归档</b>：以智能体的收尾评论代表，运行事件以 200 跳过，不触发熔断</li>
+      </ul>
+    </div>
+    <div>
+      <h3>补丁 0001–0005（本仓库维护，部署时应用）</h3>
+      <ul>
+        <li><b>0001 任务读取 API</b>：运行转写；私聊、快速创建、自动化、委派归档；召回绑定调用它的运行</li>
+        <li><b>0002 daemon 凭据</b>：只有插件工具、没有远程 MCP 时，工具调用不再返回 401</li>
+        <li><b>0003 快速创建</b>：关联 issue 后保留原运行类型和成员提示</li>
+        <li><b>0004 交付恢复</b>：最终评论已发布但收尾失败时，经成员确认复用已有交付</li>
+        <li><b>0005 自我 @</b>：智能体在同一 issue 上 @ 自己时不再派发给自己，跨 issue 的自我通知照常</li>
+      </ul>
+    </div>
+    <div>
+      <h3>运行时</h3>
+      <ul>
+        <li><b>OpenCode</b>：全部工具可用，本轮真实验证都用它</li>
+        <li><b>kimi 等 ACP 运行时</b>：需要给智能体登记直连条目，会绕过门面限制</li>
+        <li><b>pi</b>：Multica 适配器不下发 MCP（multica#8961）</li>
+        <li><b>Codex</b>：令牌刷新失败，未完成全链路验收</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="todo-h">
+  <div class="section-head">
+    <div class="eyebrow">接下来</div>
+    <h2 id="todo-h">待决定、待验证与未完成</h2>
+  </div>
+  <div class="todo">
+    <div>
+      <h3>需要你决定 <span class="pill warn">1 项</span></h3>
+      <ul>
+        <li><b>评审并合并 PR</b>：<a href="https://github.com/CloudHuman/multica-plugin-openviking-memory/pull/1">CloudHuman/multica-plugin-openviking-memory#1</a>，76 个提交；两轮独立评审的发现均已修复或记为已知限制，第一轮修复后真实回归 basic 13/13、benchmark 21/21，第二轮修复后 mock 端到端 13/13 · 14/14、basic 13/13；CI 4/4 通过，等待人工评审</li>
+      </ul>
+    </div>
+    <div>
+      <h3>待真实验证 <span class="pill warn">2 项</span></h3>
+      <ul>
+        <li><b>归档前去掉检索结论</b>：已实现并有测试；benchmark 的种子里没有这类说法，真实运行里还没触发过</li>
+        <li><b>归档省略智能体指令</b>：已修复并有测试；真实运行里还没再出现“智能体列出自己的记录”这条路径</li>
+      </ul>
+    </div>
+    <div>
+      <h3>已知风险 <span class="pill bad">4 项</span></h3>
+      <ul>
+        <li><b>智能体自我 @ 循环</b>：原版 Multica 允许同一 issue 上自我派发；10-08 第 3 次中 B 约 13 分钟多跑 31 次、约 $1.9，任务记忆里写进了循环出来的“出处”。部署时应用补丁 0005 可避免</li>
+        <li><b>原生抽取不稳定</b>：同样的输入，有时只写事件、不写实体卡；成员说“不要记 / 不写入公共记忆”时可能一条也不写（10-09 benchmark 私聊 0/3，补上过滤后 2/3）；执行指令换个说法就会被记成偏好（决定不再扩充归档过滤，交给工作区规则）；也会把运行记录写进实体卡（完整 matrix 中 2 张）、把智能体的查询记成事件。已推荐配置工作区规则：配了规则的轮次都没有出现这些情况</li>
+        <li><b>向量检索慢</b>：p95 在 3.5–48 秒（10-08 为 19–27 秒），召回预算 15 秒；超时时如实返回部分结果。已决定暂不处理</li>
+        <li><b>401 根因</b>：原环境的中间层未定位；本环境复测没有复现（10-08 也是 0 次），观测器已能区分空 token 与无效 key</li>
+      </ul>
+    </div>
+    <div>
+      <h3>外部依赖与未实现 <span class="pill">6 项</span></h3>
+      <ul>
+        <li><b>Multica 只保存工具输出前 8 KB</b>：任务记录里是预览，智能体收到的是全文；召回结果已改为先列绑定和范围</li>
+        <li><b>Multica 补丁</b>：0001–0005 由本仓库维护，不提交上游；部署和升级 Multica 时需自行应用</li>
+        <li><b>运行中追加输入</b>：OpenCode 适配器返回 412，暂不支持</li>
+        <li><b>OpenViking 生产升级演练</b>（0.4.21 → 0.4.22）</li>
+        <li><b>附件版本保留、多实例水平扩展</b></li>
+        <li><b>Web、桌面、移动端与外部聊天渠道</b>未逐一验收</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="hist-h">
+  <div class="section-head">
+    <div class="eyebrow">版本演进</div>
+    <h2 id="hist-h">每个阶段补上了什么</h2>
+  </div>
+  <ol class="timeline">
+    <li><span class="when">0.1.0</span><b>初始实现</b>七类范围引擎、归档管道、持久化队列、3 个记忆工具、配套接口和 skill，端到端 12/12。</li>
+    <li><span class="when">0.2.x</span><b>门面与晋升</b>ov-* 原生工具门面、共享记忆晋升与夜间定时、多工作区签名密钥、单写者锁、手动重驱。</li>
+    <li><span class="when">0.3.0</span><b>评审修复</b>安装绑定唯一工作区、按运行类型归档、抽取监视移出队列并按代重驱、召回绑定运行、钩子超时前作答。</li>
+    <li><span class="when">10-01</span><b>真实智能体与鲁棒性</b>矩阵入口实测、交付恢复补丁、401 诊断与请求观测、召回查询兜底；不再覆盖 OpenViking 实例模板。</li>
+    <li><span class="when">10-02</span><b>回到 OpenViking 默认值并支持按工作区定制</b>推荐配置改用默认输出格式；新增工作区抽取规则；归档用标题代替编号；识别“检索为空”这类检索结论。</li>
+    <li><span class="when">10-08</span><b>清理后晋升、规则模板与执行指令 A/B</b>共享晋升去掉执行指令和检索结论后晋升其余事实；工作区规则经 Multica 安装配置跑通（16/16），模板写进文档；“归档前去掉执行指令”经 A/B 各 3 轮后默认开启，复查后改为按分句去掉；quality 套件改为遇到内容失败时记失败、继续跑；basic 与 matrix 回归：basic 13/13；前 3 次发现 Multica 只存 8 KB 工具输出预览和智能体自我 @ 循环，写了 Multica 补丁 0005；第 4 次完整一轮 27/30，修了归档里的智能体指令。</li>
+    <li><span class="when">10-09</span><b>benchmark 与推荐配置</b>在干净环境里用工作区规则重跑 benchmark，业务事实 27/27（10-01 为 0/27）；部署步骤推荐每个工作区配置 memory_rules；归档前也去掉成员对本次检索结果的说明；Multica 补丁改为本仓库维护、不提交上游。</li>
+    <li><span class="when">10-09</span><b>benchmark 原生对照</b>不配规则重跑：业务事实同样 27/27，私聊 0/3；发现“无需主动写记忆”等说法没被过滤，补上后再跑一轮：私聊偏好写入、召回 2/3（1 次检索超时）。</li>
+    <li><span class="when">10-09</span><b>独立评审</b>另开会话审阅 PR：2 高、1 中、4 低，均已修复——归档过滤不再误删业务规则，任务 API 临时出错时由 Multica 重投，召回在运行无法确认时不接受自选 issue，状态锁独占创建。修复后真实回归 basic 13/13、benchmark 21/21。</li>
+    <li><span class="when">10-09</span><b>第二轮独立评审</b>核对第一轮修复，并在 Multica 源码上应用全部补丁、跑 Go 测试；又修了条件后的规则被删、召回一侧误删产品规则等 5 处，补丁 0004 恢复后的运行状态写进已知限制。修复后 mock 端到端 13/13、14/14，真实 basic 13/13（$0.12）。</li>
+  </ol>
+</section>
+
+<footer>数据来源：仓库 README、reports/ 下的验证记录、测试与端到端运行日志，截至提交 b8e9e31。真实模型轮次的结果是小样本，不能据此推算生产准确率。</footer>
+</div>
+
+<div class="tooltip" id="tip" hidden></div>
+
+<script>
+(function () {
+  const P = 'pass', H = 'part', N = 'none', X = 'no';
+  const LEVELS = ['单元/集成', '真实 OV', '真实 Multica', '真实智能体'];
+  const STATE_TEXT = { pass: '已通过', part: '部分验证', none: '这一层未覆盖', no: '运行时不支持' };
+  const AREAS = ['接入与安全', '归档', '抽取与自愈', '召回', '主动记忆与共享', '定制与观测'];
+  const rows = [
+    { area: '接入与安全', name: '签名验证与安装绑定', s: [P, P, P, P], ev: 'installations 测试；run-e2e 重投判重；真实栈 R6 工作区 2 经 /v1/context 绑定；所有真实运行经官方 daemon 签名投递' },
+    { area: '接入与安全', name: '存储层范围隔离', s: [P, P, P, P], ev: 'run-e2e S7 跨空间读取 403、S8；真实栈 R6；matrix（10-01、10-08 回归）：B 召回不到 A 的公共记忆，也不搜索 A 与成员的私聊空间' },
+    { area: '接入与安全', name: 'ov-* 门面只许访问自己的空间', s: [P, P, P, P], ev: 'facade 测试；run-e2e S12；真实栈 R4；matrix（10-01、10-08 回归）：B 读取 A 的 URI 返回 outside_own_space' },
+    { area: '归档', name: 'issue 运行归档（转写与触发输入）', s: [P, P, P, P], ev: 'run-e2e S1；真实栈 R2c；basic 自动抽取（10-08 回归 13/13）；quality 种子任务' },
+    { area: '归档', name: '评论按作者归属', s: [P, P, P, P], ev: 'run-e2e S5；真实栈 R2d；quality 预算更新评论；matrix 成员评论' },
+    { area: '归档', name: '私聊归档（成员原话按本人归属）', s: [P, P, P, P], ev: 'run-e2e S6；真实栈 R3a/R3b；quality 私聊：10-02 规则 3/3、原生 2/3，10-08 两轮都抽取并召回；10-09 benchmark 私聊召回规则组 3/3、原生组 0/3（未过滤的“无需主动写记忆”），修复后 2/3（1 次检索超时），另一智能体都搜不到' },
+    { area: '归档', name: '快速创建、自动化与委派', s: [P, N, N, P], ev: '单元测试；matrix 10-01 与 10-08 回归：快速创建、手动/webhook/cron/建 issue 自动化、@mention 委派均核对范围；10-08 第 4 次第二次交接重测通过，快速创建因模型执行失误没建出 issue，归档仍落在 run 空间' },
+    { area: '归档', name: '运行中追加要求', s: [P, N, N, X], ev: '配套接口测试；真实 API 返回 412 task_supplement_unsupported，OpenCode 适配器不支持' },
+    { area: '归档', name: '归档用 issue 标题代替编号', tag: '新', s: [P, P, N, P], ev: 'archive / integration 测试；run-e2e patched 13/13、stock 14/14；10-08 两轮的实体卡和共享卡都没有编号（10-02 六轮全部带编号）' },
+    { area: '归档', name: '归档省略工具输出里智能体自己的指令', tag: '新', s: [P, N, N, H], ev: 'archive 测试；10-08 完整 matrix 发现：快速创建的智能体用 multica agent list 查自己，系统指令连同测试标记进了运行归档；修复后，真实运行里还没再出现这条路径' },
+    { area: '归档', name: '归档前去掉成员消息里的执行指令和检索结论', tag: '新', s: [P, P, N, P], ev: 'archive / integration 测试；按分句去掉，长期约定整句保留；10-08 A/B 各 3 轮：关闭时 3 轮都有抽取因“不要主动记录记忆”放弃写入，开启时 0 次；默认开启后验证轮 13/16，归档里已无成员写的指令；10-09 原生对照发现“无需主动写记忆”“之后结束”等说法没认出来，补上（af43d14）后验证：私聊偏好写入、召回 2/3' },
+    { area: '抽取与自愈', name: '持久化队列与重投判重', s: [P, P, P, P], ev: 'queue 测试；run-e2e S9；真实栈 R3a 连续私聊后熔断未打开；接收失败返回 503' },
+    { area: '抽取与自愈', name: '抽取监视与新会话重驱', s: [P, P, P, P], ev: 'extraction 测试；run-e2e S10；真实栈 R7 故障注入后在 -r1 重驱成功；matrix 共享晋升经两次重驱完成' },
+    { area: '抽取与自愈', name: '确认已发布的交付（补丁 0004）', s: [P, N, N, P], ev: 'Multica 补丁 Go 测试与插件测试；10-01、10-09 受控 401 后核验评论恢复，重复确认不重复执行' },
+    { area: '召回', name: '多范围召回并绑定调用它的运行', s: [P, P, P, P], ev: 'recall 测试；run-e2e S3 bound=true；真实栈 R2a、R5；basic recall-bound-to-run；结果先列绑定和查询范围，Multica 只存 8 KB 工具输出预览时仍可核对' },
+    { area: '召回', name: '只用编号或 UUID 的查询自动补全', s: [P, N, N, P], ev: 'recall 测试；basic cross-task-recall 修复后连续通过' },
+    { area: '召回', name: '过滤执行指令、检索结论与重复副本', s: [P, P, N, P], ev: 'memory-quality 测试；run-e2e S2；10-08 原生的私聊偏好混入“先调用 memory-recall”，新会话召回到的摘录已去掉这句' },
+    { area: '召回', name: '超时返回部分结果并注明', s: [P, N, P, P], ev: '9-30 真实栈在 25 秒向量延迟下按时作答；真实运行中超时如实说明，no-answer 判为无法确认' },
+    { area: '召回', name: '识别“检索为空”这类检索结论', tag: '新', s: [P, N, N, P], ev: 'memory-quality 测试含产品规则反例；10-08 A/B 开启组两轮的实体卡写进了“当时记忆检索为空不影响确认效力”，审计和晋升都识别出来' },
+    { area: '主动记忆与共享', name: 'memory-remember 主动记忆与后台索引', s: [P, P, P, P], ev: 'run-e2e S4；真实栈 R2b 与 R2b-recall；basic active-memory-index' },
+    { area: '主动记忆与共享', name: '共享晋升（质量门槛、按版本幂等）', s: [P, N, N, P], ev: 'consolidate 测试；10-02 六轮、10-08 两轮，每轮两次晋升都被接受，B 从共享记忆取回当前事实 8/8；10-09 benchmark 6 次晋升，B 9/9 只凭英文别名取回当前事实' },
+    { area: '主动记忆与共享', name: '晋升前去掉执行指令与检索结论', tag: '新', s: [P, N, N, P], ev: 'consolidate 测试；10-08 A/B 开启组 4 次晋升都去掉了卡片里的检索为空句子，B 从共享取回的卡里没有这句' },
+    { area: '定制与观测', name: '工作区抽取规则 memory_rules', tag: '新', s: [P, P, N, P], ev: 'memory-rules 测试；10-08 经 Multica 安装配置写入，首次提交前 94 ms 生效，12 次抽取全部带上规则，quality 16/16；10-09 benchmark 首次提交前生效，记忆审计质量问题 0；同日原生对照业务事实同样 27/27，私聊 0/3。已写进部署步骤作为推荐配置' },
+    { area: '定制与观测', name: '状态、诊断与模型请求观测', s: [P, P, N, P], ev: 'memory-status / admin 测试；run-e2e S10、S11；真实运行中用观测统计每次模型请求的认证形态与状态' },
+  ];
+
+  const tbody = document.querySelector('#matrix tbody');
+  const glyph = (state) => {
+    const el = document.createElement('span');
+    el.className = 'g g-' + state;
+    return el;
+  };
+  function renderMatrix(area) {
+    tbody.textContent = '';
+    for (const a of AREAS) {
+      if (area !== '全部' && area !== a) continue;
+      const items = rows.filter((r) => r.area === a);
+      if (!items.length) continue;
+      const head = document.createElement('tr');
+      head.className = 'area';
+      const htd = document.createElement('td');
+      htd.colSpan = 5;
+      htd.textContent = a;
+      head.appendChild(htd);
+      tbody.appendChild(head);
+      for (const r of items) {
+        const tr = document.createElement('tr');
+        const cap = document.createElement('td');
+        cap.className = 'cap';
+        const b = document.createElement('b');
+        b.textContent = r.name;
+        cap.appendChild(b);
+        if (r.tag) {
+          const t = document.createElement('span');
+          t.className = 'tag';
+          t.textContent = r.tag;
+          cap.appendChild(t);
+        }
+        const ev = document.createElement('span');
+        ev.className = 'ev';
+        ev.textContent = r.ev;
+        cap.appendChild(ev);
+        tr.appendChild(cap);
+        r.s.forEach((state, i) => {
+          const td = document.createElement('td');
+          td.className = 'lvl';
+          const g = glyph(state);
+          g.tabIndex = 0;
+          g.setAttribute('role', 'img');
+          g.setAttribute('aria-label', LEVELS[i] + '：' + STATE_TEXT[state]);
+          g.dataset.tip = JSON.stringify([STATE_TEXT[state], r.name + ' · ' + LEVELS[i]]);
+          td.appendChild(g);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+    }
+  }
+
+  // Coverage per level: passes as a full segment, partial as a lighter one.
+  const cov = document.getElementById('coverage');
+  const total = rows.length;
+  const notes = [
+    '全部能力都有测试替身下的回归测试',
+    '真实 OpenViking + mock 模型，模拟 Multica（patched / stock）',
+    '真实 Multica 服务端与 daemon 协议样例，不启动智能体',
+    '官方 daemon 驱动 OpenCode 智能体，真实模型',
+  ];
+  LEVELS.forEach((lvl, i) => {
+    const pass = rows.filter((r) => r.s[i] === P).length;
+    const part = rows.filter((r) => r.s[i] === H).length;
+    const card = document.createElement('div');
+    card.className = 'meter';
+    const head = document.createElement('div');
+    head.className = 'meter-head';
+    const name = document.createElement('b');
+    name.textContent = lvl;
+    const num = document.createElement('span');
+    num.textContent = pass;
+    const small = document.createElement('small');
+    small.textContent = ' / ' + total + (part ? '，部分 ' + part : '');
+    num.appendChild(small);
+    head.append(name, num);
+    const track = document.createElement('div');
+    track.className = 'track';
+    track.setAttribute('role', 'img');
+    track.setAttribute('aria-label', lvl + '：' + pass + ' 项通过' + (part ? '，' + part + ' 项部分验证' : '') + '，共 ' + total + ' 项');
+    const full = document.createElement('i');
+    full.style.width = (pass / total * 100) + '%';
+    track.appendChild(full);
+    if (part) {
+      const half = document.createElement('i');
+      half.className = 'part';
+      half.style.width = (part / total * 100) + '%';
+      track.appendChild(half);
+    }
+    const p = document.createElement('p');
+    p.textContent = notes[i];
+    card.append(head, track, p);
+    cov.appendChild(card);
+  });
+  const l4 = rows.filter((r) => r.s[3] === P).length;
+  document.getElementById('kpi-l4').firstChild.nodeValue = String(l4);
+
+  // Filters
+  const filters = document.getElementById('filters');
+  let current = '全部';
+  try { current = localStorage.getItem('ovmem-area') || '全部'; } catch (e) { current = '全部'; }
+  if (current !== '全部' && !AREAS.includes(current)) current = '全部';
+  ['全部', ...AREAS].forEach((a) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'filter-' + a;
+    btn.textContent = a;
+    btn.setAttribute('aria-pressed', String(a === current));
+    btn.addEventListener('click', () => {
+      current = a;
+      for (const other of filters.children) other.setAttribute('aria-pressed', String(other.textContent === a));
+      renderMatrix(a);
+      try { localStorage.setItem('ovmem-area', a); } catch (e) { /* storage unavailable */ }
+    });
+    filters.appendChild(btn);
+  });
+  renderMatrix(current);
+
+  // Tooltip shared by the matrix and the chart
+  const tip = document.getElementById('tip');
+  function showTip(target, lines) {
+    tip.textContent = '';
+    const strong = document.createElement('strong');
+    strong.textContent = lines[0];
+    tip.appendChild(strong);
+    for (const line of lines.slice(1)) {
+      const div = document.createElement('div');
+      div.textContent = line;
+      tip.appendChild(div);
+    }
+    tip.hidden = false;
+    const r = target.getBoundingClientRect();
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = r.left + r.width / 2 - w / 2;
+    x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+    let y = r.top - h - 8;
+    if (y < 8) y = r.bottom + 8;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  const hideTip = () => { tip.hidden = true; };
+  document.addEventListener('pointerover', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t) showTip(t, JSON.parse(t.dataset.tip));
+  });
+  document.addEventListener('pointerout', (e) => { if (e.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', (e) => {
+    const t = e.target.closest('[data-tip]');
+    if (t) showTip(t, JSON.parse(t.dataset.tip)); else hideTip();
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, { passive: true });
+
+  // Comparison chart: grouped horizontal bars, runs passed out of 3.
+  const cmp = [
+    { label: '15 项全部通过', a: 0, b: 2 },
+    { label: '持久偏好单独成条', a: 0, b: 2 },
+    { label: '私聊周报版式被抽取', a: 2, b: 3 },
+    { label: '历史预算记录在事件里', a: 3, b: 2 },
+    { label: '8100 为当前值、7600 标为历史', a: 3, b: 3 },
+    { label: 'B 从共享记忆取回当前事实', a: 3, b: 3 },
+    { label: '实体卡里没有 issue 编号', a: 0, b: 0 },
+  ];
+  const SERIES = [{ key: 'a', name: '原生抽取', cls: 'bar-a' }, { key: 'b', name: '账号级规则', cls: 'bar-b' }];
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = (tag, attrs, text) => {
+    const el = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (text !== undefined) el.textContent = text;
+    return el;
+  };
+  function drawChart() {
+    const host = document.getElementById('cmp-chart');
+    host.textContent = '';
+    const narrow = host.clientWidth < 560;
+    const W = Math.max(320, host.clientWidth || 760);
+    const labelW = narrow ? 0 : 220;
+    const barH = 12, gap = 2, groupGap = narrow ? 30 : 18, top = 8, axisH = 24;
+    const groupH = barH * 2 + gap;
+    const rowH = groupH + groupGap + (narrow ? 0 : 0);
+    const H = top + cmp.length * rowH + axisH;
+    const x0 = labelW + 8, x1 = W - 44;
+    const scale = (v) => x0 + (x1 - x0) * v / 3;
+    const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': '各项检查在 3 轮中通过的轮数，原生抽取与账号级规则对比' });
+    for (let t = 0; t <= 3; t++) {
+      const x = scale(t);
+      svg.appendChild(mk('line', { x1: x, x2: x, y1: top - 4, y2: H - axisH + 2, class: t === 0 ? 'base-line' : 'grid-line' }));
+      svg.appendChild(mk('text', { x, y: H - 6, 'text-anchor': 'middle', class: 'ax' }, t === 3 ? '3 轮' : String(t)));
+    }
+    cmp.forEach((row, i) => {
+      const gy = top + i * rowH + (narrow ? 16 : 0);
+      if (narrow) svg.appendChild(mk('text', { x: x0, y: gy - 5, class: 'row-label' }, row.label));
+      else svg.appendChild(mk('text', { x: labelW, y: gy + groupH / 2 + 4, 'text-anchor': 'end', class: 'row-label' }, row.label));
+      SERIES.forEach((s, j) => {
+        const v = row[s.key];
+        const y = gy + j * (barH + gap);
+        const w = scale(v) - x0;
+        const hit = mk('rect', { x: x0, y: y - 1, width: x1 - x0, height: barH + 2, class: 'bar-hit', tabindex: '0', 'aria-label': `${row.label}，${s.name}：${v}/3` });
+        hit.dataset.tip = JSON.stringify([v + ' / 3 轮', s.name + ' · ' + row.label]);
+        svg.appendChild(hit);
+        if (v > 0) {
+          const r = Math.min(4, w);
+          const d = `M${x0} ${y} H${x0 + w - r} Q${x0 + w} ${y} ${x0 + w} ${y + r} V${y + barH - r} Q${x0 + w} ${y + barH} ${x0 + w - r} ${y + barH} H${x0} Z`;
+          svg.appendChild(mk('path', { d, class: s.cls + ' bar-mark', 'pointer-events': 'none' }));
+        } else {
+          svg.appendChild(mk('rect', { x: x0, y: y + barH / 2 - 1, width: 3, height: 2, class: s.cls + ' bar-mark', 'pointer-events': 'none' }));
+        }
+        svg.appendChild(mk('text', { x: x0 + Math.max(w, 3) + 6, y: y + barH - 2, class: 'val-label', 'pointer-events': 'none' }, `${v}/3`));
+      });
+    });
+    host.appendChild(svg);
+  }
+  function drawTable() {
+    const host = document.getElementById('cmp-table');
+    host.textContent = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const t = document.createElement('table');
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const h of ['检查项', '原生抽取', '账号级规则']) {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = h;
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr);
+    const tb = document.createElement('tbody');
+    for (const row of cmp) {
+      const tr = document.createElement('tr');
+      const c0 = document.createElement('td');
+      c0.textContent = row.label;
+      const c1 = document.createElement('td');
+      c1.className = 'num-cell';
+      c1.textContent = row.a + ' / 3';
+      const c2 = document.createElement('td');
+      c2.className = 'num-cell';
+      c2.textContent = row.b + ' / 3';
+      tr.append(c0, c1, c2);
+      tb.appendChild(tr);
+    }
+    t.append(thead, tb);
+    wrap.appendChild(t);
+    host.appendChild(wrap);
+  }
+  drawChart();
+  drawTable();
+  const toggle = document.getElementById('cmp-toggle');
+  toggle.addEventListener('click', () => {
+    const showTable = toggle.getAttribute('aria-pressed') !== 'true';
+    toggle.setAttribute('aria-pressed', String(showTable));
+    toggle.textContent = showTable ? '查看图表' : '查看表格';
+    document.getElementById('cmp-chart').hidden = showTable;
+    document.getElementById('cmp-table').hidden = !showTable;
+  });
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(drawChart, 120);
+  });
+})();
+</script>
+</body>
+</html>
