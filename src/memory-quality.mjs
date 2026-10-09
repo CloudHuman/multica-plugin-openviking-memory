@@ -3,16 +3,22 @@ import { createHash } from 'node:crypto';
 // Narrow guards for execution controls seen in real archives. These are not a
 // semantic classifier: business facts and explicitly lasting preferences still
 // need the extractor's schema rules. Never rewrite the original archive.
+// Each pattern is tried on one clause at a time (see controlClause).
 const EXECUTION_CONTROL = [
   /(?:先|须|必须|应|before|must|first).{0,30}(?:调用\s*memory[-_ ]recall|memory[-_ ]recall)/i,
   /(?:memory[-_ ]recall|召回).{0,45}(?:引用.{0,12}(?:来源|URI)|实际证据|简短确认)/i,
-  /(?:不|不要|禁止|无需|无须|不用|不必|未经明确要求不|do not|don't|must not).{0,10}(?:主动(?:写入?|记录|保存)?记忆|修改代码|创建\s*(?:新\s*)?issue|创建唤醒规则|主动创建唤醒规则|modify code|create (?:an? )?(?:new )?issue|record memor)/i,
-  /(?:按平台流程|提交简短(?:最终)?回复|只发布一次|后续完成通知只需确认|不要再次委派)/,
+  // An order to the agent opening its clause ("不要修改代码", "无需主动写记忆").
+  // A rule about the business is not one: "上线前一周不允许修改代码",
+  // "客户不希望我们修改代码库结构", "支付回调失败时不要创建新 issue".
+  /^\s*(?:请\s*)?(?:除(?:非)?(?:明确)?要求(?:以)?外\s*)?(?:不要|无需|无须|不用|不必|请勿|禁止|别|未经明确要求不要?|不)\s*(?:再|擅自|自行)?\s*(?:主动(?:写入?|记录|保存)?记忆|修改代码|创建\s*(?:新\s*)?issue|(?:主动)?创建唤醒规则)/i,
+  /^\s*(?:please\s+)?(?:do not|don't|must not|never)\s+(?:modify (?:the )?code|create (?:an? )?(?:new )?issue|record memor)/i,
+  // How this run's reply is published; "每个版本的公告只发布一次" is a business rule.
+  /(?:按平台流程(?:提交|发布)|提交简短(?:最终)?回复|(?:评论|回复|comment).{0,30}只发布一次|后续完成通知只需确认|不要再次委派)/i,
   // How to end this run, as a clause of its own ("之后结束", "请简短确认后结束").
   /^\s*请?(?:简短确认(?:后|即可)?|确认后|之后|然后|随后)\s*结束\s*[。.!！]?\s*$/u,
   /(?:MULTICA_TASK_ID|MULTICA_AGENT_ID|Never background-and-yield|Background Task Safety)/i,
-  // How to word this run's reply ("按实际证据回复", "引用来源 URI").
-  /(?:按|依据|根据|基于)(?:实际|召回的?)?证据(?:回复|作答|回答)|引用(?:记忆)?来源\s*(?:URI|链接)/i,
+  // How to word this run's reply ("按实际证据回复", "引用来源 URI"); "研究报告必须引用来源链接" stays.
+  /(?:按|依据|根据|基于)(?:实际|召回的?)?证据(?:回复|作答|回答)|引用(?:记忆|召回的?)?来源\s*URI/i,
 ];
 const DURABLE_DOMAIN = /(?:以后|今后|始终|长期|一律|团队规范|发布冻结|冻结期|always|from now on|team policy|code freeze)/i;
 const FAILED_RECALL = /(?:记忆(?:检索|搜索|召回)|检索|召回|memory (?:search|recall)).{0,65}(?:未(?:能)?找到|未检索到|没(?:有)?找到|无(?:可用|相关)|not found|no (?:relevant|available)|failed|timed? out)/i;
@@ -21,27 +27,31 @@ const NO_VALUE = /(?:未检索到|没(?:有)?查到|未找到|查不到).{0,40}(
 // A product rule about empty results ("检索结果为空时显示提示") states a condition and stays.
 const EMPTY_RECALL = /(?:记忆|本次|此次|这次)\s*(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)|(?:检索|召回|搜索)(?:结果)?\s*(?:为空|是空的?)(?!时)\s*[，,、]?\s*(?:不影响|无法|不能|暂无|因此|所以|故|但)/;
 const recallOutcome = (text) => FAILED_RECALL.test(text) || NO_VALUE.test(text) || EMPTY_RECALL.test(text);
-// One sentence that only steers a single run; a stated lasting policy is not one.
-const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && EXECUTION_CONTROL.some(re => re.test(segment));
 const CLAUSE_END = /(?<=[，,、：:])/u;
+const CONDITION = /(?:时|的话|如果|若|假如|when\b|if\b)/i;
+const LIST_MARKER = /^\s*(?:[-*•]|\d+[.)])\s+/u;
+// A clause that only steers this run; nothing stated as a condition is one.
+const controlClause = (clause) => {
+  const text = String(clause).replace(LIST_MARKER, '');
+  return !CONDITION.test(text) && EXECUTION_CONTROL.some(re => re.test(text));
+};
+// A sentence with such a clause; a stated lasting policy has none.
+const runControl = (segment) => !DURABLE_DOMAIN.test(segment) && String(segment).split(CLAUSE_END).some(controlClause);
 
 /**
  * One sentence without its run-control clauses, so the facts beside them stay:
  * "方案确认：不修改代码，只调整分区数为 12。" keeps "方案确认：只调整分区数为 12。".
- * A sentence stating a lasting policy stays whole; a control spread over several
- * clauses takes the whole sentence; nothing left means ''.
+ * A sentence stating a lasting policy stays whole; nothing left means ''.
  */
 function withoutControlClauses(sentence) {
   if (!runControl(sentence)) return sentence;
   const clauses = sentence.split(CLAUSE_END);
-  const kept = clauses.filter(clause => !EXECUTION_CONTROL.some(re => re.test(clause)));
-  if (kept.length === clauses.length) return '';
+  const kept = clauses.filter(clause => !controlClause(clause));
   let rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
   if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
   // A list item keeps its marker when the dropped clause carried it.
-  const marker = sentence.match(/^\s*(?:[-*•]|\d+[.)])\s+/u)?.[0] ?? '';
+  const marker = sentence.match(LIST_MARKER)?.[0] ?? '';
   if (marker && !rest.startsWith(marker)) rest = `${marker}${rest.trimStart()}`;
-  if (runControl(rest)) return '';
   const end = sentence.match(/[。；;.!?！？]\s*$/u)?.[0].trim() ?? '';
   return rest.endsWith(end) ? rest : `${rest}${end}`;
 }
@@ -88,17 +98,21 @@ export function memoryExcerpt(content, { uri = '' } = {}) {
 // archived before any extraction sees it, so a failed-search phrase counts
 // only when it is about memory or this run, and nothing stated as a condition
 // ("检索无相关结果时显示空状态") is taken for an outcome.
-const RUN_SEARCH = /(?:记忆|历史|本次|此次|这次|memory)/i;
-const CONDITION = /(?:时|的话|如果|若|假如|when\b|if\b)/i;
+// The search itself, not a noun beside it ("历史数据检索 failed 的告警" is a business rule).
+const RUN_SEARCH = /(?:记忆|历史|本次|此次|这次|memory)\s*的?\s*(?:检索|召回|搜索|search|recall)/i;
 const memberRecallOutcome = (clause) => !CONDITION.test(clause)
   && (EMPTY_RECALL.test(clause) || NO_VALUE.test(clause) || (FAILED_RECALL.test(clause) && RUN_SEARCH.test(clause)));
 
-/** One sentence without the clauses that report this run's search; a remark spread over several clauses takes the sentence. */
+/**
+ * One sentence without the clauses that report this run's search. A sentence
+ * no single clause of which reports it ("搜索结果为空，因此显示默认推荐列表")
+ * stays whole.
+ */
 function withoutRecallOutcome(sentence) {
   if (DURABLE_DOMAIN.test(sentence) || !memberRecallOutcome(sentence)) return sentence;
   const clauses = sentence.split(CLAUSE_END);
   const kept = clauses.filter(clause => !memberRecallOutcome(clause));
-  if (kept.length === clauses.length) return '';
+  if (kept.length === clauses.length) return sentence;
   const rest = kept.join('').replace(/[，,、：:\s]+$/u, '');
   if (!rest.replace(/[\s，,、：:。；;.!?！？-]/gu, '')) return '';
   const end = sentence.match(/[。；;.!?！？]\s*$/u)?.[0].trim() ?? '';

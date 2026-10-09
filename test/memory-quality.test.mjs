@@ -141,7 +141,7 @@ test('a member\'s remark on this run\'s search is archived without that clause; 
   // The quality seed's wording, 10-08: the extraction copied it into entity cards.
   assert.equal(withoutRunControls('本次成员确认是直接证据，历史检索为空不影响确认。'), '本次成员确认是直接证据。');
   assert.equal(withoutRunControls('本次召回未找到相关记忆，以成员确认为准。'), '以成员确认为准。');
-  assert.equal(withoutRunControls('检索为空，因此以成员确认为准。'), '', 'a remark spread over two clauses takes the sentence');
+  assert.equal(withoutRunControls('检索为空，因此以成员确认为准。'), '检索为空，因此以成员确认为准。', 'no single clause reports the search: the sentence stays');
   assert.equal(withoutRunControls('请先调用 memory-recall 查历史，历史检索为空不影响确认。'), '');
   assert.equal(withoutRunControls('预算 7600 元。历史检索为空不影响确认。双写五天。'), '预算 7600 元。双写五天。');
   for (const rule of ['检索结果为空时显示提示。', '召回为空时降级到全文搜索。', '新用户历史检索为空，推荐热门词。', '搜索结果为空的页面需要展示引导。', '检索无相关结果时显示空状态。', '如果记忆检索失败，就重试一次。', '以后检索为空不影响上线评审。']) {
@@ -162,3 +162,23 @@ test('other wordings of "do not record memory" and how to end the run are run co
   }
   assert.deepEqual(memoryQualityIssues('**user**: 正式更新：当前月预算改为 8100 元。不要主动写记忆，不要创建新 issue。之后结束。'), ['execution-control']);
 });
+
+test('business rules that share words with run controls are archived as written', () => {
+  // The independent review of 73964d1: each of these was dropped or cut.
+  for (const rule of [
+    '上线前一周不允许修改代码。',
+    '客户不希望我们修改代码库结构，只调整配置。',
+    '研究报告必须引用来源链接。',
+    '每个版本的公告只发布一次。',
+    '支付回调失败时不要创建新 issue，直接重试三次。',
+    '搜索结果为空，因此显示默认推荐列表。',
+    '商品搜索结果为空，但要展示热门商品。',
+    '历史数据检索 failed 的告警要发到运维群。',
+  ]) {
+    assert.equal(withoutRunControls(rule), rule, rule);
+  }
+  // The run controls of the real-agent suites still go.
+  assert.equal(withoutRunControls('请先调用 memory-recall，按实际证据回复。不要修改代码，除明确要求外不要主动记录记忆。按平台流程提交简短回复，引用召回的来源 URI。'), '');
+  assert.equal(withoutRunControls('未经明确要求不主动记录记忆，不修改代码；预算 7600 元。'), '预算 7600 元。');
+});
+
