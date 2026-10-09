@@ -223,7 +223,7 @@ issue 改派给 B 后，B 先读评论区，直接照抄了 A 的确认评论，
 
 ## 6. 决定与处理
 
-1. **自我 @ 循环：在 Multica 修**。补丁 [`upstream/multica/0005-*.patch`](../upstream/multica/README.md)：评论作者 @ 自己、且评论由它在同一 issue 上的运行写出时，这个 mention 记为 `blocked/self_trigger_suppressed`，不再派发；跨 issue 的自我通知、没有运行上下文的评论、同一评论里 @ 的其他智能体都照常。两个 Go 测试覆盖这两种情况，不修复时第一个失败；handler 包其余测试通过，只有 `TestListIssuesPropertyFilterAndSort` 例外，它在不打补丁时同样失败、单独跑则通过。第 4 次运行用的就是打了补丁的服务端，这一轮 B 两次回复都没有 @ 自己，补丁没被触发。测试脚本的保护保留，作为没打补丁时的兜底。
+1. **自我 @ 循环：在 Multica 修**。补丁 [`upstream/multica/0005-*.patch`](../upstream/multica/README.md)：评论作者 @ 自己、且评论由它在同一 issue 上的运行写出时，这个 mention 记为 `blocked/self_trigger_suppressed`，不再派发；跨 issue 的自我通知、没有运行上下文的评论、同一评论里 @ 的其他智能体都照常。两个 Go 测试覆盖这两种情况，不修复时第一个失败；handler 包其余测试通过，只有 `TestListIssuesPropertyFilterAndSort` 例外，它在不打补丁时同样失败、单独跑则通过。（10-09 更正：第二轮独立评审在 Multica `43b0571` 上实测，不打补丁时整包运行 2/2 通过，打补丁后 3/3 失败，单独运行通过；推测是补丁新增的测试让测试工作区的 issue 超过 200 个。只影响测试，不影响运行。）第 4 次运行用的就是打了补丁的服务端，这一轮 B 两次回复都没有 @ 自己，补丁没被触发。测试脚本的保护保留，作为没打补丁时的兜底。
 2. **matrix：全新完整跑一轮**，即第 4 次，见第 7 节。
 
 ## 7. 第 4 次：完整一轮
