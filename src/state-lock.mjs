@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, existsSync, openSync, writeSync, closeSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -13,13 +13,18 @@ import { sleep } from './util.mjs';
  * The lease is a lock file the holder refreshes every heartbeatMs; another
  * holder is alive exactly when that heartbeat keeps moving.
  *
- *   - no lock, or a heartbeat older than ttlMs            → take it
+ *   - no lock                                             → create it exclusively;
+ *                                                           of two starters only one can
+ *   - a heartbeat older than ttlMs                        → take it
  *   - same host, different PID, process gone              → stale → take it
  *   - otherwise watch the lock for two heartbeat windows: if it moved, another
  *     writer is alive → refuse; if not, it is stale → take it. This covers
  *     "same host, same PID" too, which is either our own previous run (a
  *     container restart) or a twin container sharing the hostname
  *     (network_mode: host, both PID 1) — only the heartbeat tells them apart.
+ *
+ * Two starters taking over the same stale lease both write it; the last write
+ * wins, so each reads the lease back after a short settle and the other refuses.
  */
 export async function acquireStateLock({ stateDir, ttlMs = 15_000, heartbeatMs = 5_000, log = () => {}, onLost = () => {} }) {
   mkdirSync(stateDir, { recursive: true });
@@ -27,7 +32,11 @@ export async function acquireStateLock({ stateDir, ttlMs = 15_000, heartbeatMs =
   const me = { instance: randomUUID(), pid: process.pid, host: hostname(), heartbeatAt: Date.now() };
 
   const fresh = (lock) => Boolean(lock) && Date.now() - Number(lock.heartbeatAt ?? 0) < ttlMs;
-  const held = readLock(path);
+  let held = readLock(path);
+  if (!held && createLock(path, me)) return keepLease(path, me, heartbeatMs, log, onLost);
+  // Created by another starter a moment ago; give it time to finish writing.
+  if (!held) await sleep(50);
+  held ??= readLock(path);
   if (fresh(held)) {
     const provablyDead = held.host === me.host && Number(held.pid) !== process.pid && !processAlive(Number(held.pid));
     if (!provablyDead) {
@@ -41,6 +50,13 @@ export async function acquireStateLock({ stateDir, ttlMs = 15_000, heartbeatMs =
   }
 
   writeLock(path, me);
+  await sleep(Math.min(heartbeatMs, 1_000));
+  const after = readLock(path);
+  if (after && after.instance !== me.instance) throw locked(after);
+  return keepLease(path, me, heartbeatMs, log, onLost);
+}
+
+function keepLease(path, me, heartbeatMs, log, onLost) {
   const timer = setInterval(() => {
     // Someone else holds the lease now: stop writing rather than keep two
     // writers alive. Whoever took it over is the one that continues.
@@ -76,6 +92,19 @@ function readLock(path) {
   } catch {
     return null;
   }
+}
+
+/** Create the lock only if there is none; false when another starter created it first. */
+function createLock(path, me) {
+  let fd;
+  try {
+    fd = openSync(path, 'wx');
+  } catch (err) {
+    if (err.code === 'EEXIST') return false;
+    throw err;
+  }
+  try { writeSync(fd, JSON.stringify(me)); } finally { closeSync(fd); }
+  return true;
 }
 
 function writeLock(path, me) {

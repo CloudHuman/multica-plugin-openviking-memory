@@ -37,7 +37,7 @@ test('a lease whose heartbeat stopped is taken over, fresh-looking or not', asyn
   writeFileSync(lockPath(stateDir), JSON.stringify({ instance: 'old', pid: 1, host: 'other-host', heartbeatAt: Date.now() - 60_000 }));
   const t0 = Date.now();
   const lock2 = await acquireStateLock({ stateDir, ...fast });
-  assert.ok(Date.now() - t0 < 50, 'no wait for an expired lease');
+  assert.ok(Date.now() - t0 < 250, 'no watch for an expired lease, only the short settle after taking it');
   lock2.release();
 });
 
@@ -46,7 +46,7 @@ test('a lock left by a dead process on this host, or a legacy bare-PID file, is 
   writeFileSync(lockPath(stateDir), JSON.stringify({ instance: 'dead', pid: 2 ** 22 + 12345, host: hostname(), heartbeatAt: Date.now() }));
   const t0 = Date.now();
   const lock = await acquireStateLock({ stateDir, ...fast });
-  assert.ok(Date.now() - t0 < 50, 'a provably dead holder is not waited for');
+  assert.ok(Date.now() - t0 < 250, 'a provably dead holder is not watched');
   lock.release();
 
   writeFileSync(lockPath(stateDir), String(process.pid));
@@ -68,4 +68,31 @@ test('the holder notices a takeover and stops; release removes only its own leas
   const mine = await acquireStateLock({ stateDir: stateDir2, ...fast });
   mine.release();
   assert.equal(existsSync(lockPath(stateDir2)), false);
+});
+
+test('of two writers starting together, only one gets the lease', async () => {
+  // No lock yet: only one exclusive create succeeds.
+  const stateDir = tempStateDir();
+  const both = await Promise.allSettled([acquireStateLock({ stateDir, ...fast }), acquireStateLock({ stateDir, ...fast })]);
+  assert.equal(both.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(both.find((r) => r.status === 'rejected').reason.code, 'STATE_LOCKED');
+  both.find((r) => r.status === 'fulfilled').value.release();
+
+  // An expired lease taken over by both: the last write wins, the other refuses.
+  const stateDir2 = tempStateDir();
+  writeFileSync(lockPath(stateDir2), JSON.stringify({ instance: 'old', pid: 1, host: 'other-host', heartbeatAt: Date.now() - 60_000 }));
+  const takers = await Promise.allSettled([acquireStateLock({ stateDir: stateDir2, ...fast }), acquireStateLock({ stateDir: stateDir2, ...fast })]);
+  assert.equal(takers.filter((r) => r.status === 'fulfilled').length, 1);
+  assert.equal(takers.find((r) => r.status === 'rejected').reason.code, 'STATE_LOCKED');
+  takers.find((r) => r.status === 'fulfilled').value.release();
+});
+
+
+test('a writer that loses a takeover to another process refuses instead of writing on', async () => {
+  const stateDir = tempStateDir();
+  writeFileSync(lockPath(stateDir), JSON.stringify({ instance: 'old', pid: 1, host: 'other-host', heartbeatAt: Date.now() - 60_000 }));
+  const taking = acquireStateLock({ stateDir, ...fast });
+  // Another process took the same stale lease right after us: its write is the last one.
+  writeFileSync(lockPath(stateDir), JSON.stringify({ instance: 'other-process', pid: 99, host: 'elsewhere', heartbeatAt: Date.now() }));
+  await assert.rejects(taking, (e) => e.code === 'STATE_LOCKED');
 });
