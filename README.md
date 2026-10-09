@@ -143,10 +143,11 @@ OVMEM_MULTICA_API_URL=https://multica.example.com/v1
 
 在插件设置里，把参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 整段粘贴进安装配置 `memory_rules`，再按需增删（格式见[配置参考](#配置参考)）。规则在该工作区下一条记录提交前写进它自己 OV 账户的模板，只影响这个工作区；`memory-status` 的 `memory_rules` 显示 `applied` 即已生效。
 
-推荐的依据（10-02、10-08 的真实模型对比）：
+推荐的依据（10-02、10-08、10-09 的真实模型对比）：
 
 - 原生抽取在私聊里会把成员说的“不写入公共记忆”理解成不要记：跑到私聊的 8 轮里有 3 轮没抽出版式，配了规则的 4 轮都正常；
 - 10-08 的对比中，原生抽取把“回复前先调用 memory-recall 核实证据”写进了私聊偏好，配了规则的那一轮没有；
+- 10-09 的 benchmark 对照中，业务事实两组都是 27/27；私聊偏好配置规则 3/3、原生抽取 0/3，原生抽取还把智能体的查询记成事件，同一项目的实体卡叫法也不一致；
 - 代价是每次抽取的提示词多约 2.5K 字符（8–9%）。
 
 ### 7. （可选）配套能力接入
@@ -265,10 +266,11 @@ OV_ROOT_KEY=… node e2e/run-e2e.mjs                # 真实 OV + 模拟 multica
 node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV；R7 故障注入需 MOCK_LLM_URL
 ```
 
-最近的记录：[`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md)（干净环境 + 工作区规则的 benchmark，27/27）、[`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)（basic 与 matrix 回归、自我 @ 循环）、[`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)（归档前去掉执行指令的 A/B 对比）、[`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)（工作区规则经安装配置生效、标题代替编号的真实验证）、[`reports/real-agent-2026-10-02-native-vs-account-x3.md`](reports/real-agent-2026-10-02-native-vs-account-x3.md)（原生抽取与账号级规则各 3 轮）、[`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)（原生抽取与账号级规则对比、json 输出格式导致的空卡）、[`reports/auth-resilience-2026-10-01.md`](reports/auth-resilience-2026-10-01.md)（鉴权诊断、请求预算与失败恢复）、[`reports/distillation-quality-2026-10-01.md`](reports/distillation-quality-2026-10-01.md)（真实多智能体蒸馏质量）、[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
+最近的记录：[`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md)（benchmark：工作区规则与原生抽取对照，业务事实都是 27/27）、[`reports/real-agent-2026-10-08-regression.md`](reports/real-agent-2026-10-08-regression.md)（basic 与 matrix 回归、自我 @ 循环）、[`reports/real-agent-2026-10-08-archive-run-controls-ab.md`](reports/real-agent-2026-10-08-archive-run-controls-ab.md)（归档前去掉执行指令的 A/B 对比）、[`reports/real-agent-2026-10-08-config-rules.md`](reports/real-agent-2026-10-08-config-rules.md)（工作区规则经安装配置生效、标题代替编号的真实验证）、[`reports/real-agent-2026-10-02-native-vs-account-x3.md`](reports/real-agent-2026-10-02-native-vs-account-x3.md)（原生抽取与账号级规则各 3 轮）、[`reports/real-agent-2026-10-01-native-vs-account.md`](reports/real-agent-2026-10-01-native-vs-account.md)（原生抽取与账号级规则对比、json 输出格式导致的空卡）、[`reports/auth-resilience-2026-10-01.md`](reports/auth-resilience-2026-10-01.md)（鉴权诊断、请求预算与失败恢复）、[`reports/distillation-quality-2026-10-01.md`](reports/distillation-quality-2026-10-01.md)（真实多智能体蒸馏质量）、[`reports/review-hardening-2026-10-01.md`](reports/review-hardening-2026-10-01.md)（补修与原文召回复核）、[`reports/e2e-2026-09-30.md`](reports/e2e-2026-09-30.md)（mock 模型，覆盖全部链路与自愈）、[`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)（OpenRouter 真实模型，看蒸馏质量与模型选型）。
 
 ## 变更记录
 
+- **2026-10-09 原生抽取对照 benchmark；归档前多认几种“不要记记忆”的说法**：在同样的干净环境里不配工作区规则重跑 benchmark。业务事实同样 27/27，当前事实加共享来源 9/9；私聊偏好 0/3（配置规则时 3/3）。原因是成员说的“无需主动写记忆”没被归档前的过滤认出来，原生抽取据此一条也没写。过滤现在也认“无需 / 不用 / 不必”加“主动写记忆 / 主动写入记忆 / 主动保存记忆”、“创建新 issue”，以及只表示结束本次运行的分句（如“之后结束”“请简短确认后结束”）；“禁止写公共记忆”和不带“主动”的“不要写入记忆”保留。修复后还没有真实运行验证（见 [`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md) 第 4 节）。
 - **2026-10-09 benchmark 重跑：27/27**：在干净环境里用推荐配置（经安装配置写入工作区规则）重跑 benchmark。9 次独立查询的 27 项业务事实全部答对；当前事实加共享来源 9/9（运行时记为 8/9，B 把来源 URI 写成了百分号编码，检查脚本已改为解码后比较）。私聊召回 3/3，隔离干净；受控 401 后的交付恢复正常。记忆审计 21 个文件，质量问题 0；所有请求没有 401。10-01 那一轮在 401 环境里是 0/27（见 [`reports/real-agent-2026-10-09-benchmark.md`](reports/real-agent-2026-10-09-benchmark.md)）。
 - **2026-10-09 推荐配置工作区规则；归档前也去掉对本次检索结果的说明**：部署步骤新增“配置工作区抽取规则”，推荐每个工作区把参考模板写进 `memory_rules`。`archiveDropRunControls` 开启时（默认），成员消息里对本次检索结果的说明也在归档前按分句去掉，例如“历史检索为空不影响确认”。这类句子此前要靠召回和共享晋升兜底，A/B 中开启组的两次失败都来自它。判断比召回时更保守：只认指向记忆或本次运行的说法，带条件的产品规则（如“检索结果为空时显示提示”“检索无相关结果时显示空状态”）整句保留。multica 补丁改为由本仓库维护，不提交上游。
 - **2026-10-08 归档省略智能体自己的指令**：归档工具结果时，JSON 里 `instructions` 字段的值换成“[智能体指令已省略]”，记录的其余字段保留。完整 matrix 中，快速创建的智能体用 `multica agent list --output json` 查自己，输出里带着自己的系统指令，测试放在里面的平台标记随之进了运行归档。运行时说明原本就会按标题去掉，智能体记录没有这个标题。
