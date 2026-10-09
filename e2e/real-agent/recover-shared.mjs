@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { auditMatrix } from './matrix.mjs';
+import { citesUri } from './answer-checks.mjs';
 
 // Continue the actual matrix after a native, unmonitored promotion failed.
 // Replay its original archive; do not supply the expected facts to the agent.
@@ -41,7 +42,7 @@ export async function recoverSharedMatrix(ctx) {
   const response = [task.result?.output ?? '', ...comments.map(c => c.content)].join('\n');
   const record = { entry: 'shared-recall', taskId: task.id, agentId: bId, issueId: issue.id, status: task.status, error: task.error ?? null, startedAt: task.started_at, completedAt: task.completed_at, response, comments: comments.map(c => ({ id: c.id, sourceTaskId: c.source_task_id, content: c.content })), tools: messages.filter(m => m.type === 'tool_use').map(m => m.tool), recalls, usage: task.usage };
   report.tasks.push(record); privateFile(join(state, `shared-recall-${task.id}-transcript.json`), messages); save();
-  step('multi-agent-shared-recall', task.status === 'completed' && /NATS/i.test(response) && /2450/.test(response) && recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === sharedScope && comments.some(c => c.content.includes(e.uri)))), 'Actual agent B recovered A business facts from the repaired shared memory and cited its URI in a persisted issue reply');
+  step('multi-agent-shared-recall', task.status === 'completed' && /NATS/i.test(response) && /2450/.test(response) && recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === sharedScope && comments.some(c => citesUri(c.content, e.uri)))), 'Actual agent B recovered A business facts from the repaired shared memory and cited its URI in a persisted issue reply');
   for (const record of report.tasks) await wait(`archive ${record.entry}`, async () => statuses().find(e => e.record === 'archive-run' && e.ref === record.taskId && e.extraction === 'done'), 240000);
   await auditMatrix({ ov, report, scopes, statuses, canary, issuePrefix, step, save });
 }

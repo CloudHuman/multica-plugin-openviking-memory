@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateFacts, assessPrivateIsolation, CASES } from '../e2e/real-agent/benchmark.mjs';
 import { recoverDeliveredComment } from '../e2e/real-agent/delivery-recovery.mjs';
+import { citesUri, sameUri } from '../e2e/real-agent/answer-checks.mjs';
 import DeliveryFault from '../e2e/real-agent/after-delivery-fault.mjs';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,18 @@ test('benchmark rejects stale budgets, wrong durations and ungrounded sources se
   assert.equal(evaluateFacts(record({ ...facts, budget_yuan: c.previous }), c, 'shared:w').budget, false);
   assert.equal(evaluateFacts(record({ ...facts, double_write_days: 99 }), c, 'shared:w').days, false);
   assert.equal(evaluateFacts(record({ ...facts, source: 'viking://invented' }), c, 'shared:w').provenance, false);
+});
+
+test('a source cited percent-encoded is the same shared file; another file is not', () => {
+  // 10-09 benchmark: B cited …/entities/%E9%A1%B9%E7%9B%AE/%E7%99%BD%E9%B9%AD.md for …/entities/项目/白鹭.md.
+  const c = CASES[2], uri = 'viking://user/mcs-shared/memories/entities/项目/白鹭.md';
+  const record = source => ({ comments: [{ content: JSON.stringify({ queue: c.queue, budget_yuan: c.budget, double_write_days: c.days, source }) }], recalls: [{ run: { bound: true }, entries: [{ scope: 'shared:w', uri }] }] });
+  assert.equal(evaluateFacts(record(encodeURI(uri)), c, 'shared:w').provenance, true);
+  assert.equal(evaluateFacts(record(uri), c, 'shared:w').provenance, true);
+  assert.equal(evaluateFacts(record(encodeURI(uri.replace('白鹭', '海燕'))), c, 'shared:w').provenance, false);
+  assert.equal(citesUri(`来源：${encodeURI(uri)}，预算增加 5%。`, uri), true, 'a stray percent sign does not break the decoding');
+  assert.equal(citesUri('来源：%E9%A1 未写完', uri), false);
+  assert.equal(sameUri('', ''), false);
 });
 
 test('receipt recovery requires the explicitly selected comment and uses its exact content digest', async () => {

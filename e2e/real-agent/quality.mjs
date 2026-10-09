@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { listMemoryFiles } from '../../src/memory-inventory.mjs';
 import { auditMemories } from './memory-audit.mjs';
 import { sleep } from '../real-stack/multica.mjs';
+import { citesUri } from './answer-checks.mjs';
 
 // Real daemon + actual agent tools. No hand-authored assistant transcript and
 // no active writes: the facts below must survive automatic native distillation.
@@ -175,7 +176,7 @@ export async function runQuality(ctx) {
     const dmReady = !earlierRecall && layoutExtracted && await searchable(dmScope, '蓝鹊周报之前约定的三个标题和顺序', /风险、进展、下一步/);
     if (earlierRecall || dmReady) {
       const recalled = earlierRecall ?? await chatRun(a, '蓝鹊新会话查询', `蓝鹊周报之前约定的三个标题及顺序是什么？${finish} 本次没有再次提供标题；根据实际召回回复并引用来源 URI。`, 'quality-dm-recall');
-      step('real-DM-layout-recall', /风险/.test(recalled.response) && /进展/.test(recalled.response) && /下一步/.test(recalled.response) && recalled.recalls.some(r => r.entries.some(e => e.scope === dmScope && recalled.response.includes(e.uri))), 'New actual chat recovered private layout from its pair memory');
+      step('real-DM-layout-recall', /风险/.test(recalled.response) && /进展/.test(recalled.response) && /下一步/.test(recalled.response) && recalled.recalls.some(r => r.entries.some(e => e.scope === dmScope && citesUri(recalled.response, e.uri))), 'New actual chat recovered private layout from its pair memory');
       await extracted(recalled.taskId);
     } else {
       step('real-DM-layout-recall', false, layoutExtracted ? 'Skipped: the private layout was not searchable after three attempts' : 'Skipped: no private layout was extracted to recall');
@@ -227,5 +228,5 @@ export function preferenceStorage(files) {
 
 export function hasSharedRecall(record, scope) {
   return /8100/.test(record.response) && /Pulsar/.test(record.response) && /五天|5\s*天/.test(record.response)
-    && record.recalls?.some(r => r.run?.bound && r.entries?.some(e => e.scope === scope && record.response.includes(e.uri)));
+    && record.recalls?.some(r => r.run?.bound && r.entries?.some(e => e.scope === scope && citesUri(record.response, e.uri)));
 }

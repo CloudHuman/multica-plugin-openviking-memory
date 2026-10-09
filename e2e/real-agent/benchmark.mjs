@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { auditMemories } from './memory-audit.mjs';
 import { recoverDeliveredComment } from './delivery-recovery.mjs';
+import { citesUri, sameUri } from './answer-checks.mjs';
 
 export const CASES = [
   { name: '银杉发布', alias: 'SilverFir', queue: 'Apache Pulsar', previous: 7600, budget: 8100, days: 5 },
@@ -19,7 +20,7 @@ export function evaluateFacts(record, expected, sharedScope) {
   const queue = String(data.queue ?? '').replace(/\s/g, '').toLowerCase().includes(expected.queue.replace(/\s/g, '').toLowerCase());
   const budget = Number(data.budget_yuan) === expected.budget;
   const days = Number(data.double_write_days) === expected.days;
-  const provenance = record.recalls?.some(r => r.run?.bound && r.entries?.some(e => e.scope === sharedScope && e.uri === data.source)) ?? false;
+  const provenance = record.recalls?.some(r => r.run?.bound && r.entries?.some(e => e.scope === sharedScope && sameUri(e.uri, data.source))) ?? false;
   return { queue, budget, days, provenance, correct: queue && budget && days && provenance, comment: answer?.comment };
 }
 
@@ -140,7 +141,7 @@ export async function runBenchmark(ctx) {
         const question = await call(`/api/chat/sessions/${fresh.id}/messages`, { content: '紫鸢周报之前约定的三个标题和顺序是什么？先实际 memory-recall，只根据记忆回复，引用来源 URI。无需主动记录记忆。' });
         const recalled = await record(a, t => t.id === question.task_id, `private-query-${i}`);
         const scope = `dm:${ws}:${a.id}:${user.userId}`;
-        const correct = /阻塞轨迹[\s\S]*验证凭据[\s\S]*计划窗口/.test(recalled.result.response) && recalled.result.recalls.some(r => r.entries?.some(e => e.scope === scope && recalled.result.response.includes(e.uri)));
+        const correct = /阻塞轨迹[\s\S]*验证凭据[\s\S]*计划窗口/.test(recalled.result.response) && recalled.result.recalls.some(r => r.entries?.some(e => e.scope === scope && citesUri(recalled.result.response, e.uri)));
         step(`private-recall-${i}`, correct, 'Fresh private session recalled the ordered preference with its authorized source');
         report.privateQueries.push({ taskId: question.task_id, repetition: i, correct }); await boundary(report.privateErrors, `private query ${i} extraction`, () => extracted(question.task_id)); save();
       }

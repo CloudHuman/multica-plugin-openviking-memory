@@ -1,5 +1,11 @@
 // Judgements over an actual agent's reply and the recall results it acted on.
 
+// An agent may cite a URI percent-encoded ("…/entities/%E9%A1%B9%E7%9B%AE/…")
+// where the recall listed it as written ("…/entities/项目/…"): the same file.
+const decodeEscapes = (text) => String(text ?? '').replace(/(?:%[0-9A-Fa-f]{2})+/g, (run) => { try { return decodeURIComponent(run); } catch { return run; } });
+export const sameUri = (a, b) => !!a && !!b && decodeEscapes(a) === decodeEscapes(b);
+export const citesUri = (text, uri) => !!uri && decodeEscapes(text).includes(decodeEscapes(uri));
+
 const NO_EVIDENCE = /没有|未找到|无相关|未提供|无法确认|暂无/;
 const SAYS_INCOMPLETE = /(?:检索|召回|搜索|查询)(?:结果)?.{0,8}(?:未完成|不完整|超时|失败|中断)|结果(?:可能)?不完整|暂时无法确认|稍后(?:再|重新)?(?:查|试|检索)|timed? ?out|incomplete/i;
 

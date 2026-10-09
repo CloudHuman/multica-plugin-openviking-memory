@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { sleep } from '../real-stack/multica.mjs';
 import { toolResultData } from './tool-output.mjs';
+import { citesUri } from './answer-checks.mjs';
 
 const DONE = ['completed', 'failed', 'cancelled'];
 const firstOn = (tasks, issueId) => tasks.filter(t => t.issue_id === issueId).sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)))[0];
@@ -110,7 +111,7 @@ export async function checkDelegationHistory({ mc, user, ws, fromAgentId, toAgen
   if (!receiver) return { ok: false, records, detail: 'The second handoff never reached B: A finished without mentioning B (see delegation-history-sender)' };
   const result = records.find(r => r.entry === 'delegation-history-receiver');
   const stated = /7\s*次|七次/.test(result.response);
-  const cited = result.recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === channelScope && result.response.includes(e.uri)));
+  const cited = result.recalls.some(r => r.run?.bound === true && r.entries?.some(e => e.scope === channelScope && citesUri(result.response, e.uri)));
   const ok = result.status === 'completed' && stated && cited;
   const missed = result.status !== 'completed' ? `ended ${result.status}` : !result.recalls.length ? 'did not call memory-recall' : !cited ? 'cited no URI from the A to B channel' : 'did not state the retry limit';
   return { ok, records, detail: ok ? 'A second actual handoff omitted the number; B recovered the previous retry limit from its delegation channel and cited its URI' : `The second handoff reached B, which ${missed}` };

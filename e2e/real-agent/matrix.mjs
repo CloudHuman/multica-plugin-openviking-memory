@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { auditMemories } from './memory-audit.mjs';
 import { selfMentionGuard, recordSelfMentionReruns } from './delegation-check.mjs';
+import { citesUri } from './answer-checks.mjs';
 
 // All task transcripts and tool calls are produced by the official daemon.
 // The harness only sends member input, waits, and inspects persisted evidence.
@@ -38,7 +39,7 @@ async function matrixSteps(ctx, guard) {
     || !!run.issue_id && task.issue_id === run.issue_id;
   const tools = result => result.messages.filter(m => m.type === 'tool_result').map(m => ({ tool: m.tool, data: toolResultData(m) }));
   const recalls = result => tools(result).filter(r => /memory.*recall/.test(r.tool ?? '') && r.data?.status === 'ok').map(r => r.data.result);
-  const cited = (result, scope) => recalls(result).some(r => r.run?.bound === true && r.entries?.some(e => e.scope === scope && result.response.includes(e.uri)));
+  const cited = (result, scope) => recalls(result).some(r => r.run?.bound === true && r.entries?.some(e => e.scope === scope && citesUri(result.response, e.uri)));
   const noPrivateScope = (result, scope) => recalls(result).length > 0 && recalls(result).every(r => !r.scopesSearched?.some(s => s.scope === scope) && !r.entries?.some(e => e.scope === scope));
   async function capture(task, entry) {
     const messages = list(await call(`/api/tasks/${task.id}/messages?limit=2000`));
