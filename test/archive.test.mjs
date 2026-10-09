@@ -128,6 +128,15 @@ test('business JSON with an instructions field is archived as written; agent rec
   assert.match(outputs[1], /请用黑色墨水填写/);
   assert.doesNotMatch(outputs[2], /PLATFORM_ONLY_CANARY/, 'a runtime_id marks an agent record, at any encoding depth');
   assert.match(JSON.parse(outputs[2]), /"name":"Reviewer"/);
+
+  // One document with both: only the agent record's instructions go, in the document's own layout.
+  const mixed = JSON.stringify({ agent: { name: 'Reviewer', instructions: 'PLATFORM_ONLY_CANARY' }, form: { instructions: '请用黑色墨水填写。' } }, null, 2);
+  const [one] = buildRunMessages({ taskId: 'mixed-json', agentId: 'a1', issue: fixtureIssue(), cfg,
+    transcript: [{ seq: 1, type: 'tool_result', tool: 'read', call_id: 'm', output: mixed }] })
+    .messages.filter(m => m.message_kind === 'tool_transport').map(m => m.parts[0].tool_output);
+  assert.doesNotMatch(one, /PLATFORM_ONLY_CANARY/);
+  assert.match(one, /请用黑色墨水填写/);
+  assert.match(one, /\n  "form": \{/, 'two-space indentation kept');
 });
 
 test('agent comments and chat replies filter runtime instructions without changing member messages', () => {

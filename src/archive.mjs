@@ -72,8 +72,14 @@ export function withoutAgentInstructions(value, { agentOutput = false, parentKey
       const inner = withoutAgentInstructions(doc, { agentOutput });
       return inner === doc ? value : JSON.stringify(inner);
     }
+    if (doc !== undefined && !agentOutput) {
+      // A whole document: replace only its agent records' instructions, in the document's own indentation.
+      if (!hasAgentRecord(doc)) return value;
+      const indent = value.match(/\n( +|\t)"/)?.[1] ?? 0;
+      return JSON.stringify(withoutAgentInstructions(doc), null, indent || undefined);
+    }
     const cutAgentRecord = doc === undefined && /"runtime_id"\s*:/.test(value);
-    if (!agentOutput && !hasAgentRecord(doc) && !cutAgentRecord) return value;
+    if (!agentOutput && !cutAgentRecord) return value;
     return value.replace(AGENT_INSTRUCTIONS, `$1"${INSTRUCTIONS_OMITTED}"`);
   }
   if (Array.isArray(value)) return value.map((item) => withoutAgentInstructions(item, { agentOutput, parentKey }));
