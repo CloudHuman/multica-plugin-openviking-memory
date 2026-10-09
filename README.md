@@ -157,7 +157,7 @@
 - **原版 Multica 开箱可用**：
   - 评论归档按作者归属；
   - `memory-recall` 可用，但不知道是哪次运行在调用；
-  - `memory-remember`、`memory-status`、15 个 `ov-*` 工具和共享晋升都可用；
+  - `memory-remember`、`memory-status`、15 个 `ov-*` 工具和共享晋升都可用，但真实 daemon 上要打 0002，否则运行里没有远程 MCP 连接时工具调用返回 401；
   - 运行本身不归档，以智能体的收尾评论代表。
 - **补丁 0001–0005**（本仓库维护，部署时应用，见 [`upstream/multica/`](upstream/multica/README.md)）：
   - 0001：运行转写，私聊、快速创建、自动化、委派归档，召回绑定运行；
@@ -189,9 +189,33 @@
 
 细节见“与功能规格的对照与已知边界”，各阶段的改动见“变更记录”。
 
-## 快速开始
+## 接入指南
 
-分两半：**插件后端服务**（本仓库，维护者部署）+ **插件包**（≤2MiB zip，装进 multica 工作区）。
+### 要准备什么
+
+| 组件 | 作用 | 部署方 |
+| --- | --- | --- |
+| OpenViking ≥ 0.4.22 | 存储记忆、用模型抽取和检索 | 运维 |
+| Multica 服务端（建议打上本仓库的补丁） | 发出事件、把插件工具交给智能体、签名转发工具调用 | 运维 |
+| 插件后端服务（本仓库，`node src/server.mjs` 或容器） | 验签、归档、召回、范围隔离 | 运维 |
+| 插件包（≤ 2 MiB 的 zip） | 装进每个 Multica 工作区，声明钩子和工具 | 工作区管理员 |
+
+网络上只有三条连线：Multica 服务端经 HTTPS 调用插件服务（事件钩子和智能体的工具调用都由 Multica 后端签名转发）；插件服务调用 OpenViking；插件服务回调 Multica 的插件 API 读取运行详情。智能体所在机器上的 daemon 不直接连插件服务，也不需要升级。
+
+### 先决定：原版 Multica 还是打补丁
+
+插件按 Multica 插件系统 v1 的公开契约编写，原版也能装，但只能用一部分能力。本仓库在 [`upstream/multica/`](upstream/multica/README.md) 维护 5 个补丁（不提交上游），**推荐全部应用**：
+
+| 能力 | 原版 Multica | 打补丁后 |
+| --- | --- | --- |
+| 智能体调用插件工具 | 运行里没有远程 MCP 连接时返回 401 | 正常（0002） |
+| issue 运行归档 | 只归档智能体的收尾评论 | 转写和触发输入完整归档（0001） |
+| 私聊、快速创建、自动化、委派 | 不归档 | 按运行类型归档到各自空间（0001、0003） |
+| `memory-recall` 的范围 | 不知道是哪次运行在调用，模型可以指定 issue | 绑定调用它的运行（0001） |
+| 评论归档、共享晋升、租户隔离、抽取自愈 | 可用 | 可用 |
+| 交付恢复、同一 issue 上的自我 @ | 不支持 / 会反复派发 | 支持（0004）/ 不再派发（0005） |
+
+补丁只改 Multica 服务端（0001 另有授权页上一条 scope 文案），没有数据库迁移，daemon 和 CLI 不变。
 
 ### 1. 准备 OpenViking
 
@@ -199,44 +223,61 @@
 
 **模型（OpenRouter 实测推荐）**：抽取用 `z-ai/glm-5.3-flash`，向量用 `qwen/qwen3-embedding-8b`（4096 维），重排用 `qwen/qwen3-reranker-8b`。可直接用的配置：[`deploy/ov.openrouter.conf.example`](deploy/ov.openrouter.conf.example)（key 从 OpenViking 进程的 `OPENROUTER_API_KEY` 读取；抽取输出格式等 `memory` 设置保持 OV 默认）。对比数据、质量样例和已知限制（重排只有一家上游、偶尔过载；向量接口有慢时段，召回届时只返回时限内完成的部分）见 [`reports/e2e-2026-09-30-real-models.md`](reports/e2e-2026-09-30-real-models.md)。向量模型和维度选定后不要轻易换——换了要重建全部向量索引；抽取和重排模型随时可换。
 
-### 2. 部署插件后端服务（推荐容器）
+### 2. 给 Multica 打补丁并重新部署服务端
+
+```bash
+cd <multica 仓库>
+git checkout <你部署的版本>
+git am <本仓库>/upstream/multica/0*.patch      # 按编号顺序应用全部 5 个
+cd server && go build ./... && go vet ./internal/handler/ ./internal/service/
+```
+
+然后按你原来的方式重新构建、部署 Multica 服务端。前端只有授权页上 `chats:read` 的说明文案，不重新构建也不影响功能。
+
+- **已验证的基线**：`43b0571`（真实智能体验证所用）；2026-10-09 的 Multica main `10a7e51` 上也能干净应用、编译，补丁自带的 18 个 Go 测试全部通过。
+- **只打一部分时**：0003 依赖 0001，其余互不依赖。要用插件工具，至少打 0002；要归档运行、绑定召回，再打 0001。
+- 每个补丁解决什么、不打会怎样、怎么跑补丁自带的测试，见 [`upstream/multica/README.md`](upstream/multica/README.md)。升级 Multica 后要重新应用。
+
+### 3. 准备插件后端服务的配置
 
 ```bash
 git clone https://github.com/CloudHuman/multica-plugin-openviking-memory.git
 cd multica-plugin-openviking-memory
 
-cat > deploy/.env <<'EOF'   # 0600，密钥只存在容器 env 里
+cat > deploy/.env <<'ENV'   # 0600，密钥只存在容器 env 里
 OVMEM_OV_BASE_URL=https://ov.example.com
 OVMEM_OV_ROOT_KEY=<ov-root-key>
-OVMEM_SIGNING_SECRET=<whsec_…>        # 第 5 步轮换后回填
+OVMEM_SIGNING_SECRET=              # 第 5 步安装插件后拿到再填
 OVMEM_PLUGIN_TOKEN=<随机长字符串>
 OVMEM_TLS_CERT=/certs/hook-server.pem # 本地联调用 dev CA 签发，见 deploy/dev-certs.sh
 OVMEM_TLS_KEY=/certs/hook-server.key
-EOF
+ENV
+```
 
+服务要有一个 Multica 服务端能访问的 HTTPS 地址（下文以 `https://hooks.example.com` 为例），打包时要用到。**签名密钥填好之前服务不会启动**，所以先不要启动，第 5 步再启动。
+
+### 4. 打包并安装插件
+
+用自己的钩子地址打包：
+
+| Multica | 命令 | 授权的 scope |
+| --- | --- | --- |
+| 打了补丁 | `bash scripts/package.sh --url https://hooks.example.com --with-chats-read` | `issues:read`、`comments:read`、`tasks:read`、`chats:read`、`net:<钩子域名>` |
+| 原版 | `bash scripts/package.sh --url https://hooks.example.com` | 同上，不含 `chats:read`（原版会拒绝带它的清单） |
+
+GitHub Releases 里的 zip 没有指定 `--url`，钩子指向 `https://host.docker.internal:8790`，只适合配了 `MULTICA_PLUGIN_DEV_ORIGINS` 的本地联调。
+
+在 Multica 工作区：Settings → Plugins → 上传 zip → 授权 scope → 安装。
+
+### 5. 轮换签名密钥，启动服务
+
+安装后在插件设置里轮换 token，把响应中的 `SigningSecret`（`whsec_…`）填进 `deploy/.env` 的 `OVMEM_SIGNING_SECRET`，然后启动：
+
+```bash
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 裸机运行等价：`OVMEM_*` 环境变量 + `node src/server.mjs`（服务自带状态目录单写者锁，切勿双实例共享 state）。
-
-### 3. （推荐）给 multica 打任务读取 API 补丁
-
-运行转写、私聊/自动化/快速创建/委派归档、召回绑定运行都依赖任务读取补丁。另一个凭据补丁修复只有插件工具、没有远程 MCP 连接时，真实 daemon 调用插件工具返回 401 的问题。按顺序应用 `upstream/multica/0001-*.patch`、`0002-*.patch`，然后重新构建 multica 服务端。其余补丁按需应用：`0003` 修复快速创建关联 issue 后运行类型改变，`0004` 用于确认已发布的交付，`0005` 防止智能体在同一 issue 上 @ 自己而反复派发自己（这会让插件反复归档、抽取同一段循环）。说明与 stock 降级对照见 [`upstream/multica/README.md`](upstream/multica/README.md)。
-
-### 4. 打包并安装
-
-```bash
-bash scripts/package.sh --url https://hooks.example.com                    # stock multica
-bash scripts/package.sh --url https://hooks.example.com --with-chats-read  # 打了补丁的 multica（私聊归档）
-```
-
-在 multica 工作区：Settings → Plugins → 上传 zip → 授权 scopes（`issues:read` / `comments:read` / `tasks:read` / `net:<钩子域名>`，补丁版另有 `chats:read`）→ 安装。不带 `--url` 时钩子指向 `https://host.docker.internal:8790`，只适合配了 `MULTICA_PLUGIN_DEV_ORIGINS` 的本地联调。
-
-安装后，在需要使用记忆的智能体设置中绑定 `openviking-memory` skill。插件工具会进入运行环境，但工作区中的 skill 仍需绑定到智能体，才能随任务正式挂载；API 创建智能体时传入该 skill 的 `skill_ids`。
-
-### 5. 轮换签名密钥并回填
-
-安装后在插件设置里轮换 token，把响应中的 `SigningSecret`（`whsec_…`）填进 `deploy/.env` 的 `OVMEM_SIGNING_SECRET` 并重启容器。
 
 每个安装只属于一个工作区：服务第一次收到某个安装的投递时把它绑定到工作区，之后请求体里写别的工作区或别的安装一律拒绝（403 / 401）。`OVMEM_SIGNING_SECRET` 只服务一个安装（首次投递时绑定）。服务多个工作区时：
 
@@ -250,7 +291,11 @@ OVMEM_MULTICA_API_URL=https://multica.example.com/v1
 
 多个安装既没写 `workspace_id` 又没配 `OVMEM_MULTICA_API_URL` 时，服务拒绝启动。
 
-### 6. （推荐）配置工作区抽取规则
+### 6. 给智能体绑定 skill
+
+插件工具（`memory-*`、`ov-*`）安装后自动进入工作区所有智能体的运行环境；配套 skill `openviking-memory` 教智能体何时召回、何时记录，需要在每个要用记忆的智能体设置里绑定，才会随任务挂载。用 API 创建智能体时，在 `skill_ids` 里传入这个 skill。
+
+### 7. （推荐）配置工作区抽取规则
 
 在插件设置里，把参考模板 [`deploy/memory-rules.example.txt`](deploy/memory-rules.example.txt) 整段粘贴进安装配置 `memory_rules`，再按需增删（格式见[配置参考](#配置参考)）。规则在该工作区下一条记录提交前写进它自己 OV 账户的模板，只影响这个工作区；`memory-status` 的 `memory_rules` 显示 `applied` 即已生效。
 
@@ -261,7 +306,22 @@ OVMEM_MULTICA_API_URL=https://multica.example.com/v1
 - 10-09 的 benchmark 对照中，业务事实两组都是 27/27；私聊偏好配置规则 3/3、原生抽取 0/3。补上归档过滤后原生组私聊 2/3，但又把“只根据记忆回复”记成了私聊偏好；原生抽取还把智能体的查询记成事件，同一项目的实体卡叫法也不一致；
 - 代价是每次抽取的提示词多约 2.5K 字符（8–9%）。
 
-### 7. （可选）配套能力接入
+### 8. 验证接入
+
+1. **服务**：`curl -s https://hooks.example.com/healthz` 返回 `"status":"ok"`，`ov.healthy` 为 `true`。
+2. **工具链路**：让一个智能体调用 `memory-status`。能返回结果，说明签名、安装绑定和 daemon 凭据都通了；配置了规则时，`memory_rules` 应为 `applied`。
+3. **归档与抽取**：在一个 issue 上让智能体完成一次任务，然后看 `memory-status` 或 `GET /admin/status`（`Authorization: Bearer $OVMEM_PLUGIN_TOKEN`）：`recent_archives` 里出现这次运行，`extraction` 从 `pending` 变成 `done`。
+4. **召回**：新开一个任务，问上一个任务的结论。智能体调用 `memory-recall` 应能找到，并给出来源 URI。
+
+常见问题：
+
+- 工具调用返回 401：Multica 没打 0002，且运行里没有远程 MCP 连接。
+- 运行被跳过，原因里写着 `multica has no task API` 或 `no transcript API`：Multica 没打 0001，只会归档智能体的收尾评论。
+- 私聊没有归档：插件包没用 `--with-chats-read` 打包，或安装时没授权 `chats:read`。
+
+运维细节（状态分级、重驱、诊断）见[运维手册](#运维手册)。
+
+### 9. （可选）配套能力接入
 
 ```jsonc
 POST /internal/events    // Bearer OVMEM_PLUGIN_TOKEN
@@ -275,6 +335,14 @@ POST /internal/recall    // 供注入方拉取召回块
 ```
 
 支持的 `type`：`chat.completed` / `task.input_appended` / `delegation.handoff` / `automation.started`。
+
+### 从 0.2.x 升级
+
+- **签名密钥**：一个服务承载多个安装时，`OVMEM_SIGNING_SECRETS` 要按安装写明 `workspace_id`，或设置 `OVMEM_MULTICA_API_URL`，否则启动校验不通过。
+- **OpenViking 配置**：去掉 `memory.custom_templates_dir` 和 `memory.extraction_output_format: "json"`，见 [`deploy/ov.openrouter.conf.example`](deploy/ov.openrouter.conf.example)。插件不再覆盖 OV 实例级模板，改用各工作区的 `memory_rules`。
+- **新默认值**：归档前去掉成员消息里的一次性执行指令和对本次检索结果的说明；设 `OVMEM_ARCHIVE_DROP_RUN_CONTROLS=0` 恢复按原文归档。
+- **Multica**：应用 `upstream/multica/` 的补丁，至少包括 0005，避免智能体在同一 issue 上自我 @ 时反复派发自己。
+- **插件包**：用新版本重新打包并在各工作区更新。
 
 ## 配置参考
 
@@ -364,7 +432,7 @@ src/                      config · hmac · installations 安装绑定 · multic
 test/                     单元/集成测试（测试替身按真实 multica / OV 契约行为）
 e2e/                      run-e2e.mjs：真实 OV + 模拟 multica（patched / stock 契约）
 e2e/real-stack/           真实 multica + 真实 OV 端到端（补丁版 / stock 版）
-upstream/multica/         multica 任务读取 API 补丁及说明
+upstream/multica/         multica 补丁 0001–0005 及说明
 reports/                  端到端验证记录
 deploy/                   Dockerfile · compose · dev 证书 · 夜间晋升 plist
 scripts/                  package.sh · gen-ov-hooks · validate-manifest
