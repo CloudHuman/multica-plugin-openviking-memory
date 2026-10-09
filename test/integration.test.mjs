@@ -54,6 +54,28 @@ test('stock multica: a task event it cannot describe is skipped with 200 — nev
   });
 });
 
+test('patched multica: a run the task API fails to describe answers 503 and is accepted on redelivery', async () => {
+  const tasks = { 'chat-2': 'unavailable' };
+  await withStack({ taskApi: true, tasks }, async ({ svc, cb }) => {
+    const body = archiveBody(cb, 'task.completed', taskEvent({ taskId: 'chat-2', issueId: '', chatSessionId: 'cs-2' }));
+    const first = await svc.signedPost('/hooks/memory-archive', body);
+    assert.equal(first.status, 503, first.text);
+    assert.equal(svc.ledger.has(`inv:${body.invocation_id}`), false, 'not recorded as handled');
+
+    tasks['chat-2'] = fixtureTask({ taskId: 'chat-2', kind: 'chat', chat_session_id: 'cs-2', chat_user_id: FIXTURE_USER });
+    const again = await svc.signedPost('/hooks/memory-archive', body);
+    assert.equal(again.status, 200, again.text);
+    assert.notEqual(again.json.result.status, 'duplicate');
+    assert.doesNotMatch(String(again.json.result.reason ?? ''), /run kind unknown/);
+
+    // A refusal that will not change is skipped with 200, not retried into multica's breaker.
+    tasks['chat-3'] = 'forbidden';
+    const refused = await svc.signedPost('/hooks/memory-archive', archiveBody(cb, 'task.completed', taskEvent({ taskId: 'chat-3', issueId: '', chatSessionId: 'cs-3' })));
+    assert.equal(refused.status, 200, refused.text);
+    assert.equal(refused.json.result.status, 'skipped');
+  });
+});
+
 test('comments are archived with honest attribution: member = human feedback, agent = agent statement, system skipped', async () => {
   await withStack({}, async ({ ov, svc, cb }) => {
     const member = commentEvent({ id: 'cm-member', content: '死信队列的监控告警要求补充进方案,峰值堆积阈值 1 万条。' });
@@ -314,6 +336,9 @@ test('unsigned, wrongly signed or mis-addressed deliveries are refused before an
     // body names one installation, headers another
     const mismatched = await svc.signedPost('/hooks/memory-archive', { ...body, installation_id: 'other-installation' }, { installation: body.installation_id });
     assert.equal(mismatched.status, 401);
+    // An oversized body is refused before it is read whole or authenticated.
+    const huge = await postJson(svc.port, '/hooks/memory-archive', 'x'.repeat(3 * 1024 * 1024));
+    assert.equal(huge.status, 413);
     assert.equal(svc.queue.stats().queued + svc.queue.stats().done, 0);
   });
 });

@@ -68,6 +68,20 @@ test('patched multica: recall is bound to the calling run, whatever issue the mo
   });
 });
 
+test('patched multica: a run that cannot be resolved right now never lets the model choose the space', async () => {
+  const taskId = 'run-unresolved';
+  await withStack({ taskApi: true, tasks: { [taskId]: 'unavailable' } }, async ({ svc, cb }) => {
+    // A chat or autopilot run carries task_id but no issue_id; the task API answers 502.
+    const r = await svc.signedPost('/hooks/memory-recall', toolBody('memory-recall', { query: '死信队列 告警', issue_id: 'MUL-7' }, cb, { task_id: taskId }));
+    assert.equal(r.status, 200, r.text);
+    const result = r.json.result;
+    assert.equal(result.run.bound, false);
+    assert.ok(result.scopesSearched.every((s) => !s.scope.startsWith('task:')), JSON.stringify(result.scopesSearched));
+    assert.ok(result.notes.some((n) => /暂时无法确认/.test(n)), JSON.stringify(result.notes));
+    assert.equal(result.entries.length, 0);
+  });
+});
+
 test('recall answers inside its budget when a space is slow, and says the result may be incomplete', async () => {
   await withStack({ cfg: { recallBudgetMs: 2_000 } }, async ({ ov, svc, cb }) => {
     const rec = svc.registry.get(scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID));

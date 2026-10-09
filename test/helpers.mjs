@@ -390,6 +390,8 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
     if (m) {
       if (!taskApi) return problem(404, 'not_found', 'resource not found');
       const task = tasks[decodeURIComponent(m[1])];
+      if (task === 'unavailable') return problem(502, 'bad_gateway', 'upstream unavailable');
+      if (task === 'forbidden') return problem(403, 'forbidden', 'not allowed');
       return task ? json(200, task) : problem(404, 'not_found', 'task not found');
     }
     m = path.match(/^\/v1\/tasks\/([^/]+)\/messages$/);

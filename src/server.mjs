@@ -135,6 +135,12 @@ export function makeMemoryArchiveHandler(deps) {
   };
 }
 
+/** A failure the same request may not meet again: no answer, a timeout, a 5xx or 429. */
+const transientError = (err) => {
+  const status = err?.status;
+  return !status || status >= 500 || [408, 425, 429].includes(status);
+};
+
 async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, eventType, skip, prefetchedTask }) {
   const taskId = input.task_id || body.task_id;
   if (!taskId) return skip('task event without task_id');
@@ -147,17 +153,25 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
   // 1. The run itself. Multica builds with the task read API describe it;
   //    stock builds answer 404 and only the event payload is known.
   let task = prefetchedTask ?? null;
+  let lookupError = null;
   try {
     task ??= await mc.getTask(taskId);
     taskApi.set(ctx.installationId, true);
   } catch (err) {
     if (isNotFound(err)) taskApi.set(ctx.installationId, false);
-    else partial.push(`run details unavailable (${errText(err)})`);
+    else {
+      if (transientError(err)) lookupError = err;
+      partial.push(`run details unavailable (${errText(err)})`);
+    }
   }
   const agentId = task?.agent_id || input.agent_id || null;
   const issueId = task?.issue_id || input.issue_id || null;
   const kind = task?.kind ?? (issueId ? 'issue' : null);
   if (!kind || !agentId) {
+    // A run the task API failed to describe for now (timeout, 5xx, 429) is not
+    // a run without an issue: answer 503 (no ledger entry) so multica redelivers
+    // it. A refusal that will not change (403) is still skipped with 200.
+    if (lookupError) throw new Error(`run ${taskId} could not be described yet (${errText(lookupError)})`);
     return skip(taskApi.get(ctx.installationId) === false
       ? 'run is not tied to an issue and multica has no task API (GET /v1/tasks/{id}) to describe it'
       : 'run kind unknown', taskId);
@@ -326,7 +340,8 @@ function runCoversComment(job, comment, issueId, cfg) {
  * The run an agent tool was called from. With multica's run context (task_id /
  * issue_id in the signed body) recall is bound to that run; without it (stock
  * builds) the agent may name an issue, as multica itself lets agents read any
- * issue in the workspace.
+ * issue in the workspace. A task_id that cannot be resolved right now leaves
+ * the call unbound but never lets the model pick a run's space instead.
  */
 async function resolveRun({ mc, body, ws, agentId }) {
   if (body.task_id) {
@@ -344,7 +359,10 @@ async function resolveRun({ mc, body, ws, agentId }) {
       readScopes: [scopeKey('task', ws, body.issue_id), scopeKey('agent', ws, agentId), scopeKey('shared', ws)],
     };
   }
-  return { bound: false, source: 'none', kind: null, issueId: null, readScopes: [scopeKey('agent', ws, agentId), scopeKey('shared', ws)] };
+  return {
+    bound: false, source: body.task_id ? 'unresolved' : 'none', kind: null, issueId: null,
+    readScopes: [scopeKey('agent', ws, agentId), scopeKey('shared', ws)],
+  };
 }
 
 async function canonicalIssueId(mc, ref) {
@@ -395,6 +413,9 @@ export function makeMemoryRecallHandler(deps) {
       }
     }
     let scopeKeys = run.readScopes;
+    if (run.source === 'unresolved') {
+      notes.push('当前运行暂时无法确认，本次只检索智能体自己的空间和共享空间，没有检索任务、私聊等运行范围的记忆；结果可能不完整，稍后可重试。');
+    }
     if (input.issue_id) {
       // Keys like MUL-123 and UUIDs name the same issue; scopes are keyed by UUID.
       const requested = await canonicalIssueId(mc, input.issue_id);
@@ -402,6 +423,8 @@ export function makeMemoryRecallHandler(deps) {
         notes.push(`issue_id ${input.issue_id} 无法解析,已忽略`);
       } else if (run.bound) {
         if (requested !== run.issueId) notes.push(`issue_id ${input.issue_id} 不属于当前运行;召回范围保持为当前运行`);
+      } else if (run.source === 'unresolved') {
+        notes.push(`当前运行暂时无法确认，issue_id ${input.issue_id} 已忽略`);
       } else {
         scopeKeys = [scopeKey('task', ws, requested), ...scopeKeys];
       }
@@ -835,12 +858,26 @@ export async function main() {
   return server;
 }
 
+// Bodies are read whole before authentication; nothing multica sends comes near this.
+export const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+
 export async function buildRequestListener({ cfg, app }) {
   return async (req, res) => {
-    const chunks = [];
-    for await (const c of req) chunks.push(c);
-    const rawBody = Buffer.concat(chunks);
     const started = Date.now();
+    const chunks = [];
+    let size = 0;
+    for await (const c of req) {
+      size += c.length;
+      if (size > MAX_REQUEST_BYTES) break;
+      chunks.push(c);
+    }
+    if (size > MAX_REQUEST_BYTES) {
+      res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify(errorBody(httpError(413, 'payload_too_large', `request body exceeds ${MAX_REQUEST_BYTES} bytes`))));
+      log(`${req.method} ${req.url} -> 413 (${Date.now() - started}ms)`);
+      return;
+    }
+    const rawBody = Buffer.concat(chunks);
     try {
       const { status, body } = await route({ req, rawBody, cfg, app });
       res.writeHead(status, { 'Content-Type': 'application/json' });
