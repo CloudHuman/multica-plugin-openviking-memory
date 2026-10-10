@@ -40,8 +40,8 @@ multica 的版本是**探测**出来的：带 `chats:read` 的包被接受，说
    MULTICA_PLUGIN_DEV_CA=<dev CA 证书路径>
    ```
 
-   要测补丁版，先 `git am upstream/multica/0001-*.patch` 再构建；stock 版直接构建。
-3. **插件的 HTTPS 证书**：multica 只调 HTTPS 钩子。用 dev CA 签一张 `host.docker.internal` 证书：`./deploy/dev-certs.sh <ca-dir> <out-dir>`；并让 `host.docker.internal` 解析到本机（`/etc/hosts`）。
+   要测补丁版，先 `git am upstream/multica/0*.patch` 再构建；stock 版直接构建。各变量的含义见 [`docs/deploy.md`](../../docs/deploy.md#13-服务端环境变量)。
+3. **插件的 HTTPS 证书**：multica 只调 HTTPS 钩子。用 dev CA 签一张 `host.docker.internal` 证书：`./deploy/dev-certs.sh <ca-dir> <out-dir>`（`<ca-dir>` 为空时会新建 CA）；并让 `host.docker.internal` 解析到本机（`/etc/hosts`）。
 4. **OpenViking ≥ 0.4.22**。离线跑可以用本目录的 `mock-llm.mjs` 充当模型提供方（确定性 embedding + schema 形状的抽取输出，OV 自身代码路径全部真实）：
 
    ```bash
