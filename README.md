@@ -191,6 +191,8 @@
 
 ## 接入指南
 
+从空白的 Multica fork 和 OpenViking fork 起步的完整步骤（打补丁、Multica 的插件配置、网络与证书、本地演练）见 [`docs/deploy.md`](docs/deploy.md)。下面是精简版。
+
 ### 要准备什么
 
 | 组件 | 作用 | 部署方 |
@@ -232,7 +234,18 @@ git am <本仓库>/upstream/multica/0*.patch      # 按编号顺序应用全部 
 cd server && go build ./... && go vet ./internal/handler/ ./internal/service/
 ```
 
-然后按你原来的方式重新构建、部署 Multica 服务端。前端只有授权页上 `chats:read` 的说明文案，不重新构建也不影响功能。
+然后按你原来的方式重新构建、部署 Multica 服务端。官方镜像没有补丁，要从打过补丁的代码构建。前端只有授权页上 `chats:read` 的说明文案，不重新构建也不影响功能。
+
+Multica 的插件系统默认关闭。服务端还要加上：
+
+| 变量 | 说明 |
+| --- | --- |
+| `FF_PLUGINS_V1=on` | 打开插件系统 |
+| `MULTICA_PLUGIN_SECRET_KEY` | `openssl rand -base64 32` 生成，生成后保持不变（换了它，所有安装的签名密钥都会变）。不配时轮换 token 拿不到 `SigningSecret`，钩子也一律不发 |
+| `MULTICA_PLUGIN_API_URL` | 插件服务能访问到的 Multica 地址加 `/v1`，作为回调地址带给插件；不配时用 `MULTICA_PUBLIC_URL` 加 `/v1` |
+| `MULTICA_PLUGIN_DEV_ORIGINS`、`MULTICA_PLUGIN_DEV_CA` | 只在插件服务放在内网时需要，见第 3 步 |
+
+用 Multica 的 `docker-compose.selfhost.yml` 部署时，`FF_PLUGINS_V1` 和 `MULTICA_PLUGIN_DEV_*` 不会传进容器，要另加一个 compose 文件，见 [`docs/deploy.md`](docs/deploy.md#14-用-docker-自部署时)。
 
 - **已验证的基线**：`43b0571`（真实智能体验证所用）；2026-10-09 的 Multica main `10a7e51` 上也能干净应用、编译，补丁自带的 18 个 Go 测试全部通过。
 - **只打一部分时**：0003 依赖 0001，其余互不依赖。要用插件工具，至少打 0002；要归档运行、绑定召回，再打 0001。
@@ -249,12 +262,17 @@ OVMEM_OV_BASE_URL=https://ov.example.com
 OVMEM_OV_ROOT_KEY=<ov-root-key>
 OVMEM_SIGNING_SECRET=              # 第 5 步安装插件后拿到再填
 OVMEM_PLUGIN_TOKEN=<随机长字符串>
+OVMEM_MULTICA_API_URL=https://multica.example.com/v1   # 推荐：插件服务能访问到的 Multica 地址
 OVMEM_TLS_CERT=/certs/hook-server.pem # 本地联调用 dev CA 签发，见 deploy/dev-certs.sh
 OVMEM_TLS_KEY=/certs/hook-server.key
 ENV
 ```
 
-服务要有一个 Multica 服务端能访问的 HTTPS 地址（下文以 `https://hooks.example.com` 为例），打包时要用到。**签名密钥填好之前服务不会启动**，所以先不要启动，第 5 步再启动。
+服务要有一个 Multica 服务端能访问的 HTTPS 地址（下文以 `https://hooks.example.com` 为例），打包时要用到。Multica 默认只调用公网 HTTPS 地址：域名解析到公网 IP，证书由公共 CA 签发。插件服务放在内网时，要在 Multica 的 `MULTICA_PLUGIN_DEV_ORIGINS` 里登记这个确切地址；证书由自建 CA 签发时（`deploy/dev-certs.sh <ca 目录> <证书目录> <主机名>` 可以新建 CA 并签发），再用 `MULTICA_PLUGIN_DEV_CA` 指向这个 CA。细节见 [`docs/deploy.md`](docs/deploy.md#3-插件服务的网络与证书)。
+
+`OVMEM_MULTICA_API_URL` 和 Multica 的 `MULTICA_PLUGIN_API_URL` / `MULTICA_PUBLIC_URL` 至少配一边，插件才拿得到回调地址、读得到运行详情。
+
+**签名密钥填好之前服务不会启动**，所以先不要启动，第 5 步再启动。
 
 ### 4. 打包并安装插件
 
@@ -315,6 +333,10 @@ OVMEM_MULTICA_API_URL=https://multica.example.com/v1
 
 常见问题：
 
+- Multica 里没有插件入口：没开 `FF_PLUGINS_V1`。
+- 轮换 token 后没有 `SigningSecret`：没配 `MULTICA_PLUGIN_SECRET_KEY`，这时钩子也一律不发。
+- 钩子和工具调用都失败，错误是 `hook endpoint is not allowed`：钩子地址解析到内网地址，又没在 `MULTICA_PLUGIN_DEV_ORIGINS` 里登记。
+- issue 运行被跳过，原因里写着 `no multica callback`（私聊、自动化等运行写的是 `run kind unknown`），召回提示当前运行暂时无法确认：两边都没配回调地址，见第 3 步。
 - 工具调用返回 401：Multica 没打 0002，且运行里没有远程 MCP 连接。
 - 运行被跳过，原因里写着 `multica has no task API` 或 `no transcript API`：Multica 没打 0001，只会归档智能体的收尾评论。
 - 私聊没有归档：插件包没用 `--with-chats-read` 打包，或安装时没授权 `chats:read`。
@@ -425,6 +447,7 @@ multica.plugin.json       插件清单（4 编排钩子 + 15 ov-* 门面 + skill
 skills/openviking-memory/  智能体记忆使用规范（随 zip 安装）
 docs/diagrams/            README 架构图（SVG 源）
 docs/overview.html        项目全景页（浏览器打开）
+docs/deploy.md            从空白 fork 部署
 src/                      config · hmac · installations 安装绑定 · multica/ov 客户端
                           scopes 范围引擎 · recall · archive · pipeline · queue · ledger
                           extraction-watch 抽取监视 · state-lock 租约
