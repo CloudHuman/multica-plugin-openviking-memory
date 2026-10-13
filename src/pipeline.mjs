@@ -107,10 +107,13 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
           // The workspace's extraction rules land before its records are committed.
           await memoryRules?.settled(p.workspaceId);
           const live = Math.max(0, Number(session?.message_count ?? 0));
-          for (const chunk of chunkMessages(built.messages.slice(live))) {
+          // Deterministic for a given record and config, so a resumed job
+          // continues the same sequence from the session's live count.
+          const plan = planExtractionBatches(built.messages, cfg);
+          for (const chunk of chunkMessages(plan.messages.slice(live))) {
             await ov.addMessages(rec.apiKey, sessionId, chunk);
           }
-          job.cp.batched = await limitExtractionBatches(ov, rec.apiKey, sessionId, built.messages, cfg, log);
+          job.cp.batches = plan.batches > 1 && await limitExtractionBatches(ov, rec.apiKey, sessionId, cfg, log) ? plan.batches : 1;
           const commit = await ov.commitSession(rec.apiKey, sessionId, {
             tags: commitTags({ workspaceId: p.workspaceId, scopeKey, kind: job.type, refId: p.refId, agentId: p.agentId ?? p.scope?.agentId }),
           });
@@ -129,7 +132,7 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
       });
       statusLog.append({
         ...base, session_id: sessionId, messages: built.messages.length, extraction: 'pending', extraction_task: job.cp.commitTaskId,
-        ...(job.cp.batched ? { extraction_batches: 'limited' } : {}),
+        ...(job.cp.batches > 1 ? { extraction_batches: job.cp.batches } : {}),
       });
       log(`archived: ${job.type} ${p.refId} -> ${scopeKey} (session ${sessionId}, extraction pending)`);
     } catch (err) {
@@ -139,21 +142,83 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
 }
 
 /**
- * A record longer than one extraction batch gets OpenViking's batch limits as its
- * session's auto-commit policy, after the last write and before its one commit:
- * the commit then extracts in batches instead of one prompt holding the whole
- * run. An OpenViking without the session config endpoint extracts it whole.
+ * Extraction batches. OpenViking splits one commit's extraction into batches
+ * when the session carries an auto-commit policy, and it writes memories only
+ * from a batch that holds a user message: a batch of agent steps alone extracts
+ * nothing. Measured with real models on a 2,409-message run, plain batches kept
+ * 1 of 8 planted facts and one extraction kept 8 of 8
+ * (reports/full-transcript-2026-10-13.md).
+ *
+ * So a record is batched only when it is too large for one extraction
+ * (cfg.extractBatchTokens, in OpenViking's own token estimate), and then a
+ * copy of its opening context message starts every batch. A record that does
+ * not open with such a message (a member chat) is never batched: repeating a
+ * member's words would put them in the record twice.
  */
-export async function limitExtractionBatches(ov, key, sessionId, messages, cfg, log = () => {}) {
-  const maxMessages = cfg.extractBatchMessages ?? 200;
-  const maxTokens = cfg.extractBatchTokens ?? 40_000;
-  // Characters bound tokens from above for these records (CJK is about one
-  // token a character, other text fewer), so this never misses a long record.
-  const chars = messages.reduce((n, m) => n + JSON.stringify(m.parts ?? m.content ?? '').length, 0);
-  if (messages.length <= maxMessages && chars <= maxTokens) return false;
+export function planExtractionBatches(messages, cfg) {
+  const limit = batchLimit(cfg);
+  const tokens = messages.map(messageTokens);
+  const first = messages[0];
+  const anchored = first?.role === 'user' && first.message_kind === 'user_query' && !first.peer_id && typeof first.content === 'string';
+  if (!anchored || tokens.reduce((a, b) => a + b, 0) <= limit) return { messages, batches: 1 };
+  // Each segment (a context message and what follows it) stays well inside one
+  // batch, so OpenViking packs whole segments and never cuts one off its context.
+  const budget = Math.floor(limit * 0.8);
+  const out = [first];
+  let used = tokens[0];
+  let segment = 1;
+  for (let i = 1; i < messages.length; i++) {
+    if (used + tokens[i] > budget) {
+      segment += 1;
+      const context = { ...first, content: `${first.content}\n\n（同一次运行的执行记录，第 ${segment} 段）` };
+      out.push(context);
+      used = messageTokens(context);
+    }
+    out.push(messages[i]);
+    used += tokens[i];
+  }
+  return { messages: out, batches: segment };
+}
+
+// OpenViking clamps a session's token threshold to 1,000,000; segments are cut
+// to the same limit it will batch by.
+const batchLimit = (cfg) => Math.min(cfg.extractBatchTokens ?? 300_000, 1_000_000);
+
+/** OpenViking's estimate for one message: the text it puts in the prompt, CJK at 1.5 tokens a character. */
+export function messageTokens(m) {
+  const text = [m.content ?? ''];
+  for (const p of m.parts ?? []) {
+    if (p.type === 'text') text.push(p.text ?? '');
+    else if (p.type === 'tool') text.push(p.tool_id ?? '', p.tool_name ?? '', p.tool_input ? JSON.stringify(p.tool_input) : '', p.tool_output ?? '');
+    else text.push(JSON.stringify(p));
+  }
+  return estimateTokens(text.join(''));
+}
+
+function estimateTokens(text) {
+  let units = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0);
+    if (c < 0x1100) units += 1;
+    else if (c > 0xffff) units += 8;
+    else if ((c >= 0x4e00 && c <= 0x9fff) || c <= 0x11ff || (c >= 0x3000 && c <= 0x30ff) || (c >= 0x3130 && c <= 0x318f)
+      || (c >= 0x31f0 && c <= 0x31ff) || (c >= 0x3400 && c <= 0x4dbf) || (c >= 0xac00 && c <= 0xd7af)
+      || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef)) units += 6;
+    else units += 1;
+  }
+  return Math.ceil(units / 4);
+}
+
+/**
+ * Set the batch limit as the session's auto-commit policy, after the last write
+ * and before the one commit (a policy is only checked on writes, so this
+ * triggers no commit of its own). Batches are bounded by tokens alone. An
+ * OpenViking without the session config endpoint extracts the record in one go.
+ */
+export async function limitExtractionBatches(ov, key, sessionId, cfg, log = () => {}) {
   try {
     await ov.updateSessionConfig(key, sessionId, {
-      autoCommitPolicy: { message_count_threshold: Math.min(maxMessages, 1000), pending_token_threshold: Math.min(maxTokens, 1_000_000) },
+      autoCommitPolicy: { message_count_threshold: 0, pending_token_threshold: batchLimit(cfg) },
     });
     return true;
   } catch (err) {

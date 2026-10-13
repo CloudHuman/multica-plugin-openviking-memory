@@ -23,7 +23,7 @@ multica 的版本是**探测**出来的：带 `chats:read` 的包被接受，说
 | R5 | 召回绑定运行：模型点名的其他 issue 不被检索 | 无法得知调用方运行，报告为未绑定（已知限制） |
 | R6 | 租户隔离：工作区 2 看不到工作区 1；其密钥无法触达工作区 1；安装 2 经 `GET /v1/context` 绑定 | 同左 |
 | R7 | LLM 失败 → 抽取失败 → 在新会话（`-r1`）重驱 → 抽取成功（需 `MOCK_LLM_URL`） | 同左 |
-| R8 | 长运行（2401 条执行记录）：设了 `REAL_STACK_BACKGROUND=1` 时由后台任务用安装 token 读完整条、完整归档并分批抽取；没设时钩子内只读到前 2000 条，记为不完整（已知限制） | 不执行 |
+| R8 | 长运行（2401 条执行记录）：设了 `REAL_STACK_BACKGROUND=1` 时由后台任务用安装 token 读完整条、完整归档；脚本把分批上限调低到 1 万 token，让这条记录走分批抽取，每批开头带任务上下文；没设时钩子内只读到前 2000 条，记为不完整（已知限制） | 不执行 |
 
 使用真实模型时，R1 同时核验告警阈值 1 万条，R2c 核验 RocketMQ、预算 3800 元和双写两周，R3b 核验两项偏好。设置 `MOCK_LLM_URL` 时，这三步仅验收管道和范围；R2b-recall 在两种模式下均核验主动写入原文。
 
@@ -69,3 +69,28 @@ node e2e/real-stack/run.mjs
 其余可选变量：`MC_BASE`（默认 `http://127.0.0.1:8080`）、`OV_BASE`（默认 `http://127.0.0.1:1936`）、`PLUGIN_URL`（默认 `https://host.docker.internal:8790`，必须在 `MULTICA_PLUGIN_DEV_ORIGINS` 里）、`MC_DEV_CODE`。
 
 插件由脚本自己启动（端口取自 `PLUGIN_URL`），状态目录是临时目录；抽取监视与重驱间隔通过 `state/config.json` 调快，代码路径与生产一致。每次运行都新建工作区，可重复执行。
+
+## 长运行抽取质量（真实模型，`long-run.mjs`）
+
+`long-run.mjs` 用真实模型衡量长运行的抽取效果：一次 2408 条执行记录的运行（800 个分片的巡检），在不同深度埋 8 个事实，其中 3 个在第 2000 条之后。同一份记录按不同方式归档、抽取，再检查抽出的记忆文件和召回结果：
+
+| 方式 | 说明 |
+| --- | --- |
+| `hook` | 不配安装 token：钩子内读前 2000 条，一次抽取 |
+| `background` | 配安装 token：后台读完整条；记录在分批上限以内，一次抽取 |
+| `background-batched` | 后台读完整条，分批上限调低到 6 万 token，让记录分 5 批抽取，每批开头带任务上下文 |
+
+每种方式用独立的工作区、插件进程和状态目录，依次执行。一个事实计为“抽到”，要求某一个记忆文件里同时出现它的关键信息（例如 `orders-700` 和“30 秒”）；计为“召回”，要求 `/admin/test-recall` 用不含答案的问题检索时，前 5 条里有一条满足同样的条件。
+
+这会调用真实模型、产生费用（每种方式约 0.05 美元），只在获得授权时运行。前置条件与 `run.mjs` 相同，OpenViking 用 `deploy/ov.openrouter.conf.example`：
+
+```bash
+OV_ROOT_KEY=<ov root key> \
+OVMEM_TLS_CERT=<out-dir>/hook-server.pem OVMEM_TLS_KEY=<out-dir>/hook-server.key \
+PLUGIN_CA=<ca-dir>/plugin-dev-ca.pem \
+LONG_RUN_VARIANTS=hook,background,background-batched LONG_RUN_REPEAT=1 \
+REPORT_FILE=reports/long-run.json \
+node e2e/real-stack/long-run.mjs
+```
+
+设置了 `OPENROUTER_API_KEY` 时，脚本在每种方式前后读一次这个 key 的累计用量，只记录差值。结果和分析见 [`reports/full-transcript-2026-10-13.md`](../../reports/full-transcript-2026-10-13.md)。

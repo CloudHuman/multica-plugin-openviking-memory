@@ -141,7 +141,7 @@ Multica 默认只调用公网 HTTPS 地址的钩子：域名必须解析到公�
    - `OVMEM_OV_BASE_URL`：插件服务能访问到的 OpenViking 地址；
    - `OVMEM_OV_ROOT_KEY`：和 OpenViking 的 `OV_ROOT_KEY` 相同；
    - `OVMEM_MULTICA_API_URL`（推荐）：插件服务能访问到的 Multica 地址加 `/v1`。配了它，插件不依赖 Multica 下发的回调地址，新安装也会先经 `GET /v1/context` 核实工作区再绑定；
-   - `OVMEM_MULTICA_TOKEN`（推荐）：第 4 步轮换 token 时返回的安装 token（`mpi_…`）。配了它，运行结束后由后台任务读完整条执行记录，长运行分批抽取；不配时只能在钩子调用里读，12 秒内、最多 2000 条。它只读、只限这个工作区，只发往 `OVMEM_MULTICA_API_URL`，按签名密钥同等保管；
+   - `OVMEM_MULTICA_TOKEN`（推荐）：第 4 步轮换 token 时返回的安装 token（`mpi_…`）。配了它，运行结束后由后台任务读完整条执行记录；不配时只能在钩子调用里读，12 秒内、最多 2000 条。它只读、只限这个工作区，只发往 `OVMEM_MULTICA_API_URL`，按签名密钥同等保管；
    - `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY`：第 3 节的证书，放进 `deploy/certs/` 后在容器里是 `/certs/…`；
    - `OVMEM_PLUGIN_TOKEN`：随机长字符串。
 2. **打包**：`bash scripts/package.sh --url https://ovmem.internal:8790 --with-chats-read`（公网方案换成公网地址）。

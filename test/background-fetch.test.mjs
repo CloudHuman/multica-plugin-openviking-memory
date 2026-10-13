@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { scopeKey } from '../src/scopes.mjs';
 import { validateStartupConfig, parseSigningSecrets, DEFAULTS } from '../src/config.mjs';
-import { limitExtractionBatches } from '../src/pipeline.mjs';
+import { planExtractionBatches, messageTokens } from '../src/pipeline.mjs';
 import {
   startFakeOv, startFakeMultica, fixtureIssue, fixtureTask, hookBody, commentEvent, taskEvent,
   FIXTURE_WS, FIXTURE_ISSUE_ID, FIXTURE_AGENT_A,
@@ -11,7 +11,8 @@ import { bootService, waitFor } from './harness.mjs';
 
 // With an install token the hook only registers a finished run; a queue job then
 // reads the whole transcript (no hook deadline, no 2000-message cap) and archives
-// it, and a long record is extracted in OpenViking batches.
+// it. A record too large for one extraction is extracted in OpenViking batches,
+// each opening with the record's context.
 
 const TOKEN = `mpi_${'a'.repeat(32)}`;
 const taskScope = scopeKey('task', FIXTURE_WS, FIXTURE_ISSUE_ID);
@@ -79,33 +80,75 @@ test('with an install token the hook registers the run and a queue job archives 
   });
 });
 
-test('a long record is extracted in batches: the batch limits are set after the writes, before the one commit', async () => {
+test('a record too large for one extraction is batched, and every batch opens with the run\'s context', async () => {
   const taskId = 'run-bg-2';
-  await withBackground({ taskId, transcript: longTranscript(taskId, 300) }, async ({ ov, svc, cb }) => {
+  const limit = 4_000;
+  await withBackground({ taskId, transcript: longTranscript(taskId, 300), cfg: { extractBatchTokens: limit } }, async ({ ov, svc, cb }) => {
     await svc.signedPost('/hooks/memory-archive', hookBody({ eventType: 'task.completed', input: taskEvent({ taskId }), callbackUrl: cb }));
-    const { rec } = await runArchive(ov, svc, taskId);
+    const { rec, archived } = await runArchive(ov, svc, taskId);
     const session = ov.sessionsOf(rec.apiKey).get(`mc-task-${taskId}`);
     assert.equal(session.archives.length, 1, 'one commit');
-    assert.deepEqual(session.archives[0].autoCommit, { message_count_threshold: 200, pending_token_threshold: 40000 });
+    // Bounded by tokens alone: OpenViking's default message limit is switched off.
+    assert.deepEqual(session.archives[0].autoCommit, { message_count_threshold: 0, pending_token_threshold: limit });
     const entry = await waitFor(() => svc.statusLog.recent({ limit: 20 }).find((e) => e.session_id === `mc-task-${taskId}` && e.extraction === 'pending'));
-    assert.equal(entry.extraction_batches, 'limited');
+    const contexts = archived.map((m, i) => (m.message_kind === 'user_query' ? i : -1)).filter((i) => i >= 0);
+    assert.ok(entry.extraction_batches > 1);
+    assert.equal(contexts.length, entry.extraction_batches, 'one context message per batch');
+    assert.equal(contexts[0], 0);
+    for (const i of contexts) assert.match(archived[i].content, /任务描述/);
+    // Each segment fits well inside one batch, so none is cut off its context.
+    contexts.forEach((start, k) => {
+      const segment = archived.slice(start, contexts[k + 1] ?? archived.length);
+      assert.ok(segment.reduce((n, m) => n + messageTokens(m), 0) <= limit * 0.8, `segment ${k + 1}`);
+    });
+    assert.ok(JSON.stringify(archived).includes('结论：所有分片的重试上限统一为 5 次'));
   });
 });
 
-test('a short record keeps OpenViking\'s single extraction (no policy is set)', async () => {
-  const ov = { updateSessionConfig: async () => { throw new Error('must not be called'); } };
-  const short = Array.from({ length: 20 }, () => ({ role: 'assistant', parts: [{ type: 'text', text: '短' }] }));
-  assert.equal(await limitExtractionBatches(ov, 'k', 's', short, DEFAULTS), false);
+test('a record within one extraction is extracted whole: no context copies, no policy', async () => {
+  const taskId = 'run-bg-2b';
+  await withBackground({ taskId, transcript: longTranscript(taskId, 300) }, async ({ ov, svc, cb }) => {
+    await svc.signedPost('/hooks/memory-archive', hookBody({ eventType: 'task.completed', input: taskEvent({ taskId }), callbackUrl: cb }));
+    const { rec, archived } = await runArchive(ov, svc, taskId);
+    assert.equal(ov.sessionsOf(rec.apiKey).get(`mc-task-${taskId}`).archives[0].autoCommit, null);
+    assert.equal(archived.filter((m) => m.message_kind === 'user_query').length, 1);
+    const entry = await waitFor(() => svc.statusLog.recent({ limit: 20 }).find((e) => e.session_id === `mc-task-${taskId}` && e.extraction === 'pending'));
+    assert.equal(entry.extraction_batches, undefined);
+  });
+});
+
+test('a batch limit above OpenViking\'s 1,000,000-token cap cuts segments at the cap', () => {
+  const context = { role: 'user', message_kind: 'user_query', content: '[Multica 任务] 「巡检」' };
+  const steps = Array.from({ length: 30 }, () => ({ role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(400_000) }] })); // 100,000 tokens each
+  const plan = planExtractionBatches([context, ...steps], { extractBatchTokens: 5_000_000 });
+  assert.ok(plan.batches > 1, 'a 3,000,000-token record is batched');
+  const contexts = plan.messages.map((m, i) => (m.message_kind === 'user_query' ? i : -1)).filter((i) => i >= 0);
+  contexts.forEach((start, k) => {
+    const segment = plan.messages.slice(start, contexts[k + 1] ?? plan.messages.length);
+    assert.ok(segment.reduce((n, m) => n + messageTokens(m), 0) <= 800_000);
+  });
+});
+
+test('a record that does not open with its context (a member chat) is never batched', () => {
+  const chat = [
+    { role: 'user', peer_id: 'member-1', content: '以后回复都用中文。' },
+    ...Array.from({ length: 400 }, (_, i) => ({ role: 'assistant', parts: [{ type: 'text', text: `第 ${i} 段回复，内容较长。`.repeat(20) }] })),
+  ];
+  const plan = planExtractionBatches(chat, { extractBatchTokens: 1_000 });
+  assert.equal(plan.batches, 1);
+  assert.equal(plan.messages, chat);
 });
 
 test('an OpenViking without the session config endpoint still archives the long record, in one batch', async () => {
   const taskId = 'run-bg-3';
-  await withBackground({ taskId, transcript: longTranscript(taskId, 300), ovOpts: { sessionConfig: false } }, async ({ ov, svc, cb }) => {
+  await withBackground({ taskId, transcript: longTranscript(taskId, 300), cfg: { extractBatchTokens: 4_000 }, ovOpts: { sessionConfig: false } }, async ({ ov, svc, cb }) => {
     await svc.signedPost('/hooks/memory-archive', hookBody({ eventType: 'task.completed', input: taskEvent({ taskId }), callbackUrl: cb }));
     const { rec } = await runArchive(ov, svc, taskId);
     const session = ov.sessionsOf(rec.apiKey).get(`mc-task-${taskId}`);
     assert.equal(session.archives.length, 1);
     assert.equal(session.archives[0].autoCommit, null);
+    const entry = await waitFor(() => svc.statusLog.recent({ limit: 20 }).find((e) => e.session_id === `mc-task-${taskId}` && e.extraction === 'pending'));
+    assert.equal(entry.extraction_batches, undefined);
   });
 });
 

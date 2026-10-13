@@ -58,11 +58,11 @@ export const DEFAULTS = {
   // An agent's closing comment waits this long for its run to be read before it
   // is archived on its own (it is skipped when the run archive covers it).
   awaitRunMaxMs: 10 * 60_000,
-  // A long run is extracted in batches: before its one commit the session gets
-  // these limits as its OpenViking auto-commit policy, which splits that commit's
-  // extraction (set after the writes, so nothing auto-commits on the way).
-  extractBatchMessages: 200,
-  extractBatchTokens: 40_000,
+  // A record above this many tokens (OpenViking's estimate) is extracted in
+  // batches of at most this size, each opening with the record's context; below
+  // it, in one extraction. One extraction of a 270K-token run kept every planted
+  // fact; lower it for an extraction model with a smaller context window.
+  extractBatchTokens: 300_000,
   // Extraction watch (runs beside the queue, never inside a job)
   extractPollIntervalMs: 5_000,
   extractPollMaxIntervalMs: 60_000,
@@ -235,7 +235,7 @@ export function validateStartupConfig(cfg) {
   if (cfg.multicaToken && !cfg.signingSecret) {
     problems.push('OVMEM_MULTICA_TOKEN belongs to the installation of OVMEM_SIGNING_SECRET; with OVMEM_SIGNING_SECRETS put "token" in each entry');
   }
-  for (const key of ['transcriptMaxMessagesBackground', 'awaitRunMaxMs', 'extractBatchMessages', 'extractBatchTokens']) {
+  for (const key of ['transcriptMaxMessagesBackground', 'awaitRunMaxMs', 'extractBatchTokens']) {
     if (cfg[key] !== undefined && !(Number.isFinite(cfg[key]) && cfg[key] > 0)) problems.push(`${key} must be a positive number`);
   }
   if (cfg.multicaApiUrl && !/^https?:\/\//.test(cfg.multicaApiUrl)) {

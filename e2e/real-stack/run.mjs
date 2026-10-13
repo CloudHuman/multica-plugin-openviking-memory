@@ -168,7 +168,9 @@ async function main() {
   // ---------------------------------------------------------------- plugin
   const stateDir = mkdtempSync(join(tmpdir(), 'ovmem-real-stack-'));
   // Faster extraction watching and re-drive than production, same code paths.
-  writeFileSync(join(stateDir, 'config.json'), JSON.stringify({ extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000 }));
+  // A low batch limit makes R8's long run (about 36K tokens) take the batched
+  // path that production keeps for records too large for one extraction.
+  writeFileSync(join(stateDir, 'config.json'), JSON.stringify({ extractPollIntervalMs: 1500, extractPollMaxIntervalMs: 4000, extractRedriveDelayMs: 8000, extractBatchTokens: 10_000 }));
   const pluginLog = [];
   const plugin = spawn(process.execPath, [join(root, 'src', 'server.mjs')], {
     env: {
@@ -438,7 +440,7 @@ async function main() {
       const extractCalls = mockCalls() - llmBefore;
       if (cfg.background) {
         step('R8', 'long run read in the background with the install token: archived whole and extracted in batches',
-          accL.completeness === 'complete' && pendingL.messages > long.length && pendingL.extraction_batches === 'limited' && (!cfg.mockLog || extractCalls > 1),
+          accL.completeness === 'complete' && pendingL.messages > long.length && pendingL.extraction_batches > 1 && (!cfg.mockLog || extractCalls >= pendingL.extraction_batches),
           `completeness=${accL.completeness} archived messages=${pendingL.messages} (transcript ${long.length}) batches=${pendingL.extraction_batches ?? 'one'}${cfg.mockLog ? ` model extraction calls=${extractCalls}` : ''}`);
       } else {
         step('R8', 'long run read inside the hook: only the first 2,000 messages fit (known limit; configure an install token)',

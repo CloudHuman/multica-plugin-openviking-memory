@@ -298,7 +298,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 裸机运行等价：`OVMEM_*` 环境变量 + `node src/server.mjs`（服务自带状态目录单写者锁，切勿双实例共享 state）。
 
-**读取完整执行记录（推荐）**：不配安装 token 时，插件只能在钩子调用里读运行的执行记录：12 秒内、最多 2000 条，超出时只留开头。配了安装 token 后，钩子只登记“这次运行结束了”，由后台任务分页读完整条记录，中途出错整条重读；长运行在 OpenViking 里分批抽取，不会把整次运行塞进一次抽取。
+**读取完整执行记录（推荐）**：不配安装 token 时，插件只能在钩子调用里读运行的执行记录：12 秒内、最多 2000 条，超出时只留开头。配了安装 token 后，钩子只登记“这次运行结束了”，由后台任务分页读完整条记录，中途出错整条重读。整条记录照常一次抽取；只有大到一次抽取装不下时（按 OpenViking 的估算超过 30 万 token）才分批，每批开头都带上这次任务的上下文。
 
 - **权限**：安装 token 的权限就是安装时授权的范围（`issues:read`、`comments:read`、`tasks:read`，补丁版另有 `chats:read`），只读，只限这一个工作区，但能读其中所有运行和私聊。按签名密钥同等保管。
 - **只发往配置的地址**：必须同时配 `OVMEM_MULTICA_API_URL`，token 只发往这个地址，不会发往钩子请求体里的回调地址。
@@ -408,7 +408,7 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 
 模板用英文写，与 OV 模板原有描述一致。2026-10-08 的真实验证中，配置这份模板的工作区 quality 16/16，每次抽取的提示词约多 2.5K 字符（见[报告](reports/real-agent-2026-10-08-config-rules.md)）。不配置时仍按 OV 原生规则抽取。
 
-调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（钩子内读取的条数上限，2000）、`transcriptMaxMessagesBackground`（后台读取的安全上限，10000）、`awaitRunMaxMs`（收尾评论等待运行读完的上限，600000）、`extractBatchMessages` / `extractBatchTokens`（超过任一项的记录分批抽取，每批上限 200 条 / 40000，即设为 OpenViking 会话的自动提交阈值）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
+调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（钩子内读取的条数上限，2000）、`transcriptMaxMessagesBackground`（后台读取的安全上限，10000）、`awaitRunMaxMs`（收尾评论等待运行读完的上限，600000）、`extractBatchTokens`（按 OpenViking 的估算超过它的记录分批抽取，每批不超过它、开头带任务上下文，默认 300000；抽取模型的上下文窗口较小时调低）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
 
 ## 运维手册
 
@@ -483,12 +483,13 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
-- **2026-10-13 读取完整执行记录，长运行分批抽取**：
+- **2026-10-13 读取完整执行记录**：
   - 配了安装 token（`OVMEM_MULTICA_TOKEN` 或 `OVMEM_SIGNING_SECRETS` 里的 `token`）时，钩子只登记运行，由后台任务用安装 token 分页读完整条执行记录，不再受钩子 12 秒、2000 条的限制；中途出错整条重读，不会只归档一半；token 被拒时任务失败且不重试，错误里写明怎么处理。
   - 智能体的收尾评论如果先于运行读完到达，会等运行读完再判断是否已被运行归档覆盖；等待不计入失败次数。
-  - 超过 200 条或约 4 万字的记录，在最后一次写入之后、提交之前给 OpenViking 会话设置自动提交阈值，OpenViking 据此把这次提交的抽取拆成几批；写入期间不会自动提交，插件的提交跟踪不变。不支持这个接口的 OpenViking 照旧一次抽取。
+  - 整条记录照常一次抽取。按 OpenViking 的估算超过 `extractBatchTokens`（默认 30 万 token）的记录才分批：每段开头复制一份任务上下文，提交前把上限设为会话的自动提交阈值，OpenViking 按整段装批。写入期间不会自动提交，插件的提交跟踪不变；不支持会话配置接口的 OpenViking 照旧一次抽取。
+  - 真实模型实验（`e2e/real-stack/long-run.mjs`，2408 条记录、埋 8 个事实）：钩子内读取只抽到 6 个（第 2000 条以后的两个丢失）；后台读完整条、一次抽取 8 个全中；第一版分批（不带上下文）只抽到 1 个，因为 OpenViking 不从没有用户消息的批次写记忆，修正为每批带任务上下文后 8 个全中。六次运行共花费 0.31 美元。
   - 不配 token 的部署行为不变。Multica 补丁不变：补丁 0001 的任务读取接口本来就接受安装 token。
-  - 本地验证：打过补丁的 Multica（`10a7e51`）+ OpenViking 0.4.22 + mock 模型，真实栈测试新增长任务场景 R8（2401 条执行记录）。后台模式 14/14，2401 条全部归档、分批抽取；钩子内读取模式 14/14，只归档前 2000 条（见 [`reports/full-transcript-2026-10-13.md`](reports/full-transcript-2026-10-13.md)）。
+  - 本地验证：打过补丁的 Multica（`10a7e51`）+ OpenViking 0.4.22 + mock 模型，真实栈测试新增长任务场景 R8（2401 条执行记录）。后台模式 14/14，2401 条全部归档，调低上限后分 5 批抽取；钩子内读取模式 14/14，只归档前 2000 条（见 [`reports/full-transcript-2026-10-13.md`](reports/full-transcript-2026-10-13.md)）。
 - **2026-10-09 第二轮独立评审修复**：核对上一轮 7 条修复都已生效，另有几处补充：
   - 条件和执行指令用逗号隔开时（“支付回调失败时，不要创建新 issue，直接重试三次”），条件之后的分句整体保留。
   - 召回和共享晋升改用与归档相同的检索结论判定：“搜索结果为空，因此显示默认推荐列表”“历史数据检索 failed 的告警要发到运维群”这类规则不再在召回时被去掉，也能晋升到共享空间。
