@@ -18,9 +18,14 @@ export const DEFAULTS = {
   signingSecret: '',
   // Additional per-installation signing secrets (one per workspace installation):
   //   OVMEM_SIGNING_SECRETS='{"<installation_id>":"whsec_…"}'
-  //   OVMEM_SIGNING_SECRETS='{"<installation_id>":{"secret":"whsec_…","workspace_id":"<uuid>"}}'
-  // Normalized to { [installationId]: { secret, workspaceId } }.
+  //   OVMEM_SIGNING_SECRETS='{"<installation_id>":{"secret":"whsec_…","workspace_id":"<uuid>","token":"mpi_…"}}'
+  // Normalized to { [installationId]: { secret, workspaceId, token } }.
   signingSecrets: {},
+  // The install token (mpi_…) of the installation OVMEM_SIGNING_SECRET serves.
+  // With an install token, a finished run is registered in the hook and its whole
+  // transcript is read later by a queue job, instead of inside the hook while the
+  // one-call callback token lives. Sent only to multicaApiUrl.
+  multicaToken: '',
   // The multica Plugin API base (…/v1). When set, callbacks go here instead of the
   // callback_url a hook body names, and an installation's workspace is verified
   // through GET /v1/context before the installation is first trusted.
@@ -47,6 +52,17 @@ export const DEFAULTS = {
   // this budget: multica abandons (and retries) a hook that outlives its timeout_ms.
   archiveFetchBudgetMs: 12_000,
   transcriptMaxMessages: 2_000,
+  // Read with an install token in the background: no time budget, and a cap
+  // that only guards memory against a runaway run.
+  transcriptMaxMessagesBackground: 10_000,
+  // An agent's closing comment waits this long for its run to be read before it
+  // is archived on its own (it is skipped when the run archive covers it).
+  awaitRunMaxMs: 10 * 60_000,
+  // A long run is extracted in batches: before its one commit the session gets
+  // these limits as its OpenViking auto-commit policy, which splits that commit's
+  // extraction (set after the writes, so nothing auto-commits on the way).
+  extractBatchMessages: 200,
+  extractBatchTokens: 40_000,
   // Extraction watch (runs beside the queue, never inside a job)
   extractPollIntervalMs: 5_000,
   extractPollMaxIntervalMs: 60_000,
@@ -80,6 +96,7 @@ const ENV_MAP = {
   signingSecret: ['OVMEM_SIGNING_SECRET'],
   signingSecrets: ['OVMEM_SIGNING_SECRETS', parseSigningSecrets],
   multicaApiUrl: ['OVMEM_MULTICA_API_URL', (v) => v.replace(/\/+$/, '')],
+  multicaToken: ['OVMEM_MULTICA_TOKEN'],
   pluginToken: ['OVMEM_PLUGIN_TOKEN'],
   tlsCert: ['OVMEM_TLS_CERT'],
   tlsKey: ['OVMEM_TLS_KEY'],
@@ -106,9 +123,13 @@ export function parseSigningSecrets(raw) {
   for (const [installationId, value] of Object.entries(parsed)) {
     if (typeof value === 'string') out[installationId] = { secret: value, workspaceId: '' };
     else if (value && typeof value === 'object') {
-      out[installationId] = { secret: String(value.secret ?? ''), workspaceId: String(value.workspace_id ?? value.workspaceId ?? '') };
+      out[installationId] = {
+        secret: String(value.secret ?? ''),
+        workspaceId: String(value.workspace_id ?? value.workspaceId ?? ''),
+        token: String(value.token ?? ''),
+      };
     } else {
-      return { __invalid: `OVMEM_SIGNING_SECRETS["${installationId}"] must be a whsec_ string or {"secret","workspace_id"}` };
+      return { __invalid: `OVMEM_SIGNING_SECRETS["${installationId}"] must be a whsec_ string or {"secret","workspace_id","token"}` };
     }
   }
   return out;
@@ -167,6 +188,7 @@ export function archiveSettings(merged) {
 }
 
 const WHSEC_RE = /^whsec_[0-9a-f]{64}$/i;
+const MPI_RE = /^mpi_[A-Za-z0-9_-]{16,}$/;
 
 export function validateStartupConfig(cfg) {
   const problems = [];
@@ -197,6 +219,24 @@ export function validateStartupConfig(cfg) {
         'OVMEM_MULTICA_API_URL (workspaces are then verified via GET /v1/context) or use {"secret":"whsec_…","workspace_id":"…"}',
       );
     }
+  }
+  // An install token reads the whole workspace, so it goes only to a Multica URL
+  // the operator configured, never to a callback_url a hook body names.
+  const tokens = [
+    ...(cfg.multicaToken ? [['OVMEM_MULTICA_TOKEN', cfg.multicaToken]] : []),
+    ...(extras.__invalid ? [] : Object.entries(extras).filter(([, e]) => e.token).map(([id, e]) => [`OVMEM_SIGNING_SECRETS["${id}"].token`, e.token])),
+  ];
+  for (const [name, token] of tokens) {
+    if (!MPI_RE.test(token)) problems.push(`${name} must be a Multica install token (mpi_…)`);
+  }
+  if (tokens.length && !cfg.multicaApiUrl) {
+    problems.push('an install token is configured but OVMEM_MULTICA_API_URL is not; set it to the Multica Plugin API (…/v1) the token may be sent to');
+  }
+  if (cfg.multicaToken && !cfg.signingSecret) {
+    problems.push('OVMEM_MULTICA_TOKEN belongs to the installation of OVMEM_SIGNING_SECRET; with OVMEM_SIGNING_SECRETS put "token" in each entry');
+  }
+  for (const key of ['transcriptMaxMessagesBackground', 'awaitRunMaxMs', 'extractBatchMessages', 'extractBatchTokens']) {
+    if (cfg[key] !== undefined && !(Number.isFinite(cfg[key]) && cfg[key] > 0)) problems.push(`${key} must be a positive number`);
   }
   if (cfg.multicaApiUrl && !/^https?:\/\//.test(cfg.multicaApiUrl)) {
     problems.push('OVMEM_MULTICA_API_URL must be an http(s) URL such as https://multica.example.com/v1');

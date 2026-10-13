@@ -75,7 +75,7 @@ const fakeTemplateDefaults = (kind) => ({
   fields: FAKE_TEMPLATE_FIELDS[kind].map((name) => ({ name, type: 'string', description: `native ${name}`, merge_op: 'patch' })),
 });
 
-export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1, requireReindex = false, reindexBehavior = 'succeed' } = {}) {
+export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1, requireReindex = false, reindexBehavior = 'succeed', sessionConfig = true } = {}) {
   const spaces = new Map(); // apiKey -> space
   const calls = [];
   const searchDelayMs = new Map(); // apiKey -> ms a search in that space takes (a slow model provider)
@@ -196,6 +196,16 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1,
         if (!s) return err(404, 'NOT_FOUND', 'no session');
         return ok({ session_id: m[1], message_count: s.live.length, commit_count: s.commitCount });
       }
+      // PATCH /sessions/{id}/config: merges the auto-commit policy (OpenViking
+      // 0.4.22). A commit records the policy it was made under.
+      m = path.match(/^\/api\/v1\/sessions\/([^/]+)\/config$/);
+      if (m && req.method === 'PATCH') {
+        if (!sessionConfig) return err(404, 'NOT_FOUND', 'no such route');
+        const s = space.sessions.get(decodeURIComponent(m[1]));
+        if (!s) return err(404, 'NOT_FOUND', 'no session');
+        if ('auto_commit_policy' in body) s.autoCommit = body.auto_commit_policy === null ? null : { ...(s.autoCommit ?? {}), ...body.auto_commit_policy };
+        return ok({ session_id: m[1], auto_commit_policy: s.autoCommit ?? null });
+      }
       m = path.match(/^\/api\/v1\/sessions\/([^/]+)\/messages\/batch$/);
       if (m && req.method === 'POST') {
         const s = space.sessions.get(decodeURIComponent(m[1]));
@@ -223,7 +233,7 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1,
         if (!s.live.length) return ok({ session_id: sid, status: 'skipped', task_id: null, reason: 'no_messages', archived: false });
         s.commitCount += 1;
         const archiveUri = `${userRoot(space)}/sessions/${sid}/history/archive_${String(s.commitCount).padStart(3, '0')}`;
-        const archive = { uri: archiveUri, messages: s.live, tags: body?.extraction_metadata?.event?.tags ?? [] };
+        const archive = { uri: archiveUri, messages: s.live, tags: body?.extraction_metadata?.event?.tags ?? [], autoCommit: s.autoCommit ?? null };
         s.archives.push(archive);
         s.live = [];
         s.tags = archive.tags;
@@ -360,7 +370,10 @@ export async function startFakeOv({ taskBehavior = 'succeed', pollsToFinish = 1,
  * tasks:  { [taskId]: task payload as GET /v1/tasks/{id} returns it }
  * transcript: [{task_id, seq, type, ...}]
  */
-export async function startFakeMultica({ issue, issues = [], transcript = [], comments = [], tasks = {}, taskApi = false, workspaceId } = {}) {
+export async function startFakeMultica({ issue, issues = [], transcript = [], comments = [], tasks = {}, taskApi = false, workspaceId, messageFaults = [], rejectInstallToken = false } = {}) {
+  // messageFaults: [{ page, status }] — the transcript page at that index (0-based,
+  // counted across all reads) answers that status once.
+  let messagePages = 0;
   const requests = [];
   const allIssues = [issue, ...issues].filter(Boolean);
   const server = createServer(async (req, res) => {
@@ -374,6 +387,7 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
     };
     const problem = (status, code, detail) => json(status, { type: `urn:multica:problem:${code}`, title: code, status, code, detail, error: detail });
     if (!token.startsWith('Bearer mpc_') && !token.startsWith('Bearer mpi_')) return problem(401, 'unauthorized', 'plugin token required');
+    if (rejectInstallToken && token.startsWith('Bearer mpi_')) return problem(401, 'unauthorized', 'install token is not valid');
     if (path === '/v1/context') {
       return json(200, { workspace: { id: workspaceId ?? issue?.workspace_id ?? issue?.workspaceId, name: 'test-ws', slug: 'test' }, config: {}, granted_net_domains: [], actor: 'plugin' });
     }
@@ -399,6 +413,9 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
       if (!taskApi) return problem(404, 'not_found', 'resource not found');
       const tid = decodeURIComponent(m[1]);
       if (!tasks[tid]) return problem(404, 'not_found', 'task not found');
+      const pageIndex = messagePages++;
+      const fault = messageFaults.find((f) => f.page === pageIndex);
+      if (fault) return problem(fault.status, 'fault', 'injected transcript page failure');
       const limit = Number(url.searchParams.get('limit') ?? 50);
       const after = url.searchParams.get('cursor') ? Number(Buffer.from(url.searchParams.get('cursor'), 'base64url').toString()) : 0;
       const all = transcript.filter((t) => t.task_id === tid && t.seq > after).sort((a, b) => a.seq - b.seq);

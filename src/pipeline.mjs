@@ -110,6 +110,7 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
           for (const chunk of chunkMessages(built.messages.slice(live))) {
             await ov.addMessages(rec.apiKey, sessionId, chunk);
           }
+          job.cp.batched = await limitExtractionBatches(ov, rec.apiKey, sessionId, built.messages, cfg, log);
           const commit = await ov.commitSession(rec.apiKey, sessionId, {
             tags: commitTags({ workspaceId: p.workspaceId, scopeKey, kind: job.type, refId: p.refId, agentId: p.agentId ?? p.scope?.agentId }),
           });
@@ -126,12 +127,42 @@ export function makeArchiveHandler({ ov, registry, statusLog, extractions, cfg, 
         jobId: job.id, workspaceId: p.workspaceId, scopeKey, sessionId, ref: p.refId, type: job.type,
         taskId: job.cp.commitTaskId, archiveUri: job.cp.archiveUri, generation, autoRedrives: p.autoRedrives ?? 0,
       });
-      statusLog.append({ ...base, session_id: sessionId, messages: built.messages.length, extraction: 'pending', extraction_task: job.cp.commitTaskId });
+      statusLog.append({
+        ...base, session_id: sessionId, messages: built.messages.length, extraction: 'pending', extraction_task: job.cp.commitTaskId,
+        ...(job.cp.batched ? { extraction_batches: 'limited' } : {}),
+      });
       log(`archived: ${job.type} ${p.refId} -> ${scopeKey} (session ${sessionId}, extraction pending)`);
     } catch (err) {
       throw markRetryable(err);
     }
   };
+}
+
+/**
+ * A record longer than one extraction batch gets OpenViking's batch limits as its
+ * session's auto-commit policy, after the last write and before its one commit:
+ * the commit then extracts in batches instead of one prompt holding the whole
+ * run. An OpenViking without the session config endpoint extracts it whole.
+ */
+export async function limitExtractionBatches(ov, key, sessionId, messages, cfg, log = () => {}) {
+  const maxMessages = cfg.extractBatchMessages ?? 200;
+  const maxTokens = cfg.extractBatchTokens ?? 40_000;
+  // Characters bound tokens from above for these records (CJK is about one
+  // token a character, other text fewer), so this never misses a long record.
+  const chars = messages.reduce((n, m) => n + JSON.stringify(m.parts ?? m.content ?? '').length, 0);
+  if (messages.length <= maxMessages && chars <= maxTokens) return false;
+  try {
+    await ov.updateSessionConfig(key, sessionId, {
+      autoCommitPolicy: { message_count_threshold: Math.min(maxMessages, 1000), pending_token_threshold: Math.min(maxTokens, 1_000_000) },
+    });
+    return true;
+  } catch (err) {
+    if (err?.status === 404 || err?.status === 405) {
+      log(`session ${sessionId}: OpenViking has no session config endpoint; extracting the record in one batch`);
+      return false;
+    }
+    throw err;
+  }
 }
 
 async function readSession(ov, key, sessionId) {

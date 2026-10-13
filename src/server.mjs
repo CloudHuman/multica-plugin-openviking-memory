@@ -59,6 +59,7 @@ export function createApp({ cfg, ov, registry, queue, ledger, statusLog, install
   // Per installation: did GET /v1/tasks/{id} answer? (true / false / unknown)
   const taskApi = new Map();
   const deps = { cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules, fetchImpl, taskApi };
+  registerBackgroundRoutes(deps);
   return {
     ...deps,
     handlers: {
@@ -96,6 +97,86 @@ function callbackClient({ cfg, fetchImpl }, ctx, body, budgetMs) {
   });
 }
 
+/**
+ * A client for reading this installation's runs outside a hook call: its install
+ * token, sent only to the operator-configured OVMEM_MULTICA_API_URL. Null when
+ * either is missing, and the hook then reads the run itself as before.
+ */
+function backgroundClient({ cfg, installations, fetchImpl }, installationId) {
+  const token = installations?.tokenFor?.(installationId) ?? '';
+  if (!token || !cfg.multicaApiUrl) return null;
+  return new MulticaClient({
+    callbackUrl: cfg.multicaApiUrl,
+    callbackToken: token,
+    timeoutMs: Math.max(cfg.callbackTimeoutMs ?? 0, 30_000),
+    fetchImpl,
+  });
+}
+
+/** A queue job that cannot proceed until another one has. */
+const deferJob = (message) => Object.assign(new Error(message), { defer: true });
+
+/**
+ * Queue routes for background reads: fetch-run reads a finished run with the
+ * install token and archives it exactly as the hook would; an agent's closing
+ * comment registered while its run is still being read waits for that run.
+ */
+function registerBackgroundRoutes(deps) {
+  const { cfg, queue, statusLog } = deps;
+  if (!queue?.route) return;
+  queue.route('fetch-run', async (job) => {
+    const p = job.payload;
+    const skip = (reason, ref) => {
+      statusLog.append({ type: 'skipped', event: p.eventType, ref, workspace: p.workspaceId, reason });
+      return { status: 'skipped', reason };
+    };
+    const mc = backgroundClient(deps, p.installationId);
+    if (!mc) {
+      skip('no install token is configured for this installation any more; the run was not read', p.taskId);
+      return;
+    }
+    try {
+      await archiveTaskEvent({
+        ...deps, body: { task_id: p.taskId }, input: p.input ?? { task_id: p.taskId }, ws: p.workspaceId,
+        ctx: { installationId: p.installationId, workspaceId: p.workspaceId }, mc, settings: p.settings,
+        eventType: p.eventType, skip, background: true,
+      });
+    } catch (err) {
+      if (err?.status === 401) {
+        throw Object.assign(new Error(`Multica rejected the install token (401) for installation ${p.installationId}: rotate the plugin token, update it in the plugin config, then POST /admin/redrive {"job_id":"${job.id}"}`), { retryable: false, status: 401 });
+      }
+      throw err;
+    }
+  });
+  queue.route('archive-comment', async (job) => {
+    const p = job.payload;
+    if (p.awaitRun) {
+      const verdict = awaitRunVerdict(deps, p);
+      if (verdict === 'wait') throw deferJob(`waiting for run ${p.awaitRun.taskId} to be read`);
+      if (verdict === 'covered') {
+        statusLog.append({ type: 'skipped', event: 'comment.created', ref: p.refId, workspace: p.workspaceId, reason: 'agent comment covered by its run archive' });
+        return;
+      }
+    }
+    await queue.handler(job);
+  });
+}
+
+/**
+ * Whether an agent's closing comment is in its run's archive: 'covered',
+ * 'archive' (archive the comment itself) or 'wait' (the run is still being
+ * read, or its task event has not arrived yet).
+ */
+function awaitRunVerdict({ cfg, queue }, p) {
+  const { taskId, since } = p.awaitRun;
+  const run = queue.findByDedupeKey(`archive-run:${p.workspaceId}:${taskId}`);
+  if (run) return runCoversComment(run, p.comment, p.comment.issue_id, cfg) ? 'covered' : 'archive';
+  if (Date.now() - Number(since ?? 0) >= cfg.awaitRunMaxMs) return 'archive';
+  const fetch = queue.findByDedupeKey(`fetch-run:${p.workspaceId}:${taskId}`);
+  if (!fetch || fetch.status === 'queued' || fetch.status === 'running') return 'wait';
+  return 'archive';
+}
+
 // ---------------------------------------------------------------------------
 // multica event hook: memory-archive
 // ---------------------------------------------------------------------------
@@ -123,7 +204,9 @@ export function makeMemoryArchiveHandler(deps) {
     };
 
     let outcome;
-    if (eventType === 'task.completed' || eventType === 'task.failed') {
+    if ((eventType === 'task.completed' || eventType === 'task.failed') && backgroundClient(deps, ctx.installationId)) {
+      outcome = registerRunFetch({ ...deps, body, input, ws, ctx, settings, eventType, skip });
+    } else if (eventType === 'task.completed' || eventType === 'task.failed') {
       outcome = await archiveTaskEvent({ ...deps, body, input, ws, ctx, mc, settings, eventType, skip });
     } else if (eventType === 'comment.created') {
       outcome = await archiveCommentEvent({ ...deps, body, input, ws, ctx, mc, settings, skip });
@@ -145,7 +228,29 @@ const transientError = (err) => {
   return !status || status >= 500 || [408, 425, 429].includes(status);
 };
 
-async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, eventType, skip, prefetchedTask }) {
+/**
+ * With an install token the hook only records that a run finished: a fetch-run
+ * job reads all of it later, with no hook deadline and retries on failure.
+ */
+function registerRunFetch({ queue, statusLog, body, input, ws, ctx, settings, eventType, skip }) {
+  const taskId = input.task_id || body.task_id;
+  if (!taskId) return skip('task event without task_id');
+  if (eventType === 'task.failed' && input.retry_pending === true) {
+    return skip('intermediate failure: multica is retrying this run', taskId);
+  }
+  const event = {
+    task_id: taskId, agent_id: input.agent_id ?? null, issue_id: input.issue_id ?? null,
+    status: input.status ?? null, retry_pending: input.retry_pending ?? null,
+  };
+  const enq = queue.enqueue('fetch-run', {
+    workspaceId: ws, installationId: ctx.installationId, refId: taskId, taskId, eventType, input: event, settings,
+  }, { dedupeKey: `fetch-run:${ws}:${taskId}` });
+  if (enq.reused) return { status: 'duplicate', job: enq.id };
+  statusLog.append({ type: 'accepted', event: eventType, ref: taskId, job: enq.id, fetch: 'background', workspace: ws });
+  return { status: 'queued', job: enq.id, fetch: 'background' };
+}
+
+async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, ws, ctx, mc, settings, eventType, skip, prefetchedTask, background = false }) {
   const taskId = input.task_id || body.task_id;
   if (!taskId) return skip('task event without task_id');
   if (eventType === 'task.failed' && input.retry_pending === true) {
@@ -162,6 +267,9 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
     task ??= await mc.getTask(taskId);
     taskApi.set(ctx.installationId, true);
   } catch (err) {
+    // In the background a refused token is the operator's to fix, not a skip,
+    // and a passing failure is retried rather than archived without the run's input.
+    if (background && (err?.status === 401 || transientError(err))) throw err;
     if (isNotFound(err)) taskApi.set(ctx.installationId, false);
     else {
       if (transientError(err)) lookupError = err;
@@ -187,10 +295,14 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
   let transcript = [];
   if (taskApi.get(ctx.installationId) !== false) {
     try {
-      const r = await mc.listTaskMessages(taskId, { maxMessages: cfg.transcriptMaxMessages });
+      const r = await mc.listTaskMessages(taskId, background
+        ? { maxMessages: cfg.transcriptMaxMessagesBackground, keepPartial: false }
+        : { maxMessages: cfg.transcriptMaxMessages });
       transcript = r.messages;
       if (!r.complete) partial.push('transcript truncated');
     } catch (err) {
+      // A background read is retried whole rather than archived half-read.
+      if (background && !isNotFound(err)) throw err;
       partial.push(isNotFound(err) ? 'multica has no transcript API' : `transcript unavailable (${errText(err)})`);
     }
   } else {
@@ -203,6 +315,7 @@ async function archiveTaskEvent({ cfg, queue, statusLog, taskApi, body, input, w
     try {
       issue = await mc.getIssue(issueId);
     } catch (err) {
+      if (background && (err?.status === 401 || transientError(err))) throw err;
       issue = { id: issueId, identifier: '', title: '', description: '' };
       partial.push(`issue unavailable (${errText(err)})`);
     }
@@ -279,10 +392,14 @@ async function archiveCommentEvent(deps) {
   // When the closing comment arrives first, durably archive the terminal run
   // before testing its sanitized output. Partial/missing output keeps a comment
   // fallback, including when another run proved that the task API exists.
+  let awaitRun = null;
   if (authorType === 'agent' && comment.source_task_id) {
     const dedupeKey = `archive-run:${ws}:${comment.source_task_id}`;
     let run = queue.findByDedupeKey(dedupeKey);
-    if (!run && taskApi.get(ctx.installationId) !== false) {
+    // With an install token the run is read in the background: the comment job
+    // waits for that read instead of reading the run inside this hook.
+    if (!run && backgroundClient(deps, ctx.installationId)) awaitRun = { taskId: comment.source_task_id, since: Date.now() };
+    else if (!run && taskApi.get(ctx.installationId) !== false) {
       let task = null;
       try {
         task = await mc.getTask(comment.source_task_id);
@@ -320,6 +437,7 @@ async function archiveCommentEvent(deps) {
     scope: { kind: 'task', workspaceId: ws, issueId },
     scopeKey: scopeKey('task', ws, issueId),
     completeness: 'complete',
+    ...(awaitRun ? { awaitRun } : {}),
   };
   const enq = queue.enqueue('archive-comment', payload, { dedupeKey: `archive-comment:${ws}:${comment.id}` });
   if (enq.reused) return { status: 'duplicate', job: enq.id };

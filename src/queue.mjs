@@ -20,6 +20,7 @@ export class JobQueue {
   constructor({ stateDir, handler, maxAttempts = 8, baseDelayMs = 10_000, pollMs = 400, log = () => {}, keepDone = 500, isPinned = () => false }) {
     this.path = `${stateDir}/queue.ndjson`;
     this.handler = handler;
+    this.routes = new Map();
     this.maxAttempts = maxAttempts;
     this.baseDelayMs = baseDelayMs;
     this.pollMs = pollMs;
@@ -93,6 +94,11 @@ export class JobQueue {
     const tmp = `${this.path}.tmp`;
     writeFileSync(tmp, `${JSON.stringify({ t: 'compact-base', jobs: [...this.jobs.values()] })}\n`);
     renameSync(tmp, this.path);
+  }
+
+  /** Handle jobs of one type with fn instead of the default handler. */
+  route(type, fn) {
+    this.routes.set(type, fn);
   }
 
   findByDedupeKey(dedupeKey) {
@@ -193,11 +199,21 @@ export class JobQueue {
       job.updated_at = nowIso();
       this.current = job.id;
       try {
-        await this.handler(job);
+        await (this.routes.get(job.type) ?? this.handler)(job);
         job.status = 'done';
         job.last_error = null;
         job.last_error_diagnostic = null;
       } catch (err) {
+        if (err?.defer) {
+          // Waiting on another job is not a failure: no attempt is spent.
+          job.status = 'queued';
+          job.next_run_at = Date.now() + (err.delayMs ?? this.baseDelayMs);
+          job.last_error = `deferred: ${String(err.message ?? '').slice(0, 300)}`;
+          this.current = null;
+          job.updated_at = nowIso();
+          this.#append({ t: 'update', job });
+          continue;
+        }
         job.attempts += 1;
         job.last_error = redactError(err?.message ?? err).slice(0, 500);
         job.last_error_diagnostic = failureDiagnostic(err, { source: 'archive-job' });

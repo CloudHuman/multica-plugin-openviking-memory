@@ -263,6 +263,7 @@ OVMEM_OV_ROOT_KEY=<ov-root-key>
 OVMEM_SIGNING_SECRET=              # 第 5 步安装插件后拿到再填
 OVMEM_PLUGIN_TOKEN=<随机长字符串>
 OVMEM_MULTICA_API_URL=https://multica.example.com/v1   # 推荐：插件服务能访问到的 Multica 地址
+OVMEM_MULTICA_TOKEN=               # 推荐：第 5 步拿到的安装 token（mpi_…），用来读完整执行记录
 OVMEM_TLS_CERT=/certs/hook-server.pem # 本地联调用 dev CA 签发，见 deploy/dev-certs.sh
 OVMEM_TLS_KEY=/certs/hook-server.key
 ENV
@@ -289,7 +290,7 @@ GitHub Releases 里的 zip 没有指定 `--url`，钩子指向 `https://host.doc
 
 ### 5. 轮换签名密钥，启动服务
 
-安装后在插件设置里轮换 token，把响应中的 `SigningSecret`（`whsec_…`）填进 `deploy/.env` 的 `OVMEM_SIGNING_SECRET`，然后启动：
+安装后在插件设置里轮换 token，把响应中的 `SigningSecret`（`whsec_…`）填进 `deploy/.env` 的 `OVMEM_SIGNING_SECRET`。推荐把同一个响应里的安装 token（`mpi_…`）填进 `OVMEM_MULTICA_TOKEN`，并配好 `OVMEM_MULTICA_API_URL`（见下文“读取完整执行记录”）。然后启动：
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d --build
@@ -297,11 +298,18 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 裸机运行等价：`OVMEM_*` 环境变量 + `node src/server.mjs`（服务自带状态目录单写者锁，切勿双实例共享 state）。
 
+**读取完整执行记录（推荐）**：不配安装 token 时，插件只能在钩子调用里读运行的执行记录：12 秒内、最多 2000 条，超出时只留开头。配了安装 token 后，钩子只登记“这次运行结束了”，由后台任务分页读完整条记录，中途出错整条重读；长运行在 OpenViking 里分批抽取，不会把整次运行塞进一次抽取。
+
+- **权限**：安装 token 的权限就是安装时授权的范围（`issues:read`、`comments:read`、`tasks:read`，补丁版另有 `chats:read`），只读，只限这一个工作区，但能读其中所有运行和私聊。按签名密钥同等保管。
+- **只发往配置的地址**：必须同时配 `OVMEM_MULTICA_API_URL`，token 只发往这个地址，不会发往钩子请求体里的回调地址。
+- **轮换**：再次轮换会让旧 token 失效，签名密钥不变；要把新 token 更新到插件。token 失效时，后台读取失败且不重试，`/admin/status` 的错误会说明怎么处理，更新后用 `/admin/redrive` 重读。
+- 依据见 [`reports/full-transcript-2026-10-13.md`](reports/full-transcript-2026-10-13.md)。
+
 每个安装只属于一个工作区：服务第一次收到某个安装的投递时把它绑定到工作区，之后请求体里写别的工作区或别的安装一律拒绝（403 / 401）。`OVMEM_SIGNING_SECRET` 只服务一个安装（首次投递时绑定）。服务多个工作区时：
 
 ```bash
-# 显式写明每个安装的工作区（推荐）
-OVMEM_SIGNING_SECRETS='{"<installation_id>":{"secret":"whsec_…","workspace_id":"<workspace_id>"}}'
+# 显式写明每个安装的工作区（推荐），可同时写上安装 token
+OVMEM_SIGNING_SECRETS='{"<installation_id>":{"secret":"whsec_…","workspace_id":"<workspace_id>","token":"mpi_…"}}'
 # 或只给密钥，并让服务向 multica 核实工作区（GET /v1/context）
 OVMEM_SIGNING_SECRETS='{"<installation_id>":"whsec_…"}'
 OVMEM_MULTICA_API_URL=https://multica.example.com/v1
@@ -375,7 +383,8 @@ POST /internal/recall    // 供注入方拉取召回块
 | `OVMEM_OV_BASE_URL` | — | OpenViking 地址（必填） |
 | `OVMEM_OV_ROOT_KEY` | — | OV root key，仅用于开通账号/空间（必填） |
 | `OVMEM_SIGNING_SECRET` | — | multica 钩子签名密钥 `whsec_…`，服务一个安装（与下一项至少配一个） |
-| `OVMEM_SIGNING_SECRETS` | — | 按安装配置的密钥：`{"<installation_id>":"whsec_…"}` 或 `{"<installation_id>":{"secret":"whsec_…","workspace_id":"…"}}` |
+| `OVMEM_SIGNING_SECRETS` | — | 按安装配置的密钥：`{"<installation_id>":"whsec_…"}` 或 `{"<installation_id>":{"secret":"whsec_…","workspace_id":"…","token":"mpi_…"}}`（`token` 可选，见“读取完整执行记录”） |
+| `OVMEM_MULTICA_TOKEN` | — | `OVMEM_SIGNING_SECRET` 那个安装的安装 token（`mpi_…`）。配了就在后台读取完整执行记录；需要同时配 `OVMEM_MULTICA_API_URL` |
 | `OVMEM_MULTICA_API_URL` | — | multica Plugin API（`…/v1`）。设置后回调发往这里而不是请求体里的 `callback_url`，新安装经 `GET /v1/context` 核实工作区后才绑定 |
 | `OVMEM_PLUGIN_TOKEN` | — | `/internal` + `/admin` Bearer（必填） |
 | `OVMEM_TLS_CERT` / `OVMEM_TLS_KEY` | — | HTTPS 证书 |
@@ -399,7 +408,7 @@ multica 侧 UI 配置（随钩子请求下发，按安装生效）：`recall_ent
 
 模板用英文写，与 OV 模板原有描述一致。2026-10-08 的真实验证中，配置这份模板的工作区 quality 16/16，每次抽取的提示词约多 2.5K 字符（见[报告](reports/real-agent-2026-10-08-config-rules.md)）。不配置时仍按 OV 原生规则抽取。
 
-调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（2000）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
+调优项写在 `state/config.json`（启动时读取）：`archiveFetchBudgetMs`（钩子内取材总预算，默认 12000，须小于 `memory-archive` 的 20s 超时）、`transcriptMaxMessages`（钩子内读取的条数上限，2000）、`transcriptMaxMessagesBackground`（后台读取的安全上限，10000）、`awaitRunMaxMs`（收尾评论等待运行读完的上限，600000）、`extractBatchMessages` / `extractBatchTokens`（超过任一项的记录分批抽取，每批上限 200 条 / 40000，即设为 OpenViking 会话的自动提交阈值）、`extractPollIntervalMs` / `extractPollMaxIntervalMs`（5000 / 60000）、`extractMaxWatchMs`（6 小时）、`extractMaxRedrives`（2）、`extractRedriveDelayMs`（60000）、`queueMaxAttempts`（8）、`queueBaseDelayMs`（10000）、`callbackTimeoutMs`、`ovTimeoutMs`、`recallBudgetMs`（`memory-recall` 的总预算，默认 15000，须小于其 20s 超时：到点还没返回的空间在 `scopesSearched` 里标 `timedOut`，`notes` 说明结果可能不完整）、`facadeBudgetMs`（`ov-*` 门面，默认 25000，须小于 30s；`wait=true` 的写入/修改把 OpenViking 的等待上限压在预算内，等待超时时如实报告"已写入、索引仍在后台进行"）。
 
 ## 运维手册
 
@@ -474,6 +483,12 @@ node e2e/real-stack/run.mjs                       # 真实 multica + 真实 OV�
 
 ## 变更记录
 
+- **2026-10-13 读取完整执行记录，长运行分批抽取**：
+  - 配了安装 token（`OVMEM_MULTICA_TOKEN` 或 `OVMEM_SIGNING_SECRETS` 里的 `token`）时，钩子只登记运行，由后台任务用安装 token 分页读完整条执行记录，不再受钩子 12 秒、2000 条的限制；中途出错整条重读，不会只归档一半；token 被拒时任务失败且不重试，错误里写明怎么处理。
+  - 智能体的收尾评论如果先于运行读完到达，会等运行读完再判断是否已被运行归档覆盖；等待不计入失败次数。
+  - 超过 200 条或约 4 万字的记录，在最后一次写入之后、提交之前给 OpenViking 会话设置自动提交阈值，OpenViking 据此把这次提交的抽取拆成几批；写入期间不会自动提交，插件的提交跟踪不变。不支持这个接口的 OpenViking 照旧一次抽取。
+  - 不配 token 的部署行为不变。Multica 补丁不变：补丁 0001 的任务读取接口本来就接受安装 token。
+  - 本地验证：打过补丁的 Multica（`10a7e51`）+ OpenViking 0.4.22 + mock 模型，真实栈测试新增长任务场景 R8（2401 条执行记录）。后台模式 14/14，2401 条全部归档、分批抽取；钩子内读取模式 14/14，只归档前 2000 条（见 [`reports/full-transcript-2026-10-13.md`](reports/full-transcript-2026-10-13.md)）。
 - **2026-10-09 第二轮独立评审修复**：核对上一轮 7 条修复都已生效，另有几处补充：
   - 条件和执行指令用逗号隔开时（“支付回调失败时，不要创建新 issue，直接重试三次”），条件之后的分句整体保留。
   - 召回和共享晋升改用与归档相同的检索结论判定：“搜索结果为空，因此显示默认推荐列表”“历史数据检索 failed 的告警要发到运维群”这类规则不再在召回时被去掉，也能晋升到共享空间。

@@ -2,9 +2,11 @@ import { fetchJson } from './util.mjs';
 
 /**
  * Multica plugin callback API client (the /v1 surface granted to this
- * installation). One instance per hook delivery: the callback token (mpc_…)
- * is scoped to the invocation and revoked the moment the hook call returns, so
- * everything a handler needs must be fetched before it answers.
+ * installation). Within a hook delivery it carries the callback token (mpc_…),
+ * scoped to the invocation and revoked the moment the hook call returns, so
+ * everything the hook needs must be fetched before it answers. A queue job that
+ * reads a run later carries the installation's install token (mpi_…) instead,
+ * with no deadline.
  */
 export class MulticaClient {
   constructor({ callbackUrl, callbackToken, timeoutMs = 5_000, fetchImpl, deadline = Infinity } = {}) {
@@ -65,9 +67,11 @@ export class MulticaClient {
 
   /**
    * The run transcript, following next_cursor pages until done, the message cap,
-   * or the fetch budget. Returns { messages, complete }.
+   * or the fetch budget. Returns { messages, complete }. With keepPartial false
+   * (a background read that will be retried) a failed page fails the whole read
+   * rather than returning the pages before it.
    */
-  async listTaskMessages(taskId, { maxMessages = 2_000, pageSize = 200 } = {}) {
+  async listTaskMessages(taskId, { maxMessages = 2_000, pageSize = 200, keepPartial = true } = {}) {
     const messages = [];
     let cursor = '';
     for (;;) {
@@ -79,7 +83,7 @@ export class MulticaClient {
       } catch (err) {
         // Keep what arrived if a later page runs out of time; a first-page
         // failure is the caller's to classify (404 = no task API, 403 = scope).
-        if (messages.length && (err.code === 'BUDGET' || err.code === 'NETWORK')) return { messages, complete: false };
+        if (keepPartial && messages.length && (err.code === 'BUDGET' || err.code === 'NETWORK')) return { messages, complete: false };
         throw err;
       }
       const batch = Array.isArray(page) ? page : (page?.messages ?? []);

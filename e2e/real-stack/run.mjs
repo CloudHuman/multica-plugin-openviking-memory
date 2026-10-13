@@ -46,6 +46,10 @@ const cfg = {
   pluginCa: env.PLUGIN_CA ?? '',
   mockLlm: (env.MOCK_LLM_URL ?? '').replace(/\/+$/, ''),
   report: env.REPORT_FILE ?? '',
+  // REAL_STACK_BACKGROUND=1: the plugin gets each installation's install token,
+  // so finished runs are read by a queue job instead of inside the hook.
+  background: env.REAL_STACK_BACKGROUND === '1',
+  mockLog: env.MOCK_LLM_LOG ?? '',
 };
 for (const [k, v] of Object.entries({ OV_ROOT_KEY: cfg.ovRootKey, OVMEM_TLS_CERT: cfg.tlsCert, OVMEM_TLS_KEY: cfg.tlsKey, PLUGIN_CA: cfg.pluginCa })) {
   if (!v) {
@@ -173,7 +177,9 @@ async function main() {
       OVMEM_OV_BASE_URL: cfg.ovBase, OVMEM_OV_ROOT_KEY: cfg.ovRootKey,
       // Installation 1 is pinned to its workspace in config; installation 2 is
       // bound by asking multica (GET /v1/context) on its first delivery.
-      OVMEM_SIGNING_SECRETS: JSON.stringify({ [inst1.installationId]: { secret: inst1.signingSecret, workspace_id: ws1 }, [inst2.installationId]: inst2.signingSecret }),
+      OVMEM_SIGNING_SECRETS: JSON.stringify(cfg.background
+        ? { [inst1.installationId]: { secret: inst1.signingSecret, workspace_id: ws1, token: inst1.installationToken }, [inst2.installationId]: { secret: inst2.signingSecret, token: inst2.installationToken } }
+        : { [inst1.installationId]: { secret: inst1.signingSecret, workspace_id: ws1 }, [inst2.installationId]: inst2.signingSecret }),
       OVMEM_MULTICA_API_URL: `${cfg.mcBase}/v1`,
       OVMEM_PLUGIN_TOKEN: ADMIN_TOKEN,
       OVMEM_TLS_CERT: cfg.tlsCert, OVMEM_TLS_KEY: cfg.tlsKey,
@@ -213,6 +219,13 @@ async function main() {
       return files.join('\n');
     };
     const realModel = !cfg.mockLlm;
+    // Model calls the mock answered so far, other than embeddings (MOCK_LLM_LOG).
+    const mockCalls = () => (cfg.mockLog && existsSync(cfg.mockLog)
+      ? readFileSync(cfg.mockLog, 'utf8').split('\n').filter((l) => l && !l.includes('"kind":"embed"')).length : 0);
+    // A run's outcome: skipped, or accepted into an archive. In the background the
+    // hook first records only that the run was registered (no kind); the archive
+    // entry follows once the queue has read it.
+    const runSettled = (id) => (e) => e.ref === id && (e.type === 'skipped' || (e.type === 'accepted' && (!cfg.background || e.kind)));
     const extracted = (ref) => waitFor(`extraction of ${ref}`, async () => entry((e) => e.type === 'extraction' && e.ref === ref && e.extraction === 'done'), { timeoutMs: 180_000 });
 
     // ---------------------------------------------------------------- workspace 1
@@ -267,7 +280,8 @@ async function main() {
       Boolean(remembered), `scope=${remembered.scope.split(':')[0]} original content preserved`);
     await d1.complete(runA.id, '最终结论:推荐 RocketMQ。');
     if (flavor === 'patched') {
-      const accRun = await waitFor('run accepted', async () => entry((e) => e.ref === runA.id && (e.type === 'accepted' || e.type === 'skipped')));
+      // In the background the hook only registers the run; the archive entry (with its kind) follows.
+      const accRun = await waitFor('run accepted', async () => entry(runSettled(runA.id)));
       if (accRun.type === 'accepted') await extracted(runA.id);
       const runHits = accRun.type === 'accepted' ? await waitFor('run memory preserves the decision, budget and rollout', async () => {
         const h = await ovSearch(taskScopeX, 'RocketMQ 预算 灰度 双写');
@@ -289,7 +303,10 @@ async function main() {
       const list = Array.isArray(r.json) ? r.json : (r.json?.comments ?? []);
       return list.find((c) => c.author_type === 'agent') ?? null;
     }, { timeoutMs: 30_000 });
-    const closingSeen = await waitFor('closing comment handled', async () => entry((e) => e.ref === closing.id && (e.type === 'accepted' || e.type === 'skipped')), { timeoutMs: 30_000 });
+    // In the background a closing comment that arrives before its run is read waits for it: the verdict comes later.
+    const closingSeen = cfg.background && flavor === 'patched'
+      ? await waitFor('closing comment verdict', async () => entry((e) => e.ref === closing.id && e.type === 'skipped'), { timeoutMs: 90_000 }).catch(() => entry((e) => e.ref === closing.id) ?? { type: 'none' })
+      : await waitFor('closing comment handled', async () => entry((e) => e.ref === closing.id && (e.type === 'accepted' || e.type === 'skipped')), { timeoutMs: 30_000 });
     if (flavor === 'patched') {
       step('R2d', 'the run\'s closing agent comment is not archived a second time (the run archive covers it)',
         closingSeen.type === 'skipped' && /covered by its run archive/.test(closingSeen.reason ?? ''), closingSeen.reason ?? closingSeen.type);
@@ -311,7 +328,7 @@ async function main() {
       chatTasks.push(t.id);
     }
     const chatOutcomes = await waitFor('all chat runs handled', async () => {
-      const got = chatTasks.map((id) => entry((e) => e.ref === id && (e.type === 'accepted' || e.type === 'skipped')));
+      const got = chatTasks.map((id) => entry(runSettled(id)));
       return got.every(Boolean) ? got : null;
     }, { timeoutMs: 60_000 });
     const probe = await mc.comment(u1.token, ws1, notes.id, '补充:回滚演练必须在灰度第一周完成。BREAKER-PROBE');
@@ -399,6 +416,36 @@ async function main() {
       status2.status === 'ok' && !status2Text.includes(ws1) && forged.status === 403 && impersonated.status === 401
         && binding2?.workspace_id === ws2 && binding2?.via === 'context',
       `ws2 status mentions ws1=${status2Text.includes(ws1)} forged=${forged.status} impersonated=${impersonated.status} inst2 bound via=${binding2?.via}`);
+
+    // R8 — a long run (2,400 transcript messages, past the hook's 2,000 cap)
+    if (flavor === 'patched') {
+      const issueL = await mc.createIssue(u1.token, ws1, { title: `长任务：orders 分片巡检 ${RUN}`, description: '逐个检查 800 个分片的重试与死信配置。' });
+      await mc.assign(u1.token, ws1, issueL.id, agentA.id);
+      const runL = await d1.claimAndStart(agentA.id, (t) => t.issue_id === issueL.id);
+      const long = [];
+      for (let i = 0; i < 800; i++) {
+        long.push({ seq: long.length + 1, type: 'text', content: `第 ${i} 步：检查分片 orders-${i}。` });
+        long.push({ seq: long.length + 1, type: 'tool_use', tool: 'bash', input: { command: `kubectl logs orders-${i} --tail=50` } });
+        long.push({ seq: long.length + 1, type: 'tool_result', tool: 'bash', output: `orders-${i}: retries=5 dlq=7d` });
+      }
+      long.push({ seq: long.length + 1, type: 'text', content: '巡检结论：800 个分片的重试上限都是 5 次，死信保留 7 天，无需调整。LONG-RUN-END' });
+      for (let i = 0; i < long.length; i += 200) await d1.report(runL.id, long.slice(i, i + 200));
+      const llmBefore = mockCalls();
+      await d1.complete(runL.id, '巡检结论：800 个分片的重试上限都是 5 次。');
+      const accL = await waitFor('long run archived', async () => entry((e) => e.ref === runL.id && e.type === 'accepted' && e.kind), { timeoutMs: 180_000 });
+      const pendingL = await waitFor('long run committed', async () => entry((e) => e.ref === runL.id && e.extraction === 'pending'), { timeoutMs: 180_000 });
+      await extracted(runL.id);
+      const extractCalls = mockCalls() - llmBefore;
+      if (cfg.background) {
+        step('R8', 'long run read in the background with the install token: archived whole and extracted in batches',
+          accL.completeness === 'complete' && pendingL.messages > long.length && pendingL.extraction_batches === 'limited' && (!cfg.mockLog || extractCalls > 1),
+          `completeness=${accL.completeness} archived messages=${pendingL.messages} (transcript ${long.length}) batches=${pendingL.extraction_batches ?? 'one'}${cfg.mockLog ? ` model extraction calls=${extractCalls}` : ''}`);
+      } else {
+        step('R8', 'long run read inside the hook: only the first 2,000 messages fit (known limit; configure an install token)',
+          /transcript truncated/.test(accL.completeness ?? '') && pendingL.messages <= 2_002,
+          `completeness=${accL.completeness} archived messages=${pendingL.messages} (transcript ${long.length})`);
+      }
+    }
 
     // R7 — a failed extraction is re-driven in a fresh session and recovers
     if (cfg.mockLlm) {

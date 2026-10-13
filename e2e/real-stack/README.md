@@ -23,6 +23,7 @@ multica 的版本是**探测**出来的：带 `chats:read` 的包被接受，说
 | R5 | 召回绑定运行：模型点名的其他 issue 不被检索 | 无法得知调用方运行，报告为未绑定（已知限制） |
 | R6 | 租户隔离：工作区 2 看不到工作区 1；其密钥无法触达工作区 1；安装 2 经 `GET /v1/context` 绑定 | 同左 |
 | R7 | LLM 失败 → 抽取失败 → 在新会话（`-r1`）重驱 → 抽取成功（需 `MOCK_LLM_URL`） | 同左 |
+| R8 | 长运行（2401 条执行记录）：设了 `REAL_STACK_BACKGROUND=1` 时由后台任务用安装 token 读完整条、完整归档并分批抽取；没设时钩子内只读到前 2000 条，记为不完整（已知限制） | 不执行 |
 
 使用真实模型时，R1 同时核验告警阈值 1 万条，R2c 核验 RocketMQ、预算 3800 元和双写两周，R3b 核验两项偏好。设置 `MOCK_LLM_URL` 时，这三步仅验收管道和范围；R2b-recall 在两种模式下均核验主动写入原文。
 
@@ -62,6 +63,8 @@ MOCK_LLM_URL=http://127.0.0.1:18999 \
 REPORT_FILE=reports/real-stack.json \
 node e2e/real-stack/run.mjs
 ```
+
+`REAL_STACK_BACKGROUND=1` 时，插件拿到每个安装的安装 token，运行在后台读取（见 README“读取完整执行记录”）；`MOCK_LLM_LOG` 指向 mock 模型的请求日志时，R8 还会统计这次抽取调用了几次模型。
 
 其余可选变量：`MC_BASE`（默认 `http://127.0.0.1:8080`）、`OV_BASE`（默认 `http://127.0.0.1:1936`）、`PLUGIN_URL`（默认 `https://host.docker.internal:8790`，必须在 `MULTICA_PLUGIN_DEV_ORIGINS` 里）、`MC_DEV_CODE`。
 

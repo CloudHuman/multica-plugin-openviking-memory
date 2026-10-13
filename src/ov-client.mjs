@@ -115,6 +115,17 @@ export class OvClient {
     }
   }
 
+  /**
+   * Set a session's auto-commit policy. OpenViking uses its thresholds to split a
+   * commit's extraction into batches; it auto-commits only when messages are
+   * written, so setting it after the last write does not commit by itself.
+   */
+  async updateSessionConfig(key, sessionId, { autoCommitPolicy }) {
+    return this.call(`/api/v1/sessions/${encodeURIComponent(sessionId)}/config`, {
+      method: 'PATCH', key, body: { auto_commit_policy: autoCommitPolicy },
+    });
+  }
+
   async getSession(key, sessionId) {
     return this.call(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { key });
   }

@@ -41,6 +41,17 @@ export class InstallationRegistry {
     return null;
   }
 
+  /**
+   * The install token (mpi_…) to read this installation's runs with outside a
+   * hook call, or '' when none is configured.
+   */
+  tokenFor(installationId) {
+    const keyed = this.cfg.signingSecrets?.[installationId];
+    if (keyed?.secret) return keyed.token || '';
+    const primary = this.data.primaryInstallation;
+    if (this.cfg.signingSecret && this.cfg.multicaToken && (!primary || primary === installationId)) return this.cfg.multicaToken;
+    return '';
+  }
   binding(installationId) {
     return this.data.bindings[installationId] ?? null;
   }
