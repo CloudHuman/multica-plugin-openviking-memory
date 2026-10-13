@@ -242,3 +242,21 @@ test('a failed requeue journal write preserves the failed job so redelivery can 
   assert.equal(replayed.jobs.get(id).payload.generation, 1);
   await queue.stop();
 });
+
+test('a job left queued by a restart goes to a route registered right after start()', async () => {
+  const stateDir = tempStateDir();
+  const q1 = new JobQueue({ stateDir, handler: async () => {}, pollMs: 10, log: () => {} });
+  q1.enqueue('fetch-run', { x: 1 });
+  await q1.stop({ drainMs: 0 });
+
+  const byHandler = [];
+  const byRoute = [];
+  const q2 = new JobQueue({ stateDir, handler: async (job) => byHandler.push(job.type), pollMs: 10, log: () => {} });
+  q2.start();
+  q2.route('fetch-run', async (job) => byRoute.push(job.payload.x));
+  for (let i = 0; i < 100 && !byRoute.length && !byHandler.length; i++) await sleep(10);
+  await q2.stop({ drainMs: 100 });
+  assert.deepEqual(byRoute, [1]);
+  assert.deepEqual(byHandler, []);
+});
+

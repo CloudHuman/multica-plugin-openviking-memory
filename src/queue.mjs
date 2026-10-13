@@ -178,7 +178,9 @@ export class JobQueue {
 
   start() {
     this.running = true;
-    this.#loop();
+    // The first job is picked on the next turn, not inside start(): routes
+    // registered right after start() must see a job left queued by a restart.
+    setImmediate(() => this.#loop());
   }
 
   async #loop() {

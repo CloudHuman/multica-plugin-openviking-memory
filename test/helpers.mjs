@@ -374,6 +374,7 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
   // messageFaults: [{ page, status }] — the transcript page at that index (0-based,
   // counted across all reads) answers that status once.
   let messagePages = 0;
+  let rejectMpi = rejectInstallToken;
   const requests = [];
   const allIssues = [issue, ...issues].filter(Boolean);
   const server = createServer(async (req, res) => {
@@ -387,7 +388,7 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
     };
     const problem = (status, code, detail) => json(status, { type: `urn:multica:problem:${code}`, title: code, status, code, detail, error: detail });
     if (!token.startsWith('Bearer mpc_') && !token.startsWith('Bearer mpi_')) return problem(401, 'unauthorized', 'plugin token required');
-    if (rejectInstallToken && token.startsWith('Bearer mpi_')) return problem(401, 'unauthorized', 'install token is not valid');
+    if (rejectMpi && token.startsWith('Bearer mpi_')) return problem(401, 'unauthorized', 'install token is not valid');
     if (path === '/v1/context') {
       return json(200, { workspace: { id: workspaceId ?? issue?.workspace_id ?? issue?.workspaceId, name: 'test-ws', slug: 'test' }, config: {}, granted_net_domains: [], actor: 'plugin' });
     }
@@ -429,6 +430,8 @@ export async function startFakeMultica({ issue, issues = [], transcript = [], co
   const port = server.address().port;
   return {
     server, port, baseUrl: `http://127.0.0.1:${port}`, requests,
+    /** Turn the install-token refusal on or off (a rotation, then the operator's fix). */
+    setRejectInstallToken(v) { rejectMpi = v; },
     async stop() { await new Promise((r) => server.close(r)); },
   };
 }

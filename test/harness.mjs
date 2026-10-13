@@ -59,9 +59,9 @@ export async function bootService({ ov, stateDir = tempStateDir(), cfg: override
     ov: ovClient, registry, statusLog, cfg, memoryRules, log,
     queueOptions: { maxAttempts: overrides.queueMaxAttempts ?? 3, baseDelayMs: 5, pollMs: 10 },
   });
+  const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog, installations, extractions, memoryRules, fetchImpl });
   queue.start();
   extractions.start();
-  const app = createApp({ cfg, ov: ovClient, registry, queue, ledger, statusLog, installations, extractions, memoryRules, fetchImpl });
   const server = createServer(await buildRequestListener({ cfg, app }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
@@ -82,7 +82,7 @@ export async function bootService({ ov, stateDir = tempStateDir(), cfg: override
   const admin = (path, body) => postJson(port, path, body ?? {}, { headers: { Authorization: 'Bearer test-admin-token' } });
 
   return {
-    app, server, port, queue, cfg, registry, statusLog, extractions, installations, ledger, ovClient, stateDir, secret,
+    app, server, port, queue, cfg, registry, statusLog, extractions, installations, ledger, ovClient, stateDir, secret, memoryRules,
     signedPost, admin,
     async stop() {
       extractions.stop();

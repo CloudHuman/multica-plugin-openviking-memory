@@ -962,9 +962,12 @@ export async function main() {
   const statusLog = new ArchiveStatusLog({ stateDir: cfg.stateDir, maxBytes: cfg.statusLogMaxBytes });
   const memoryRules = new WorkspaceMemoryRules({ ov, registry, log });
   const { queue, extractions } = createArchiveProcessing({ ov, registry, statusLog, cfg, memoryRules, log });
+  // createApp registers the queue's background routes; the queue picks its
+  // first due job as soon as it starts, so a read left queued by a restart
+  // must find its route already there.
+  const app = createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules });
   queue.start();
   extractions.start();
-  const app = createApp({ cfg, ov, registry, queue, ledger, statusLog, installations, extractions, memoryRules });
 
   const handler = await buildRequestListener({ cfg, app });
   let server;
